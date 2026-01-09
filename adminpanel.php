@@ -75,6 +75,107 @@ function b2b_adm_add_log($pid, $type, $old, $new, $msg) {
 }
 
 /* =====================================================
+   3B. B2B PRO SYSTEM v7.0 (Gelişmiş Ödeme İzinleri Matrisi)
+   
+   YENİLİKLER (ADIM 3):
+   1. Grup Bazlı Ödeme İzinleri (Admin panelinde matris tablo).
+   2. Müşteri Bazlı Ödeme İzinleri (Kullanıcı profilinden özel atama).
+   3. Hiyerarşik Kontrol (User > Group > Guest).
+===================================================== */
+
+// ==========================================================================
+// VERİTABANI VE AYARLAR
+// ==========================================================================
+
+function b2b_get_groups() { 
+    return get_option('b2b_dynamic_groups', array()); 
+}
+
+function b2b_get_custom_fields() { 
+    return get_option('b2b_custom_fields_def', array()); 
+}
+
+function b2b_get_standard_fields_config() { 
+    return get_option('b2b_standard_fields_config', array()); 
+}
+
+function b2b_is_price_hidden_for_guests() { 
+    return get_option('b2b_hide_prices_guest', 0); 
+}
+
+// Grup Ödeme Kurallarını Getir
+function b2b_get_group_payment_rules() { 
+    return get_option('b2b_group_payment_rules', array()); 
+}
+
+// ==========================================================================
+// ADMIN MENÜLERİ
+// ==========================================================================
+function b2b_pro_admin_menu() {
+    add_menu_page('B2B Paneli', 'B2B Paneli', 'manage_options', 'b2b-panel', 'b2b_page_approvals', 'dashicons-groups', 56);
+    add_submenu_page('b2b-panel', 'Başvurular', 'Başvurular', 'manage_options', 'b2b-panel', 'b2b_page_approvals');
+    add_submenu_page('b2b-panel', 'Gruplar & Üyeler', 'Gruplar & Üyeler', 'manage_options', 'b2b-groups-list', 'b2b_page_group_list');
+    add_submenu_page('b2b-panel', 'Genel Ayarlar', 'Genel Ayarlar', 'manage_options', 'b2b-settings', 'b2b_page_settings');
+    add_submenu_page('b2b-panel', 'Form Düzenleyici', 'Form Düzenleyici', 'manage_options', 'b2b-form-editor', 'b2b_page_form_editor');
+}
+add_action('admin_menu', 'b2b_pro_admin_menu');
+
+// ==========================================================================
+// YARDIMCI FONKSİYONLAR
+// ==========================================================================
+
+/**
+ * Kullanıcının B2B grubu slug'ını döner
+ */
+function b2b_get_user_group($user_id = 0) {
+    if (!$user_id) $user_id = get_current_user_id();
+    if (!$user_id) return '';
+    return get_user_meta($user_id, 'b2b_group_slug', true);
+}
+
+/**
+ * Kullanıcının veya grubunun bir ödeme yöntemine izni var mı?
+ * Hiyerarşi: User > Group > Default
+ */
+function b2b_user_can_use_payment($user_id, $gateway_id) {
+    // 1. Kullanıcı bazlı kontrol
+    $user_payments = get_user_meta($user_id, 'b2b_allowed_payments', true);
+    if (is_array($user_payments) && !empty($user_payments)) {
+        return in_array($gateway_id, $user_payments);
+    }
+    
+    // 2. Grup bazlı kontrol
+    $group_slug = b2b_get_user_group($user_id);
+    if ($group_slug) {
+        $group_rules = b2b_get_group_payment_rules();
+        if (isset($group_rules[$group_slug]) && is_array($group_rules[$group_slug])) {
+            return in_array($gateway_id, $group_rules[$group_slug]);
+        }
+    }
+    
+    // 3. Default: Tüm ödeme yöntemlerine izin ver
+    return true;
+}
+
+/**
+ * Checkout'ta ödeme yöntemlerini filtrele
+ */
+add_filter('woocommerce_available_payment_gateways', function($gateways) {
+    if (is_admin() || !is_checkout()) return $gateways;
+    
+    $user_id = get_current_user_id();
+    if (!$user_id) return $gateways; // Misafir kullanıcılar için tüm yöntemler açık
+    
+    foreach ($gateways as $gateway_id => $gateway) {
+        if (!b2b_user_can_use_payment($user_id, $gateway_id)) {
+            unset($gateways[$gateway_id]);
+        }
+    }
+    
+    return $gateways;
+});
+
+/* =====================================================
    4. AJAX HANDLERS
 ===================================================== */
 // A. Order Details (Revize: Fotoğraflar ve Loglar aynı anda görünür)
@@ -1308,6 +1409,393 @@ add_action('template_redirect', function () {
         b2b_adm_footer(); exit;
     }
 });
+
+/* =====================================================
+   12. B2B PRO ADMIN PAGES (WordPress Admin Panel)
+===================================================== */
+
+// ==========================================================================
+// A. BAŞVURULAR SAYFASI (Approvals)
+// ==========================================================================
+function b2b_page_approvals() {
+    if (isset($_POST['approve_user'])) {
+        $uid = intval($_POST['uid']);
+        update_user_meta($uid, 'b2b_status', 'approved');
+        if (!empty($_POST['grp'])) {
+            update_user_meta($uid, 'b2b_group_slug', sanitize_text_field($_POST['grp']));
+        }
+        echo '<div class="notice notice-success"><p>Kullanıcı onaylandı!</p></div>';
+    }
+    
+    $users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
+    $groups = b2b_get_groups();
+    ?>
+    <div class="wrap">
+        <h1>B2B Başvurular</h1>
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <th>Firma / İsim</th>
+                    <th>E-posta</th>
+                    <th>Telefon</th>
+                    <th>Grup Ata</th>
+                    <th>İşlem</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($users)): ?>
+                    <tr><td colspan="5">Bekleyen başvuru yok.</td></tr>
+                <?php else: foreach ($users as $u): ?>
+                    <tr>
+                        <td>
+                            <strong><?= esc_html(get_user_meta($u->ID, 'billing_company', true) ?: $u->display_name) ?></strong><br>
+                            <small><?= esc_html(get_user_meta($u->ID, 'billing_city', true)) ?></small>
+                        </td>
+                        <td><?= esc_html($u->user_email) ?></td>
+                        <td><?= esc_html(get_user_meta($u->ID, 'billing_phone', true)) ?></td>
+                        <td>
+                            <form method="post" style="display:inline-flex;gap:5px;">
+                                <input type="hidden" name="uid" value="<?= $u->ID ?>">
+                                <select name="grp">
+                                    <option value="">-- Standart --</option>
+                                    <?php foreach ($groups as $k => $v): ?>
+                                        <option value="<?= esc_attr($k) ?>"><?= esc_html($v['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="submit" name="approve_user" class="button button-primary">Onayla</button>
+                            </form>
+                        </td>
+                        <td><a href="<?= admin_url('user-edit.php?user_id=' . $u->ID) ?>" class="button">Düzenle</a></td>
+                    </tr>
+                <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php
+}
+
+// ==========================================================================
+// B. GRUPLAR & ÜYELER SAYFASI
+// ==========================================================================
+function b2b_page_group_list() {
+    // Save Group
+    if (isset($_POST['save_grp'])) {
+        $groups = b2b_get_groups();
+        $slug = sanitize_title($_POST['name']);
+        $groups[$slug] = [
+            'name' => sanitize_text_field($_POST['name']),
+            'discount' => floatval($_POST['discount']),
+            'min_order' => floatval($_POST['min_order'])
+        ];
+        update_option('b2b_dynamic_groups', $groups);
+        echo '<div class="notice notice-success"><p>Grup kaydedildi!</p></div>';
+    }
+    
+    // Delete Group
+    if (isset($_GET['del'])) {
+        $groups = b2b_get_groups();
+        unset($groups[sanitize_key($_GET['del'])]);
+        update_option('b2b_dynamic_groups', $groups);
+        wp_redirect(admin_url('admin.php?page=b2b-groups-list'));
+        exit;
+    }
+    
+    $groups = b2b_get_groups();
+    ?>
+    <div class="wrap">
+        <h1>Gruplar & Üyeler</h1>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px;">
+            <div class="card">
+                <h2>Yeni Grup Ekle</h2>
+                <form method="post">
+                    <table class="form-table">
+                        <tr>
+                            <th>Grup Adı</th>
+                            <td><input type="text" name="name" class="regular-text" required></td>
+                        </tr>
+                        <tr>
+                            <th>İndirim (%)</th>
+                            <td><input type="number" step="0.01" name="discount" value="0" class="small-text"></td>
+                        </tr>
+                        <tr>
+                            <th>Min. Sipariş</th>
+                            <td><input type="number" name="min_order" value="0" class="regular-text"></td>
+                        </tr>
+                    </table>
+                    <p><button type="submit" name="save_grp" class="button button-primary">Kaydet</button></p>
+                </form>
+            </div>
+            <div class="card">
+                <h2>Mevcut Gruplar</h2>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>Grup</th>
+                            <th>İndirim</th>
+                            <th>Min. Sipariş</th>
+                            <th>Üye Sayısı</th>
+                            <th>İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($groups as $slug => $data): 
+                            $count = count(get_users(['meta_key' => 'b2b_group_slug', 'meta_value' => $slug]));
+                        ?>
+                            <tr>
+                                <td><strong><?= esc_html($data['name']) ?></strong></td>
+                                <td>%<?= $data['discount'] ?></td>
+                                <td><?= wc_price($data['min_order']) ?></td>
+                                <td><?= $count ?></td>
+                                <td><a href="?page=b2b-groups-list&del=<?= urlencode($slug) ?>" onclick="return confirm('Silmek istediğinize emin misiniz?')" class="button">Sil</a></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+// ==========================================================================
+// C. GENEL AYARLAR SAYFASI (Ödeme İzinleri Matrisi Dahil)
+// ==========================================================================
+function b2b_page_settings() {
+    // Save Settings
+    if (isset($_POST['save_settings'])) {
+        update_option('b2b_hide_prices_guest', isset($_POST['hide_prices_guest']) ? 1 : 0);
+        
+        // Ödeme izinleri matrisi kaydet
+        if (isset($_POST['group_payments'])) {
+            $group_rules = array();
+            foreach ($_POST['group_payments'] as $group_slug => $payments) {
+                $group_rules[$group_slug] = array_map('sanitize_text_field', $payments);
+            }
+            update_option('b2b_group_payment_rules', $group_rules);
+        }
+        
+        echo '<div class="notice notice-success"><p>Ayarlar kaydedildi!</p></div>';
+    }
+    
+    $hide_prices = b2b_is_price_hidden_for_guests();
+    $groups = b2b_get_groups();
+    $group_payment_rules = b2b_get_group_payment_rules();
+    
+    // Tüm ödeme yöntemlerini al
+    $gateways = WC()->payment_gateways->payment_gateways();
+    ?>
+    <div class="wrap">
+        <h1>B2B Genel Ayarlar</h1>
+        <form method="post">
+            <h2>Fiyat Görünürlüğü</h2>
+            <table class="form-table">
+                <tr>
+                    <th>Misafirler için fiyat gizle</th>
+                    <td>
+                        <label>
+                            <input type="checkbox" name="hide_prices_guest" value="1" <?= checked($hide_prices, 1, false) ?>>
+                            Giriş yapmayan kullanıcılar fiyatları göremesin
+                        </label>
+                    </td>
+                </tr>
+            </table>
+            
+            <h2>Ödeme İzinleri Matrisi (Grup Bazlı)</h2>
+            <p>Her grup için hangi ödeme yöntemlerine izin verildiğini seçin. Boş bırakırsanız tüm yöntemler açık olur.</p>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th style="width:200px;">Grup</th>
+                        <?php foreach ($gateways as $gateway_id => $gateway): ?>
+                            <th style="text-align:center;"><?= esc_html($gateway->get_title()) ?></th>
+                        <?php endforeach; ?>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($groups as $slug => $group_data): ?>
+                        <tr>
+                            <td><strong><?= esc_html($group_data['name']) ?></strong></td>
+                            <?php foreach ($gateways as $gateway_id => $gateway): 
+                                $is_allowed = isset($group_payment_rules[$slug]) && in_array($gateway_id, $group_payment_rules[$slug]);
+                            ?>
+                                <td style="text-align:center;">
+                                    <input type="checkbox" name="group_payments[<?= esc_attr($slug) ?>][]" value="<?= esc_attr($gateway_id) ?>" <?= checked($is_allowed, true, false) ?>>
+                                </td>
+                            <?php endforeach; ?>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($groups)): ?>
+                        <tr><td colspan="<?= count($gateways) + 1 ?>">Henüz grup oluşturulmamış. Önce grup ekleyin.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            <p class="description">Not: Kullanıcı bazlı özel izinler grup izinlerini geçersiz kılar. Kullanıcı düzenleme sayfasından atayabilirsiniz.</p>
+            
+            <p><button type="submit" name="save_settings" class="button button-primary button-large">Ayarları Kaydet</button></p>
+        </form>
+    </div>
+    <?php
+}
+
+// ==========================================================================
+// D. FORM DÜZENLEYİCİ SAYFASI
+// ==========================================================================
+function b2b_page_form_editor() {
+    // Save Custom Fields
+    if (isset($_POST['save_fields'])) {
+        $fields = array();
+        if (isset($_POST['fields'])) {
+            foreach ($_POST['fields'] as $key => $field_data) {
+                $fields[$key] = [
+                    'label' => sanitize_text_field($field_data['label']),
+                    'type' => sanitize_text_field($field_data['type']),
+                    'required' => isset($field_data['required']) ? 1 : 0
+                ];
+            }
+        }
+        update_option('b2b_custom_fields_def', $fields);
+        
+        // Standart alan ayarları
+        if (isset($_POST['standard_fields'])) {
+            $std_fields = array();
+            foreach ($_POST['standard_fields'] as $field_key => $field_config) {
+                $std_fields[$field_key] = [
+                    'enabled' => isset($field_config['enabled']) ? 1 : 0,
+                    'required' => isset($field_config['required']) ? 1 : 0
+                ];
+            }
+            update_option('b2b_standard_fields_config', $std_fields);
+        }
+        
+        echo '<div class="notice notice-success"><p>Form ayarları kaydedildi!</p></div>';
+    }
+    
+    $custom_fields = b2b_get_custom_fields();
+    $standard_fields_config = b2b_get_standard_fields_config();
+    
+    // Standart WooCommerce alanları
+    $standard_fields = [
+        'billing_company' => 'Firma Adı',
+        'billing_phone' => 'Telefon',
+        'billing_city' => 'Şehir',
+        'billing_postcode' => 'Posta Kodu',
+        'billing_address_1' => 'Adres',
+        'billing_state' => 'İl/Eyalet',
+        'billing_country' => 'Ülke'
+    ];
+    ?>
+    <div class="wrap">
+        <h1>B2B Form Düzenleyici</h1>
+        <form method="post">
+            <h2>Standart Alanlar (WooCommerce)</h2>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th>Alan</th>
+                        <th>Aktif</th>
+                        <th>Zorunlu</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($standard_fields as $field_key => $field_label): 
+                        $is_enabled = isset($standard_fields_config[$field_key]['enabled']) ? $standard_fields_config[$field_key]['enabled'] : 1;
+                        $is_required = isset($standard_fields_config[$field_key]['required']) ? $standard_fields_config[$field_key]['required'] : 0;
+                    ?>
+                        <tr>
+                            <td><?= esc_html($field_label) ?></td>
+                            <td>
+                                <input type="checkbox" name="standard_fields[<?= esc_attr($field_key) ?>][enabled]" value="1" <?= checked($is_enabled, 1, false) ?>>
+                            </td>
+                            <td>
+                                <input type="checkbox" name="standard_fields[<?= esc_attr($field_key) ?>][required]" value="1" <?= checked($is_required, 1, false) ?>>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            
+            <h2>Özel Alanlar</h2>
+            <div id="custom-fields-container">
+                <?php if (!empty($custom_fields)): foreach ($custom_fields as $key => $field): ?>
+                    <div class="custom-field-row" style="margin-bottom:15px;padding:10px;border:1px solid #ddd;background:#f9f9f9;">
+                        <input type="text" name="fields[<?= esc_attr($key) ?>][label]" value="<?= esc_attr($field['label']) ?>" placeholder="Alan Etiketi" class="regular-text">
+                        <select name="fields[<?= esc_attr($key) ?>][type]">
+                            <option value="text" <?= selected($field['type'], 'text', false) ?>>Metin</option>
+                            <option value="textarea" <?= selected($field['type'], 'textarea', false) ?>>Çok Satırlı</option>
+                            <option value="select" <?= selected($field['type'], 'select', false) ?>>Seçim</option>
+                        </select>
+                        <label><input type="checkbox" name="fields[<?= esc_attr($key) ?>][required]" value="1" <?= checked($field['required'], 1, false) ?>> Zorunlu</label>
+                    </div>
+                <?php endforeach; endif; ?>
+            </div>
+            <p><button type="button" id="add-custom-field" class="button">+ Yeni Alan Ekle</button></p>
+            
+            <p><button type="submit" name="save_fields" class="button button-primary button-large">Form Ayarlarını Kaydet</button></p>
+        </form>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            $('#add-custom-field').click(function() {
+                var key = 'field_' + Date.now();
+                var html = '<div class="custom-field-row" style="margin-bottom:15px;padding:10px;border:1px solid #ddd;background:#f9f9f9;">' +
+                    '<input type="text" name="fields[' + key + '][label]" placeholder="Alan Etiketi" class="regular-text">' +
+                    '<select name="fields[' + key + '][type]">' +
+                    '<option value="text">Metin</option>' +
+                    '<option value="textarea">Çok Satırlı</option>' +
+                    '<option value="select">Seçim</option>' +
+                    '</select>' +
+                    '<label><input type="checkbox" name="fields[' + key + '][required]" value="1"> Zorunlu</label>' +
+                    '</div>';
+                $('#custom-fields-container').append(html);
+            });
+        });
+        </script>
+    </div>
+    <?php
+}
+
+// ==========================================================================
+// E. Kullanıcı Profil Sayfasına Ödeme İzinleri Alanı Ekle
+// ==========================================================================
+add_action('show_user_profile', 'b2b_user_payment_permissions_field');
+add_action('edit_user_profile', 'b2b_user_payment_permissions_field');
+
+function b2b_user_payment_permissions_field($user) {
+    if (!current_user_can('manage_options')) return;
+    
+    $allowed_payments = get_user_meta($user->ID, 'b2b_allowed_payments', true);
+    if (!is_array($allowed_payments)) $allowed_payments = array();
+    
+    $gateways = WC()->payment_gateways->payment_gateways();
+    ?>
+    <h2>B2B Ödeme İzinleri (Kullanıcı Özel)</h2>
+    <table class="form-table">
+        <tr>
+            <th>İzin Verilen Ödeme Yöntemleri</th>
+            <td>
+                <p class="description">Bu kullanıcı için özel ödeme yöntemi izinleri. Boş bırakırsanız grup ayarları geçerli olur.</p>
+                <?php foreach ($gateways as $gateway_id => $gateway): ?>
+                    <label style="display:block;margin:5px 0;">
+                        <input type="checkbox" name="b2b_allowed_payments[]" value="<?= esc_attr($gateway_id) ?>" <?= checked(in_array($gateway_id, $allowed_payments), true, false) ?>>
+                        <?= esc_html($gateway->get_title()) ?>
+                    </label>
+                <?php endforeach; ?>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+
+add_action('personal_options_update', 'b2b_save_user_payment_permissions');
+add_action('edit_user_profile_update', 'b2b_save_user_payment_permissions');
+
+function b2b_save_user_payment_permissions($user_id) {
+    if (!current_user_can('manage_options')) return;
+    
+    $payments = isset($_POST['b2b_allowed_payments']) ? array_map('sanitize_text_field', $_POST['b2b_allowed_payments']) : array();
+    update_user_meta($user_id, 'b2b_allowed_payments', $payments);
+}
+
    /* =====================================================
   /* =====================================================
    X. FORCE ERP MODE (TAM KAPANMA & GLOBAL ROUTER)

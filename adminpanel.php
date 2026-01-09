@@ -1,7 +1,7 @@
 <?php
 /**
  * =====================================================
- * B2B ADMIN PANEL V9.0 (ENGLISH - ADMIN ONLY - FULL FEATURES)
+ * B2B ADMIN PANEL V10.0 (ENGLISH - ADMIN ONLY - FULL FEATURES + B2B MODULE)
  * =====================================================
  */
 
@@ -29,6 +29,12 @@ add_action('init', function () {
     
     // Ürün Detay (Edit) - Bu satır en kritik olanı
     add_rewrite_rule('^b2b-panel/products/edit/?$', 'index.php?b2b_adm_page=product_edit', 'top');
+
+    // B2B Module (V10 - New)
+    add_rewrite_rule('^b2b-panel/b2b-module/?$', 'index.php?b2b_adm_page=b2b_approvals', 'top');
+    add_rewrite_rule('^b2b-panel/b2b-module/groups/?$', 'index.php?b2b_adm_page=b2b_groups', 'top');
+    add_rewrite_rule('^b2b-panel/b2b-module/settings/?$', 'index.php?b2b_adm_page=b2b_settings', 'top');
+    add_rewrite_rule('^b2b-panel/b2b-module/form-editor/?$', 'index.php?b2b_adm_page=b2b_form_editor', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
     if (!get_option('b2b_rewrite_v10_fix')) {
@@ -351,12 +357,13 @@ function b2b_adm_header($title) {
     <body>
 
     <div class="sidebar">
-        <div class="sidebar-head"><i class="fa-solid fa-shield-halved"></i> ADMIN PANEL</div>
+        <div class="sidebar-head"><i class="fa-solid fa-shield-halved"></i> ADMIN PANEL V10</div>
         <div class="sidebar-nav">
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
             <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-tags"></i> Products</a>
 <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
+            <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor'])?'active':'' ?>"><i class="fa-solid fa-layer-group"></i> B2B Module</a>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -1411,7 +1418,414 @@ add_action('template_redirect', function () {
 });
 
 /* =====================================================
-   12. B2B PRO ADMIN PAGES (WordPress Admin Panel)
+   12. B2B MODULE PAGES (Frontend Admin Panel - V10)
+===================================================== */
+
+// ==========================================================================
+// A. B2B APPROVALS PAGE
+// ==========================================================================
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'b2b_approvals') return;
+    b2b_adm_guard();
+    b2b_adm_header('B2B Approvals');
+    
+    if (isset($_POST['approve_user'])) {
+        $uid = intval($_POST['uid']);
+        update_user_meta($uid, 'b2b_status', 'approved');
+        if (!empty($_POST['grp'])) {
+            update_user_meta($uid, 'b2b_group_slug', sanitize_text_field($_POST['grp']));
+        }
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">User approved successfully!</div>';
+    }
+    
+    $users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
+    $groups = b2b_get_groups();
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">B2B Approvals</h1>
+        <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>"><button class="secondary">Manage Groups</button></a>
+    </div>
+    
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company / Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>City</th>
+                    <th>Assign Group</th>
+                    <th style="text-align:right">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($users)): ?>
+                    <tr><td colspan="6" style="text-align:center;padding:30px;color:#999">No pending applications.</td></tr>
+                <?php else: foreach ($users as $u): ?>
+                    <tr>
+                        <td>
+                            <strong><?= esc_html(get_user_meta($u->ID, 'billing_company', true) ?: $u->display_name) ?></strong><br>
+                            <small style="color:#6b7280"><?= esc_html($u->user_login) ?></small>
+                        </td>
+                        <td><?= esc_html($u->user_email) ?></td>
+                        <td><?= esc_html(get_user_meta($u->ID, 'billing_phone', true)) ?></td>
+                        <td><?= esc_html(get_user_meta($u->ID, 'billing_city', true)) ?></td>
+                        <td>
+                            <form method="post" style="display:inline-flex;gap:5px;margin:0;">
+                                <input type="hidden" name="uid" value="<?= $u->ID ?>">
+                                <select name="grp" style="margin:0;padding:6px;">
+                                    <option value="">-- Standard --</option>
+                                    <?php foreach ($groups as $k => $v): ?>
+                                        <option value="<?= esc_attr($k) ?>"><?= esc_html($v['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="submit" name="approve_user" style="padding:6px 12px;font-size:13px;">Approve</button>
+                            </form>
+                        </td>
+                        <td style="text-align:right">
+                            <a href="<?= home_url('/b2b-panel/customers/edit?id=' . $u->ID) ?>">
+                                <button class="secondary" style="padding:6px 12px;">View Profile</button>
+                            </a>
+                        </td>
+                    </tr>
+                <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+// ==========================================================================
+// B. B2B GROUPS PAGE
+// ==========================================================================
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'b2b_groups') return;
+    b2b_adm_guard();
+    b2b_adm_header('B2B Groups');
+    
+    // Save Group
+    if (isset($_POST['save_grp'])) {
+        $groups = b2b_get_groups();
+        $slug = sanitize_title($_POST['name']);
+        $groups[$slug] = [
+            'name' => sanitize_text_field($_POST['name']),
+            'discount' => floatval($_POST['discount']),
+            'min_order' => floatval($_POST['min_order'])
+        ];
+        update_option('b2b_dynamic_groups', $groups);
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">Group saved successfully!</div>';
+    }
+    
+    // Delete Group
+    if (isset($_GET['del'])) {
+        $groups = b2b_get_groups();
+        unset($groups[sanitize_key($_GET['del'])]);
+        update_option('b2b_dynamic_groups', $groups);
+        wp_redirect(home_url('/b2b-panel/b2b-module/groups'));
+        exit;
+    }
+    
+    $groups = b2b_get_groups();
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">B2B Groups & Members</h1>
+        <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>"><button class="secondary">Settings</button></a>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:25px;">
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Add New Group</h3>
+            <form method="post">
+                <label>Group Name</label>
+                <input type="text" name="name" required>
+                
+                <label>Discount Rate (%)</label>
+                <input type="number" step="0.01" name="discount" value="0">
+                
+                <label>Minimum Order Amount</label>
+                <input type="number" name="min_order" value="0" step="0.01">
+                
+                <button type="submit" name="save_grp" style="width:100%;padding:12px;margin-top:10px;">Save Group</button>
+            </form>
+        </div>
+        
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Existing Groups</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Group Name</th>
+                        <th>Discount</th>
+                        <th>Min. Order</th>
+                        <th>Members</th>
+                        <th style="text-align:right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($groups)): ?>
+                        <tr><td colspan="5" style="text-align:center;padding:20px;color:#999">No groups created yet.</td></tr>
+                    <?php else: foreach ($groups as $slug => $data): 
+                        $count = count(get_users(['meta_key' => 'b2b_group_slug', 'meta_value' => $slug]));
+                    ?>
+                        <tr>
+                            <td><strong><?= esc_html($data['name']) ?></strong></td>
+                            <td><span style="background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;">%<?= $data['discount'] ?></span></td>
+                            <td><?= wc_price($data['min_order']) ?></td>
+                            <td><?= $count ?></td>
+                            <td style="text-align:right;">
+                                <a href="?b2b_adm_page=b2b_groups&del=<?= urlencode($slug) ?>" onclick="return confirm('Are you sure you want to delete this group?')">
+                                    <button class="secondary" style="padding:6px 12px;background:#fef2f2;color:#ef4444;border-color:#fca5a5;">Delete</button>
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+// ==========================================================================
+// C. B2B SETTINGS PAGE (Payment Matrix)
+// ==========================================================================
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'b2b_settings') return;
+    b2b_adm_guard();
+    b2b_adm_header('B2B Settings');
+    
+    // Save Settings
+    if (isset($_POST['save_settings'])) {
+        update_option('b2b_hide_prices_guest', isset($_POST['hide_prices_guest']) ? 1 : 0);
+        
+        // Save payment permissions matrix
+        if (isset($_POST['group_payments'])) {
+            $group_rules = array();
+            foreach ($_POST['group_payments'] as $group_slug => $payments) {
+                $group_rules[$group_slug] = array_map('sanitize_text_field', $payments);
+            }
+            update_option('b2b_group_payment_rules', $group_rules);
+        } else {
+            update_option('b2b_group_payment_rules', array());
+        }
+        
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">Settings saved successfully!</div>';
+    }
+    
+    $hide_prices = b2b_is_price_hidden_for_guests();
+    $groups = b2b_get_groups();
+    $group_payment_rules = b2b_get_group_payment_rules();
+    
+    // Get all payment gateways
+    $gateways = WC()->payment_gateways->payment_gateways();
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">B2B Settings</h1>
+        <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>"><button class="secondary">Form Editor</button></a>
+    </div>
+    
+    <form method="post">
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Price Visibility</h3>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                <input type="checkbox" name="hide_prices_guest" value="1" <?= checked($hide_prices, 1, false) ?> style="width:18px;height:18px;">
+                <span>Hide prices for guest users (non-logged-in visitors)</span>
+            </label>
+        </div>
+        
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Payment Permissions Matrix (Group-Based)</h3>
+            <p style="color:#6b7280;font-size:13px;margin-bottom:20px;">Control which payment methods are available for each B2B group. If no permissions are set, all methods are available.</p>
+            
+            <?php if (empty($groups)): ?>
+                <div style="background:#fef2f2;padding:20px;text-align:center;border-radius:8px;border:1px solid #fca5a5;color:#991b1b;">
+                    <i class="fa-solid fa-exclamation-triangle" style="font-size:24px;margin-bottom:10px;"></i>
+                    <p style="margin:0;">No B2B groups created yet. Please <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" style="color:#dc2626;text-decoration:underline;">create groups</a> first.</p>
+                </div>
+            <?php else: ?>
+                <div style="overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr style="background:#f8fafc;">
+                                <th style="width:200px;">Group</th>
+                                <?php foreach ($gateways as $gateway_id => $gateway): ?>
+                                    <th style="text-align:center;"><?= esc_html($gateway->get_title()) ?></th>
+                                <?php endforeach; ?>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($groups as $slug => $group_data): ?>
+                                <tr>
+                                    <td><strong><?= esc_html($group_data['name']) ?></strong></td>
+                                    <?php foreach ($gateways as $gateway_id => $gateway): 
+                                        $is_allowed = isset($group_payment_rules[$slug]) && in_array($gateway_id, $group_payment_rules[$slug]);
+                                    ?>
+                                        <td style="text-align:center;">
+                                            <input type="checkbox" name="group_payments[<?= esc_attr($slug) ?>][]" value="<?= esc_attr($gateway_id) ?>" <?= checked($is_allowed, true, false) ?> style="width:18px;height:18px;">
+                                        </td>
+                                    <?php endforeach; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <p style="color:#6b7280;font-size:12px;margin-top:15px;font-style:italic;">
+                    <i class="fa-solid fa-info-circle"></i> Note: User-specific permissions (set in customer profile) override group permissions.
+                </p>
+            <?php endif; ?>
+        </div>
+        
+        <div style="text-align:right;">
+            <button type="submit" name="save_settings" style="padding:12px 30px;font-size:15px;">Save All Settings</button>
+        </div>
+    </form>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+// ==========================================================================
+// D. B2B FORM EDITOR PAGE
+// ==========================================================================
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'b2b_form_editor') return;
+    b2b_adm_guard();
+    b2b_adm_header('B2B Form Editor');
+    
+    // Save Custom Fields
+    if (isset($_POST['save_fields'])) {
+        $fields = array();
+        if (isset($_POST['fields'])) {
+            foreach ($_POST['fields'] as $key => $field_data) {
+                $fields[$key] = [
+                    'label' => sanitize_text_field($field_data['label']),
+                    'type' => sanitize_text_field($field_data['type']),
+                    'required' => isset($field_data['required']) ? 1 : 0
+                ];
+            }
+        }
+        update_option('b2b_custom_fields_def', $fields);
+        
+        // Save standard field settings
+        if (isset($_POST['standard_fields'])) {
+            $std_fields = array();
+            foreach ($_POST['standard_fields'] as $field_key => $field_config) {
+                $std_fields[$field_key] = [
+                    'enabled' => isset($field_config['enabled']) ? 1 : 0,
+                    'required' => isset($field_config['required']) ? 1 : 0
+                ];
+            }
+            update_option('b2b_standard_fields_config', $std_fields);
+        }
+        
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">Form settings saved successfully!</div>';
+    }
+    
+    $custom_fields = b2b_get_custom_fields();
+    $standard_fields_config = b2b_get_standard_fields_config();
+    
+    // Standard WooCommerce fields
+    $standard_fields = [
+        'billing_company' => 'Company Name',
+        'billing_phone' => 'Phone',
+        'billing_city' => 'City',
+        'billing_postcode' => 'Postcode',
+        'billing_address_1' => 'Address',
+        'billing_state' => 'State/Province',
+        'billing_country' => 'Country'
+    ];
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">B2B Form Editor</h1>
+        <a href="<?= home_url('/b2b-panel/b2b-module') ?>"><button class="secondary">Back to Approvals</button></a>
+    </div>
+    
+    <form method="post">
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Standard Fields (WooCommerce)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Field</th>
+                        <th style="text-align:center;width:100px;">Enabled</th>
+                        <th style="text-align:center;width:100px;">Required</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($standard_fields as $field_key => $field_label): 
+                        $is_enabled = isset($standard_fields_config[$field_key]['enabled']) ? $standard_fields_config[$field_key]['enabled'] : 1;
+                        $is_required = isset($standard_fields_config[$field_key]['required']) ? $standard_fields_config[$field_key]['required'] : 0;
+                    ?>
+                        <tr>
+                            <td><?= esc_html($field_label) ?></td>
+                            <td style="text-align:center;">
+                                <input type="checkbox" name="standard_fields[<?= esc_attr($field_key) ?>][enabled]" value="1" <?= checked($is_enabled, 1, false) ?> style="width:18px;height:18px;">
+                            </td>
+                            <td style="text-align:center;">
+                                <input type="checkbox" name="standard_fields[<?= esc_attr($field_key) ?>][required]" value="1" <?= checked($is_required, 1, false) ?> style="width:18px;height:18px;">
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Custom Fields</h3>
+            <div id="custom-fields-container">
+                <?php if (!empty($custom_fields)): foreach ($custom_fields as $key => $field): ?>
+                    <div class="custom-field-row" style="margin-bottom:15px;padding:15px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:8px;display:grid;grid-template-columns:1fr 150px 100px;gap:10px;align-items:center;">
+                        <input type="text" name="fields[<?= esc_attr($key) ?>][label]" value="<?= esc_attr($field['label']) ?>" placeholder="Field Label" style="margin:0;">
+                        <select name="fields[<?= esc_attr($key) ?>][type]" style="margin:0;">
+                            <option value="text" <?= selected($field['type'], 'text', false) ?>>Text</option>
+                            <option value="textarea" <?= selected($field['type'], 'textarea', false) ?>>Textarea</option>
+                            <option value="select" <?= selected($field['type'], 'select', false) ?>>Select</option>
+                        </select>
+                        <label style="display:flex;align-items:center;gap:5px;margin:0;">
+                            <input type="checkbox" name="fields[<?= esc_attr($key) ?>][required]" value="1" <?= checked($field['required'], 1, false) ?> style="width:18px;height:18px;margin:0;"> 
+                            Required
+                        </label>
+                    </div>
+                <?php endforeach; endif; ?>
+            </div>
+            <button type="button" id="add-custom-field" class="secondary" style="margin-top:10px;"><i class="fa-solid fa-plus"></i> Add Custom Field</button>
+        </div>
+        
+        <div style="text-align:right;">
+            <button type="submit" name="save_fields" style="padding:12px 30px;font-size:15px;">Save Form Settings</button>
+        </div>
+    </form>
+    
+    <script>
+    jQuery(document).ready(function($) {
+        $('#add-custom-field').click(function() {
+            var key = 'field_' + Date.now();
+            var html = '<div class="custom-field-row" style="margin-bottom:15px;padding:15px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:8px;display:grid;grid-template-columns:1fr 150px 100px;gap:10px;align-items:center;">' +
+                '<input type="text" name="fields[' + key + '][label]" placeholder="Field Label" style="margin:0;">' +
+                '<select name="fields[' + key + '][type]" style="margin:0;">' +
+                '<option value="text">Text</option>' +
+                '<option value="textarea">Textarea</option>' +
+                '<option value="select">Select</option>' +
+                '</select>' +
+                '<label style="display:flex;align-items:center;gap:5px;margin:0;">' +
+                '<input type="checkbox" name="fields[' + key + '][required]" value="1" style="width:18px;height:18px;margin:0;"> Required' +
+                '</label>' +
+                '</div>';
+            $('#custom-fields-container').append(html);
+        });
+    });
+    </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   13. B2B PRO ADMIN PAGES (WordPress Admin Panel - Legacy)
 ===================================================== */
 
 // ==========================================================================

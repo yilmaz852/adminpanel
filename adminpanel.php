@@ -187,61 +187,99 @@ add_filter('woocommerce_available_payment_gateways', function($gateways) {
 ===================================================== */
 
 /**
- * Get discounted price based on user's B2B group
+ * ==========================================================================
+ * AUTOMATIC B2B GROUP DISCOUNT SYSTEM
+ * Applies group-based discounts to WooCommerce products
+ * ==========================================================================
  */
-function b2b_get_discounted_price($price, $product_id = 0) {
+ * Apply discount to product prices (ONLY sale price, not regular price)
+ * This allows WooCommerce to show: ~~Regular Price~~ Sale Price
+ */
+add_filter('woocommerce_product_get_sale_price', function($price, $product) {
     $user_id = get_current_user_id();
-    if (!$user_id) return $price; // Guest users - no discount
+    if (!$user_id) return $price;
     
     $group_slug = get_user_meta($user_id, 'b2b_group_slug', true);
-    if (!$group_slug) return $price; // No group assigned
+    if (!$group_slug) return $price;
     
     $groups = b2b_get_groups();
-    if (!isset($groups[$group_slug])) return $price; // Group doesn't exist
+    if (!isset($groups[$group_slug])) return $price;
     
     $discount = floatval($groups[$group_slug]['discount']);
-    if ($discount <= 0) return $price; // No discount set
+    if ($discount <= 0) return $price;
     
-    // Calculate discounted price
-    $discounted = $price * (1 - ($discount / 100));
-    return max(0, $discounted); // Never go below 0
-}
-
-/**
- * Apply discount to simple product prices
- */
-add_filter('woocommerce_product_get_price', function($price, $product) {
-    return b2b_get_discounted_price($price, $product->get_id());
+    // Get the regular price for calculation
+    $regular_price = $product->get_regular_price();
+    if (!$regular_price) return $price;
+    
+    // Return discounted price as sale price
+    return $regular_price * (1 - ($discount / 100));
 }, 99, 2);
 
-add_filter('woocommerce_product_get_regular_price', function($price, $product) {
-    return b2b_get_discounted_price($price, $product->get_id());
+add_filter('woocommerce_product_get_price', function($price, $product) {
+    // Check if we have a B2B discount (sale price)
+    $sale_price = $product->get_sale_price();
+    if ($sale_price && $sale_price > 0) {
+        return $sale_price;
+    }
+    return $price;
 }, 99, 2);
 
 /**
  * Apply discount to variable product prices
  */
-add_filter('woocommerce_product_variation_get_price', function($price, $variation) {
-    return b2b_get_discounted_price($price, $variation->get_id());
+add_filter('woocommerce_product_variation_get_sale_price', function($price, $variation) {
+    $user_id = get_current_user_id();
+    if (!$user_id) return $price;
+    
+    $group_slug = get_user_meta($user_id, 'b2b_group_slug', true);
+    if (!$group_slug) return $price;
+    
+    $groups = b2b_get_groups();
+    if (!isset($groups[$group_slug])) return $price;
+    
+    $discount = floatval($groups[$group_slug]['discount']);
+    if ($discount <= 0) return $price;
+    
+    $regular_price = $variation->get_regular_price();
+    if (!$regular_price) return $price;
+    
+    return $regular_price * (1 - ($discount / 100));
 }, 99, 2);
 
-add_filter('woocommerce_product_variation_get_regular_price', function($price, $variation) {
-    return b2b_get_discounted_price($price, $variation->get_id());
+add_filter('woocommerce_product_variation_get_price', function($price, $variation) {
+    $sale_price = $variation->get_sale_price();
+    if ($sale_price && $sale_price > 0) {
+        return $sale_price;
+    }
+    return $price;
 }, 99, 2);
 
 /**
- * Apply discount in cart display
+ * Mark products as "on sale" when B2B discount applies
  */
-add_filter('woocommerce_cart_item_price', function($price_html, $cart_item, $cart_item_key) {
-    $product = $cart_item['data'];
-    $original_price = $product->get_regular_price();
-    $discounted_price = b2b_get_discounted_price($original_price, $product->get_id());
+add_filter('woocommerce_product_is_on_sale', function($on_sale, $product) {
+    $user_id = get_current_user_id();
+    if (!$user_id) return $on_sale;
     
-    if ($discounted_price < $original_price) {
-        return wc_price($discounted_price);
+    $group_slug = get_user_meta($user_id, 'b2b_group_slug', true);
+    if (!$group_slug) return $on_sale;
+    
+    $groups = b2b_get_groups();
+    if (!isset($groups[$group_slug])) return $on_sale;
+    
+    $discount = floatval($groups[$group_slug]['discount']);
+    if ($discount > 0) {
+        return true; // Mark as on sale to show strikethrough
     }
-    return $price_html;
-}, 99, 3);
+    
+    return $on_sale;
+}, 99, 2);
+
+/**
+ * Cart displays will automatically use the sale price from above hooks
+ * No need for custom cart price display - WooCommerce handles it
+ */
 
 /**
  * Hide prices for guests (if enabled)
@@ -250,6 +288,29 @@ add_filter('woocommerce_get_price_html', function($price_html, $product) {
     if (b2b_is_price_hidden_for_guests() && !is_user_logged_in()) {
         return '<a href="'.wp_login_url(get_permalink()).'" style="color:#3b82f6;font-weight:600;">Login to see price</a>';
     }
+    
+    // Add custom styling for B2B discounted prices
+    $user_id = get_current_user_id();
+    if ($user_id && $product->is_on_sale()) {
+        $group_slug = get_user_meta($user_id, 'b2b_group_slug', true);
+        if ($group_slug) {
+            $groups = b2b_get_groups();
+            if (isset($groups[$group_slug]) && floatval($groups[$group_slug]['discount']) > 0) {
+                // Style the sale price in red
+                $price_html = str_replace(
+                    '<ins>',
+                    '<ins><span style="color:#dc2626;font-weight:700;">',
+                    $price_html
+                );
+                $price_html = str_replace(
+                    '</ins>',
+                    '</span></ins>',
+                    $price_html
+                );
+            }
+        }
+    }
+    
     return $price_html;
 }, 10, 2);
 

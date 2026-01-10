@@ -33,13 +33,14 @@ add_action('init', function () {
     // B2B Module (V10 - New)
     add_rewrite_rule('^b2b-panel/b2b-module/?$', 'index.php?b2b_adm_page=b2b_approvals', 'top');
     add_rewrite_rule('^b2b-panel/b2b-module/groups/?$', 'index.php?b2b_adm_page=b2b_groups', 'top');
+    add_rewrite_rule('^b2b-panel/b2b-module/roles/?$', 'index.php?b2b_adm_page=b2b_roles', 'top');
     add_rewrite_rule('^b2b-panel/b2b-module/settings/?$', 'index.php?b2b_adm_page=b2b_settings', 'top');
     add_rewrite_rule('^b2b-panel/b2b-module/form-editor/?$', 'index.php?b2b_adm_page=b2b_form_editor', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v10_fix')) {
+    if (!get_option('b2b_rewrite_v11_fix')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v10_fix', true);
+        update_option('b2b_rewrite_v11_fix', true);
     }
 });
 
@@ -352,6 +353,54 @@ function b2b_adm_header($title) {
         /* Modal */
         .modal{display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;backdrop-filter:blur(2px)}
         .modal-content{background:var(--white);width:95%;max-width:750px;border-radius:12px;overflow:hidden;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)}
+        
+        /* B2B Module Submenu */
+        .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;border-radius:8px;margin-bottom:5px;transition:0.2s;cursor:pointer;user-select:none;}
+        .submenu-toggle:hover{background:rgba(255,255,255,0.1);color:var(--white);}
+        .submenu-toggle.active{background:rgba(255,255,255,0.1);color:var(--white);}
+        .submenu-toggle i.fa-chevron-down{transition:transform 0.3s;font-size:10px;margin-left:auto;}
+        .submenu-toggle.active i.fa-chevron-down{transform:rotate(180deg);}
+        .submenu{max-height:0;overflow:hidden;transition:max-height 0.4s ease;padding-left:15px;}
+        .submenu.active{max-height:500px;}
+        .submenu a{padding:10px 15px;font-size:13px;margin-bottom:3px;}
+        
+        /* Customer Detail Sections */
+        .customer-section{background:var(--white);border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid var(--border);}
+        .customer-section h3{margin:0 0 15px 0;padding-bottom:10px;border-bottom:2px solid var(--border);color:var(--primary);font-size:16px;}
+        .form-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;}
+        
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .sidebar{width:240px;}
+            .main{margin-left:240px;padding:30px;}
+            .dash-grid{grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));}
+        }
+        @media (max-width: 992px) {
+            .sidebar{width:220px;}
+            .main{margin-left:220px;padding:25px;}
+            .page-title{font-size:20px;}
+            .form-grid{grid-template-columns:1fr;}
+        }
+        @media (max-width: 768px) {
+            body{flex-direction:column;}
+            .sidebar{width:100%;height:auto;position:relative;}
+            .sidebar-nav{padding:10px;display:flex;flex-wrap:wrap;gap:5px;}
+            .sidebar-nav a, .submenu-toggle{flex:1 1 auto;min-width:120px;}
+            .submenu{padding-left:0;}
+            .main{margin-left:0;padding:20px;width:100%;}
+            .page-header{flex-direction:column;align-items:flex-start;gap:15px;}
+            .dash-grid{grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));}
+            table{font-size:11px;}
+            th,td{padding:8px 6px;}
+            .stats-box{flex-wrap:wrap;}
+        }
+        @media (max-width: 480px) {
+            .main{padding:15px;}
+            .card, .customer-section{padding:15px;}
+            .stats-box{flex-direction:column;gap:10px;}
+            button{padding:8px 15px;font-size:13px;}
+            .dash-grid{grid-template-columns:1fr;}
+        }
     </style>
     </head>
     <body>
@@ -362,8 +411,19 @@ function b2b_adm_header($title) {
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
             <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-tags"></i> Products</a>
-<a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
-            <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor'])?'active':'' ?>"><i class="fa-solid fa-layer-group"></i> B2B Module</a>
+            <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
+            
+            <!-- B2B Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-layer-group"></i> B2B Module <i class="fa-solid fa-chevron-down"></i>
+            </div>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_approvals'?'active':'' ?>"><i class="fa-solid fa-user-check"></i> Approvals</a>
+                <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_groups'?'active':'' ?>"><i class="fa-solid fa-users-gear"></i> Groups</a>
+                <a href="<?= home_url('/b2b-panel/b2b-module/roles') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_roles'?'active':'' ?>"><i class="fa-solid fa-user-tag"></i> Roles</a>
+                <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_settings'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> Settings</a>
+                <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_form_editor'?'active':'' ?>"><i class="fa-solid fa-pen-to-square"></i> Form Editor</a>
+            </div>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -371,6 +431,12 @@ function b2b_adm_header($title) {
     </div>
 
     <div class="main">
+    <script>
+    function toggleSubmenu(el) {
+        el.classList.toggle('active');
+        el.nextElementSibling.classList.toggle('active');
+    }
+    </script>
     <?php
 }
 function b2b_adm_footer() { echo '</div></body></html>'; }
@@ -816,56 +882,125 @@ add_action('template_redirect', function () {
     <?php b2b_adm_footer(); exit;
 });
 /* =====================================================
-   9. PAGE: PRODUCTS (FIXED SEARCH & MENU)
+   9. PAGE: PRODUCTS (ENHANCED WITH FILTERS & COLUMNS)
 ===================================================== */
 add_action('template_redirect', function () {
     if (get_query_var('b2b_adm_page') !== 'products') return;
     b2b_adm_guard();
     
-    // Search Logic
+    // Enhanced Search & Filter Logic
     $s = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
+    $cat = isset($_GET['category']) ? intval($_GET['category']) : 0;
+    $stock_status = isset($_GET['stock_status']) ? sanitize_text_field($_GET['stock_status']) : '';
+    
     $args = ['limit' => 20, 'paginate' => true];
     if ($s) $args['s'] = $s;
+    if ($cat) $args['category'] = [$cat];
+    if ($stock_status) $args['stock_status'] = $stock_status;
     
     $products = wc_get_products($args);
+    $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => true]);
+    
     b2b_adm_header('Product Management');
     ?>
     <div class="page-header"><h1 class="page-title">Products</h1></div>
     <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-            <div class="col-toggler">
-                <button type="button" class="secondary" onclick="document.querySelector('#pColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
-                <div id="pColDrop" class="col-dropdown">
-                    <label><input type="checkbox" checked data-col="0"> Image</label>
-                    <label><input type="checkbox" checked data-col="1"> Name / SKU</label>
-                    <label><input type="checkbox" checked data-col="2"> Price</label>
-                    <label><input type="checkbox" checked data-col="3"> Stock</label>
-                    <label><input type="checkbox" checked data-col="4"> Action</label>
+        <!-- Enhanced Filter Bar -->
+        <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <!-- Category Filter -->
+                <select onchange="location.href='?b2b_adm_page=products&category='+this.value+'&s=<?= esc_js($s) ?>&stock_status=<?= esc_js($stock_status) ?>'" style="margin:0;max-width:200px;">
+                    <option value="0">All Categories</option>
+                    <?php foreach($categories as $c): ?>
+                        <option value="<?= $c->term_id ?>" <?= selected($cat, $c->term_id) ?>><?= esc_html($c->name) ?> (<?= $c->count ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+                
+                <!-- Stock Status Filter -->
+                <select onchange="location.href='?b2b_adm_page=products&stock_status='+this.value+'&category=<?= $cat ?>&s=<?= esc_js($s) ?>'" style="margin:0;max-width:180px;">
+                    <option value="">All Stock Status</option>
+                    <option value="instock" <?= selected($stock_status, 'instock') ?>>In Stock</option>
+                    <option value="outofstock" <?= selected($stock_status, 'outofstock') ?>>Out of Stock</option>
+                    <option value="onbackorder" <?= selected($stock_status, 'onbackorder') ?>>On Backorder</option>
+                </select>
+                
+                <!-- Column Toggler -->
+                <div class="col-toggler">
+                    <button type="button" class="secondary" onclick="document.querySelector('#pColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
+                    <div id="pColDrop" class="col-dropdown">
+                        <label><input type="checkbox" checked data-col="0"> Image</label>
+                        <label><input type="checkbox" checked data-col="1"> Name</label>
+                        <label><input type="checkbox" checked data-col="2"> SKU</label>
+                        <label><input type="checkbox" checked data-col="3"> Category</label>
+                        <label><input type="checkbox" checked data-col="4"> Price</label>
+                        <label><input type="checkbox" checked data-col="5"> Stock</label>
+                        <label><input type="checkbox" checked data-col="6"> Status</label>
+                        <label><input type="checkbox" checked data-col="7"> Action</label>
+                    </div>
                 </div>
             </div>
             
-            <!-- FIXED SEARCH FORM -->
+            <!-- Search Form -->
             <form style="display:flex;gap:10px" method="get" action="<?= home_url('/') ?>">
-                <!-- Bu satır formun doğru rewrite kuralına gitmesini sağlar -->
-                <input type="hidden" name="b2b_adm_page" value="products"> 
-                <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search product..." style="margin:0;max-width:300px">
+                <input type="hidden" name="b2b_adm_page" value="products">
+                <?php if($cat): ?><input type="hidden" name="category" value="<?= $cat ?>"><?php endif; ?>
+                <?php if($stock_status): ?><input type="hidden" name="stock_status" value="<?= $stock_status ?>"><?php endif; ?>
+                <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search by name or SKU..." style="margin:0;min-width:250px;">
                 <button>Search</button>
-                <?php if($s): ?><a href="<?= home_url('/b2b-panel/products') ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
+                <?php if($s || $cat || $stock_status): ?><a href="<?= home_url('/b2b-panel/products') ?>" style="padding:10px;color:#ef4444;text-decoration:none;font-weight:600;">Reset All</a><?php endif; ?>
             </form>
         </div>
         
+        <!-- Enhanced Product Table -->
         <table id="prodTable">
-            <thead><tr><th data-col="0">Image</th><th data-col="1">Name / SKU</th><th data-col="2">Price</th><th data-col="3">Stock</th><th data-col="4">Action</th></tr></thead>
+            <thead>
+                <tr>
+                    <th data-col="0">Image</th>
+                    <th data-col="1">Name</th>
+                    <th data-col="2">SKU</th>
+                    <th data-col="3">Category</th>
+                    <th data-col="4">Price</th>
+                    <th data-col="5">Stock</th>
+                    <th data-col="6">Status</th>
+                    <th data-col="7" style="text-align:right">Action</th>
+                </tr>
+            </thead>
             <tbody>
             <?php if(empty($products->products)): ?>
-                <tr><td colspan="5" style="text-align:center;padding:20px;color:#999">No products found.</td></tr>
-            <?php else: foreach ($products->products as $p): $img=wp_get_attachment_image_src($p->get_image_id(),'thumbnail'); ?>
+                <tr><td colspan="8" style="text-align:center;padding:30px;color:#999">No products found.</td></tr>
+            <?php else: foreach ($products->products as $p): 
+                $img = wp_get_attachment_image_src($p->get_image_id(),'thumbnail');
+                $cats = wp_get_post_terms($p->get_id(), 'product_cat', ['fields' => 'names']);
+            ?>
             <tr>
-                <td data-col="0"><img src="<?=$img?$img[0]:'https://via.placeholder.com/40'?>" style="width:40px;border-radius:4px"></td>
-                <td data-col="1"><strong><?=$p->get_name()?></strong><br><small style="color:#9ca3af"><?=$p->get_sku()?></small></td>
-                <td data-col="2"><?=$p->get_price_html()?></td>
-                <td data-col="3"><?=$p->managing_stock()?$p->get_stock_quantity():($p->is_in_stock()?'In Stock':'Out')?></td>
-                <td data-col="4"><a href="<?=home_url('/b2b-panel/products/edit?id='.$p->get_id())?>"><button class="secondary" style="padding:6px 12px">Edit</button></a></td>
+                <td data-col="0"><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
+                <td data-col="1"><strong><?= esc_html($p->get_name()) ?></strong></td>
+                <td data-col="2"><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
+                <td data-col="3"><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
+                <td data-col="4"><strong><?= $p->get_price_html() ?></strong></td>
+                <td data-col="5">
+                    <?php if($p->managing_stock()): 
+                        $qty = $p->get_stock_quantity();
+                        $color = $qty > 10 ? '#10b981' : ($qty > 0 ? '#f59e0b' : '#ef4444');
+                    ?>
+                        <span style="color:<?= $color ?>;font-weight:600;"><?= $qty ?></span>
+                    <?php else: ?>
+                        <?= $p->is_in_stock() ? '<span style="color:#10b981;">In Stock</span>' : '<span style="color:#ef4444;">Out</span>' ?>
+                    <?php endif; ?>
+                </td>
+                <td data-col="6">
+                    <?php 
+                    $status = $p->get_status();
+                    $status_color = $status == 'publish' ? '#d1fae5' : '#fee2e2';
+                    $status_text_color = $status == 'publish' ? '#065f46' : '#991b1b';
+                    ?>
+                    <span style="background:<?= $status_color ?>;color:<?= $status_text_color ?>;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;"><?= $status ?></span>
+                </td>
+                <td data-col="7" style="text-align:right;">
+                    <a href="<?= home_url('/b2b-panel/products/edit?id=' . $p->get_id()) ?>">
+                        <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
+                    </a>
+                </td>
             </tr>
             <?php endforeach; endif; ?>
             </tbody>
@@ -876,9 +1011,16 @@ add_action('template_redirect', function () {
         <div style="margin-top:20px;text-align:center;display:flex;justify-content:center;gap:5px">
             <?php 
             $current = max(1, get_query_var('paged'));
+            $base_url = home_url('/b2b-panel/products');
+            $params = [];
+            if($s) $params[] = 's=' . urlencode($s);
+            if($cat) $params[] = 'category=' . $cat;
+            if($stock_status) $params[] = 'stock_status=' . $stock_status;
+            $param_str = !empty($params) ? '&' . implode('&', $params) : '';
+            
             echo paginate_links([
-                'base' => home_url('/b2b-panel/products%_%'),
-                'format' => '&paged=%#%',
+                'base' => $base_url . '%_%',
+                'format' => '&paged=%#%' . $param_str,
                 'current' => $current,
                 'total' => $products->max_num_pages,
                 'prev_text' => '&laquo;',
@@ -890,8 +1032,15 @@ add_action('template_redirect', function () {
         <?php endif; ?>
     </div>
     <script>
-    function toggleColP(idx, show) { var rows = document.getElementById('prodTable').rows; for(var i=0;i<rows.length;i++) { if(rows[i].cells.length>idx) rows[i].cells[idx].style.display=show?'':'none'; } }
-    document.querySelectorAll('#pColDrop input').forEach(function(cb, i){ cb.addEventListener('change', function(){ toggleColP(i, this.checked); }); });
+    function toggleColP(idx, show) { 
+        var rows = document.getElementById('prodTable').rows; 
+        for(var i=0; i<rows.length; i++) { 
+            if(rows[i].cells.length > idx) rows[i].cells[idx].style.display = show ? '' : 'none'; 
+        } 
+    }
+    document.querySelectorAll('#pColDrop input').forEach(function(cb, i){ 
+        cb.addEventListener('change', function(){ toggleColP(i, this.checked); }); 
+    });
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -1194,20 +1343,17 @@ add_action('template_redirect', function () {
                     $city = get_user_meta($u->ID, 'billing_city', true);
                     $country = get_user_meta($u->ID, 'billing_country', true);
                     
-                    // --- B2BKING FIX ---
-                    // Meta key: 'b2bking_customergroup' (Not: b2bking_customer_group)
-                    $group_id = get_user_meta($u->ID, 'b2bking_customergroup', true); 
+                    // --- B2B MODULE (Custom System) ---
+                    $group_slug = get_user_meta($u->ID, 'b2b_group_slug', true); 
                     $group_name = '-';
                     $is_b2b = false;
-
-                    if ($group_id && $group_id !== 'b2cuser') {
-                        $group_post = get_post($group_id);
-                        if ($group_post) {
-                            $group_name = $group_post->post_title;
+                    
+                    if ($group_slug) {
+                        $all_groups = b2b_get_groups();
+                        if (isset($all_groups[$group_slug])) {
+                            $group_name = $all_groups[$group_slug]['name'];
                             $is_b2b = true;
                         }
-                    } elseif ($group_id === 'b2cuser') {
-                        $group_name = 'B2C User';
                     }
                     // -------------------
 
@@ -1308,14 +1454,15 @@ add_action('template_redirect', function () {
             // Agent
             if(isset($_POST['assigned_agent'])) update_user_meta($id, 'bagli_agent_id', intval($_POST['assigned_agent']));
 
-            // B2BKing Group Save
+            // B2B Group Save (Custom B2B Module)
             if(isset($_POST['b2b_group'])) {
                 $grp = sanitize_text_field($_POST['b2b_group']);
-                update_user_meta($id, 'b2bking_customergroup', $grp); // FIXED KEY
-                
-                // Set b2buser status
-                $is_b2b_val = ($grp !== 'b2cuser' && $grp !== '') ? 'yes' : 'no';
-                update_user_meta($id, 'b2bking_b2buser', $is_b2b_val);
+                update_user_meta($id, 'b2b_group_slug', $grp);
+            }
+            
+            // B2B Role Save
+            if(isset($_POST['b2b_role'])) {
+                update_user_meta($id, 'b2b_role', sanitize_text_field($_POST['b2b_role']));
             }
 
             // Password
@@ -1329,9 +1476,11 @@ add_action('template_redirect', function () {
         $agent_val = get_user_meta($id, 'bagli_agent_id', true);
         $agents = get_users(['role__in' => ['sales_agent', 'administrator'], 'fields' => ['ID', 'display_name']]);
         
-        // B2BKing Data (FIXED KEYS)
-        $current_group = get_user_meta($id, 'b2bking_customergroup', true);
-        $b2b_groups = get_posts(['post_type' => 'b2bking_group', 'numberposts' => -1, 'post_status' => 'publish']);
+        // B2B Module Data (Custom System)
+        $current_group = get_user_meta($id, 'b2b_group_slug', true);
+        $current_role = get_user_meta($id, 'b2b_role', true);
+        $b2b_groups = b2b_get_groups();
+        $b2b_roles = get_option('b2b_roles', ['customer' => 'Customer', 'wholesaler' => 'Wholesaler', 'retailer' => 'Retailer']);
 
         b2b_adm_header('Edit Customer');
         ?>
@@ -1340,36 +1489,34 @@ add_action('template_redirect', function () {
         <form method="post" class="grid-main" style="grid-template-columns:3fr 1fr;gap:25px">
             <!-- LEFT -->
             <div style="display:flex;flex-direction:column;gap:20px">
-                <div class="card">
-                    <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;color:#111827"><i class="fa-solid fa-user"></i> Personal Information</h3>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                        <div><label>First Name</label><input type="text" name="first_name" value="<?= esc_attr($u->first_name) ?>"></div>
-                        <div><label>Last Name</label><input type="text" name="last_name" value="<?= esc_attr($u->last_name) ?>"></div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                        <div><label>Email Address</label><input type="email" name="email" value="<?= esc_attr($u->user_email) ?>"></div>
+                <div class="customer-section">
+                    <h3><i class="fa-solid fa-user"></i> Personal Information</h3>
+                    <div class="form-grid">
+                        <div><label>First Name</label><input type="text" name="first_name" value="<?= esc_attr($u->first_name) ?>" required></div>
+                        <div><label>Last Name</label><input type="text" name="last_name" value="<?= esc_attr($u->last_name) ?>" required></div>
+                        <div><label>Email Address</label><input type="email" name="email" value="<?= esc_attr($u->user_email) ?>" required></div>
                         <div><label>Phone Number</label><input type="text" name="phone" value="<?= esc_attr(get_user_meta($id, 'billing_phone', true)) ?>"></div>
                     </div>
                 </div>
 
-                <div class="card">
-                    <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;color:#111827"><i class="fa-solid fa-map-pin"></i> Billing Address</h3>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                <div class="customer-section">
+                    <h3><i class="fa-solid fa-map-pin"></i> Billing Address</h3>
+                    <div class="form-grid">
                         <div><label>Company</label><input type="text" name="company" value="<?= esc_attr(get_user_meta($id, 'billing_company', true)) ?>"></div>
+                        <div><label>City</label><input type="text" name="city" value="<?= esc_attr(get_user_meta($id, 'billing_city', true)) ?>"></div>
                         <div><label>Postcode</label><input type="text" name="postcode" value="<?= esc_attr(get_user_meta($id, 'billing_postcode', true)) ?>"></div>
                     </div>
                     <label>Address</label><input type="text" name="address_1" value="<?= esc_attr(get_user_meta($id, 'billing_address_1', true)) ?>">
-                    <label>City</label><input type="text" name="city" value="<?= esc_attr(get_user_meta($id, 'billing_city', true)) ?>">
                 </div>
 
-                <div class="card">
-                    <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;color:#111827"><i class="fa-solid fa-truck"></i> Shipping Address</h3>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                <div class="customer-section">
+                    <h3><i class="fa-solid fa-truck"></i> Shipping Address</h3>
+                    <div class="form-grid">
                         <div><label>Company</label><input type="text" name="s_company" value="<?= esc_attr(get_user_meta($id, 'shipping_company', true)) ?>"></div>
+                        <div><label>City</label><input type="text" name="s_city" value="<?= esc_attr(get_user_meta($id, 'shipping_city', true)) ?>"></div>
                         <div><label>Postcode</label><input type="text" name="s_postcode" value="<?= esc_attr(get_user_meta($id, 'shipping_postcode', true)) ?>"></div>
                     </div>
                     <label>Address</label><input type="text" name="s_address_1" value="<?= esc_attr(get_user_meta($id, 'shipping_address_1', true)) ?>">
-                    <label>City</label><input type="text" name="s_city" value="<?= esc_attr(get_user_meta($id, 'shipping_city', true)) ?>">
                 </div>
             </div>
 
@@ -1380,21 +1527,34 @@ add_action('template_redirect', function () {
                     <button style="width:100%;padding:12px">Save Customer</button>
                 </div>
 
-                <!-- B2BKing Group Card (Fixed) -->
-                <div class="card">
-                    <h3 style="margin-top:0;color:#111827">B2B Group</h3>
-                    <label>Customer Group</label>
-                    <select name="b2b_group">
-                        <option value="b2cuser" <?= selected($current_group, 'b2cuser') ?>>B2C User (Default)</option>
-                        <?php foreach($b2b_groups as $bg): ?>
-                            <option value="<?= $bg->ID ?>" <?= selected($current_group, $bg->ID) ?>><?= esc_html($bg->post_title) ?></option>
+                <!-- B2B Role Card -->
+                <div class="card" style="background:#f0f9ff;border-color:#3b82f6;">
+                    <h3 style="margin-top:0;color:#1e40af"><i class="fa-solid fa-user-tag"></i> B2B Role</h3>
+                    <label>Customer Role</label>
+                    <select name="b2b_role">
+                        <option value="">-- No Role --</option>
+                        <?php foreach($b2b_roles as $role_slug => $role_name): ?>
+                            <option value="<?= esc_attr($role_slug) ?>" <?= selected($current_role, $role_slug) ?>><?= esc_html($role_name) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <p style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Select the B2BKing group to apply pricing rules.</p>
+                    <p style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Assign B2B role from our custom B2B Module.</p>
+                </div>
+
+                <!-- B2B Group Card -->
+                <div class="card">
+                    <h3 style="margin-top:0;color:#111827"><i class="fa-solid fa-users-gear"></i> B2B Group</h3>
+                    <label>Customer Group</label>
+                    <select name="b2b_group">
+                        <option value="">-- Standard --</option>
+                        <?php foreach($b2b_groups as $slug => $group_data): ?>
+                            <option value="<?= esc_attr($slug) ?>" <?= selected($current_group, $slug) ?>><?= esc_html($group_data['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <p style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Select group for discounts and pricing rules.</p>
                 </div>
 
                 <div class="card">
-                    <h3 style="margin-top:0;color:#111827">Sales Agent</h3>
+                    <h3 style="margin-top:0;color:#111827"><i class="fa-solid fa-user-tie"></i> Sales Agent</h3>
                     <label>Assigned To</label>
                     <select name="assigned_agent">
                         <option value="">-- None --</option>
@@ -1406,7 +1566,7 @@ add_action('template_redirect', function () {
                 </div>
 
                 <div class="card" style="background:#fef2f2;border-color:#fca5a5">
-                    <h3 style="margin-top:0;color:#ef4444">Security</h3>
+                    <h3 style="margin-top:0;color:#ef4444"><i class="fa-solid fa-lock"></i> Security</h3>
                     <label>New Password</label>
                     <input type="text" name="new_pass" placeholder="Leave empty to keep">
                 </div>
@@ -1820,6 +1980,94 @@ add_action('template_redirect', function () {
         });
     });
     </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+// ==========================================================================
+// E. B2B ROLES PAGE
+// ==========================================================================
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'b2b_roles') return;
+    b2b_adm_guard();
+    b2b_adm_header('B2B Roles');
+    
+    // Save Role
+    if (isset($_POST['save_role'])) {
+        $roles = get_option('b2b_roles', []);
+        $slug = sanitize_title($_POST['role_name']);
+        $roles[$slug] = sanitize_text_field($_POST['role_name']);
+        update_option('b2b_roles', $roles);
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">Role saved successfully!</div>';
+    }
+    
+    // Delete Role
+    if (isset($_GET['del'])) {
+        $roles = get_option('b2b_roles', []);
+        unset($roles[sanitize_key($_GET['del'])]);
+        update_option('b2b_roles', $roles);
+        wp_redirect(home_url('/b2b-panel/b2b-module/roles'));
+        exit;
+    }
+    
+    $roles = get_option('b2b_roles', ['customer' => 'Customer', 'wholesaler' => 'Wholesaler', 'retailer' => 'Retailer']);
+    
+    // Count users per role
+    $role_counts = [];
+    foreach($roles as $slug => $name) {
+        $role_counts[$slug] = count(get_users(['meta_key' => 'b2b_role', 'meta_value' => $slug]));
+    }
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">B2B Roles Management</h1>
+        <a href="<?= home_url('/b2b-panel/b2b-module') ?>"><button class="secondary">Back to B2B Module</button></a>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:25px;">
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Add New Role</h3>
+            <form method="post">
+                <label>Role Name</label>
+                <input type="text" name="role_name" placeholder="e.g. Premium Wholesaler" required>
+                
+                <button type="submit" name="save_role" style="width:100%;padding:12px;margin-top:10px;">Add Role</button>
+            </form>
+            <p style="font-size:12px;color:#6b7280;margin-top:15px;line-height:1.5;">
+                <i class="fa-solid fa-info-circle"></i> Roles help categorize B2B customers. Assign roles when editing customer profiles.
+            </p>
+        </div>
+        
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Existing Roles</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Role Name</th>
+                        <th>Slug</th>
+                        <th>Users</th>
+                        <th style="text-align:right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($roles)): ?>
+                        <tr><td colspan="4" style="text-align:center;padding:20px;color:#999">No roles created yet.</td></tr>
+                    <?php else: foreach ($roles as $slug => $name): ?>
+                        <tr>
+                            <td><strong><?= esc_html($name) ?></strong></td>
+                            <td><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($slug) ?></code></td>
+                            <td><span style="background:#eff6ff;color:#1e40af;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;"><?= $role_counts[$slug] ?> users</span></td>
+                            <td style="text-align:right;">
+                                <a href="?b2b_adm_page=b2b_roles&del=<?= urlencode($slug) ?>" onclick="return confirm('Delete this role? Users with this role will not be affected.')">
+                                    <button class="secondary" style="padding:6px 12px;background:#fef2f2;color:#ef4444;border-color:#fca5a5;">Delete</button>
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
     
     <?php b2b_adm_footer(); exit;
 });

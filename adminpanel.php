@@ -125,6 +125,7 @@ function b2b_pro_admin_menu() {
     add_submenu_page('b2b-panel', 'Gruplar & Üyeler', 'Gruplar & Üyeler', 'manage_options', 'b2b-groups-list', 'b2b_page_group_list');
     add_submenu_page('b2b-panel', 'Genel Ayarlar', 'Genel Ayarlar', 'manage_options', 'b2b-settings', 'b2b_page_settings');
     add_submenu_page('b2b-panel', 'Form Düzenleyici', 'Form Düzenleyici', 'manage_options', 'b2b-form-editor', 'b2b_page_form_editor');
+    add_submenu_page('b2b-panel', 'Sales Agent', 'Sales Agent', 'manage_options', 'b2b-sales-agent', 'b2b_page_sales_agent_settings');
 }
 add_action('admin_menu', 'b2b_pro_admin_menu');
 
@@ -3279,3 +3280,278 @@ add_action('template_redirect', function() {
    // wp_redirect(home_url('/b2b-master'));
     //exit;
 });
+
+/* =====================================================
+   SALES AGENT SETTINGS INTEGRATION
+===================================================== */
+
+// Register Sales Agent settings
+function b2b_register_sales_agent_settings() {
+    register_setting('sa_settings_group', 'sales_panel_title', [
+        'type' => 'string',
+        'sanitize_callback' => 'sanitize_text_field',
+        'default' => 'Sales Agent Panel'
+    ]);
+    register_setting('sa_settings_group', 'sales_commission_rate', [
+        'type' => 'number',
+        'sanitize_callback' => 'floatval',
+        'default' => 10
+    ]);
+    register_setting('sa_settings_group', 'sales_stale_days', [
+        'type' => 'integer',
+        'sanitize_callback' => 'intval',
+        'default' => 30
+    ]);
+    register_setting('sa_settings_group', 'sales_merge_products', [
+        'type' => 'boolean',
+        'sanitize_callback' => 'rest_sanitize_boolean',
+        'default' => false
+    ]);
+}
+add_action('admin_init', 'b2b_register_sales_agent_settings');
+
+// Render Sales Agent settings page
+function b2b_page_sales_agent_settings() {
+    b2b_adm_guard();
+    
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    // Save settings if form submitted
+    if (isset($_POST['sa_save_settings']) && check_admin_referer('sa_settings_save', 'sa_settings_nonce')) {
+        update_option('sales_panel_title', sanitize_text_field($_POST['sales_panel_title']));
+        update_option('sales_commission_rate', floatval($_POST['sales_commission_rate']));
+        update_option('sales_stale_days', intval($_POST['sales_stale_days']));
+        update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
+        
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
+                <i class="fa-solid fa-check-circle"></i> Settings saved successfully!
+              </div>';
+    }
+    
+    // Get current values
+    $panel_title = get_option('sales_panel_title', 'Sales Agent Panel');
+    $commission_rate = get_option('sales_commission_rate', 10);
+    $stale_days = get_option('sales_stale_days', 30);
+    $merge_products = get_option('sales_merge_products', 0);
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Sales Agent Settings</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 900px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                overflow: hidden;
+            }
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 30px;
+                text-align: center;
+            }
+            .header h1 {
+                font-size: 28px;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }
+            .header p {
+                opacity: 0.9;
+                font-size: 14px;
+            }
+            .content {
+                padding: 40px;
+            }
+            .form-group {
+                margin-bottom: 25px;
+            }
+            .form-group label {
+                display: block;
+                font-weight: 600;
+                margin-bottom: 8px;
+                color: #374151;
+                font-size: 14px;
+            }
+            .form-group input[type="text"],
+            .form-group input[type="number"] {
+                width: 100%;
+                padding: 12px 16px;
+                border: 2px solid #e5e7eb;
+                border-radius: 8px;
+                font-size: 14px;
+                transition: all 0.3s;
+            }
+            .form-group input:focus {
+                outline: none;
+                border-color: #667eea;
+                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            }
+            .form-group .helper-text {
+                margin-top: 6px;
+                font-size: 12px;
+                color: #6b7280;
+            }
+            .checkbox-group {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .checkbox-group input[type="checkbox"] {
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+            }
+            .checkbox-group label {
+                margin: 0;
+                cursor: pointer;
+            }
+            .btn-save {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 14px 32px;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: transform 0.2s, box-shadow 0.2s;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .btn-save:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            }
+            .back-link {
+                display: inline-block;
+                margin-bottom: 20px;
+                color: white;
+                text-decoration: none;
+                font-weight: 600;
+                transition: opacity 0.2s;
+            }
+            .back-link:hover {
+                opacity: 0.8;
+            }
+            .settings-card {
+                background: #f9fafb;
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            .settings-card h3 {
+                font-size: 16px;
+                font-weight: 600;
+                color: #111827;
+                margin-bottom: 15px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+        </style>
+    </head>
+    <body>
+        <a href="<?php echo admin_url('admin.php?page=b2b-panel'); ?>" class="back-link">
+            <i class="fa-solid fa-arrow-left"></i> Back to B2B Panel
+        </a>
+        
+        <div class="container">
+            <div class="header">
+                <h1><i class="fa-solid fa-user-tie"></i> Sales Agent Settings</h1>
+                <p>Configure settings for the Sales Agent system</p>
+            </div>
+            
+            <div class="content">
+                <form method="post" action="">
+                    <?php wp_nonce_field('sa_settings_save', 'sa_settings_nonce'); ?>
+                    
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-sliders"></i> General Settings</h3>
+                        
+                        <div class="form-group">
+                            <label for="sales_panel_title">
+                                <i class="fa-solid fa-heading"></i> Panel Title
+                            </label>
+                            <input type="text" 
+                                   id="sales_panel_title" 
+                                   name="sales_panel_title" 
+                                   value="<?php echo esc_attr($panel_title); ?>" 
+                                   placeholder="Sales Agent Panel">
+                            <div class="helper-text">The title displayed on the sales agent dashboard</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="sales_commission_rate">
+                                <i class="fa-solid fa-percent"></i> Commission Rate (%)
+                            </label>
+                            <input type="number" 
+                                   id="sales_commission_rate" 
+                                   name="sales_commission_rate" 
+                                   value="<?php echo esc_attr($commission_rate); ?>" 
+                                   step="0.01" 
+                                   min="0" 
+                                   max="100"
+                                   placeholder="10">
+                            <div class="helper-text">Default commission percentage for sales agents</div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-card">
+                        <h3><i class="fa-solid fa-cog"></i> Advanced Options</h3>
+                        
+                        <div class="form-group">
+                            <label for="sales_stale_days">
+                                <i class="fa-solid fa-calendar-days"></i> Stale Customer Days
+                            </label>
+                            <input type="number" 
+                                   id="sales_stale_days" 
+                                   name="sales_stale_days" 
+                                   value="<?php echo esc_attr($stale_days); ?>" 
+                                   min="1" 
+                                   placeholder="30">
+                            <div class="helper-text">Number of days before a customer is marked as inactive</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" 
+                                       id="sales_merge_products" 
+                                       name="sales_merge_products" 
+                                       value="1" 
+                                       <?php checked($merge_products, 1); ?>>
+                                <label for="sales_merge_products">
+                                    <i class="fa-solid fa-layer-group"></i> Merge Products in Orders
+                                </label>
+                            </div>
+                            <div class="helper-text" style="margin-left: 30px;">Automatically combine duplicate products in cart</div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" name="sa_save_settings" class="btn-save">
+                        <i class="fa-solid fa-save"></i> Save Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}

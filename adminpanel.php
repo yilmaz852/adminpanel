@@ -1706,69 +1706,106 @@ add_action('template_redirect', function () {
                 'display_name' => sanitize_text_field($_POST['first_name'] . ' ' . $_POST['last_name'])
             ]);
 
-            // Billing
-            update_user_meta($id, 'billing_first_name', sanitize_text_field($_POST['first_name']));
-            update_user_meta($id, 'billing_last_name', sanitize_text_field($_POST['last_name']));
-            update_user_meta($id, 'billing_phone', sanitize_text_field($_POST['phone']));
-            update_user_meta($id, 'billing_company', sanitize_text_field($_POST['company']));
-            update_user_meta($id, 'billing_address_1', sanitize_text_field($_POST['address_1']));
-            update_user_meta($id, 'billing_city', sanitize_text_field($_POST['city']));
-            update_user_meta($id, 'billing_postcode', sanitize_text_field($_POST['postcode']));
+            // Billing (Batch update for performance)
+            $billing_data = [
+                'billing_first_name' => sanitize_text_field($_POST['first_name']),
+                'billing_last_name' => sanitize_text_field($_POST['last_name']),
+                'billing_phone' => sanitize_text_field($_POST['phone']),
+                'billing_company' => sanitize_text_field($_POST['company']),
+                'billing_address_1' => sanitize_text_field($_POST['address_1']),
+                'billing_city' => sanitize_text_field($_POST['city']),
+                'billing_postcode' => sanitize_text_field($_POST['postcode']),
+            ];
             
             // Shipping
-            update_user_meta($id, 'shipping_address_1', sanitize_text_field($_POST['s_address_1']));
-            update_user_meta($id, 'shipping_city', sanitize_text_field($_POST['s_city']));
-            update_user_meta($id, 'shipping_postcode', sanitize_text_field($_POST['s_postcode']));
-            update_user_meta($id, 'shipping_company', sanitize_text_field($_POST['s_company']));
+            $shipping_data = [
+                'shipping_address_1' => sanitize_text_field($_POST['s_address_1']),
+                'shipping_city' => sanitize_text_field($_POST['s_city']),
+                'shipping_postcode' => sanitize_text_field($_POST['s_postcode']),
+                'shipping_company' => sanitize_text_field($_POST['s_company']),
+            ];
             
-            // Agent
-            if(isset($_POST['assigned_agent'])) update_user_meta($id, 'bagli_agent_id', intval($_POST['assigned_agent']));
-
-            // B2B Group Save (Custom B2B Module)
-            if(isset($_POST['b2b_group'])) {
-                $grp = sanitize_text_field($_POST['b2b_group']);
-                update_user_meta($id, 'b2b_group_slug', $grp);
+            // B2B Module Data
+            $b2b_data = [];
+            if(isset($_POST['assigned_agent'])) $b2b_data['bagli_agent_id'] = intval($_POST['assigned_agent']);
+            if(isset($_POST['b2b_group'])) $b2b_data['b2b_group_slug'] = sanitize_text_field($_POST['b2b_group']);
+            if(isset($_POST['b2b_role'])) $b2b_data['b2b_role'] = sanitize_text_field($_POST['b2b_role']);
+            
+            // User-Specific Payment Permissions
+            if(isset($_POST['b2b_allowed_payments']) && is_array($_POST['b2b_allowed_payments'])) {
+                $b2b_data['b2b_allowed_payments'] = array_map('sanitize_text_field', $_POST['b2b_allowed_payments']);
+            } else {
+                $b2b_data['b2b_allowed_payments'] = []; // Empty = use group defaults
             }
             
-            // B2B Role Save
-            if(isset($_POST['b2b_role'])) {
-                update_user_meta($id, 'b2b_role', sanitize_text_field($_POST['b2b_role']));
+            // Batch update all meta (Performance optimization)
+            foreach(array_merge($billing_data, $shipping_data, $b2b_data) as $key => $val) {
+                update_user_meta($id, $key, $val);
             }
 
             // Password
             if (!empty($_POST['new_pass'])) wp_set_password($_POST['new_pass'], $id);
 
             $u = get_userdata($id); // Refresh
-            echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px">Customer updated successfully.</div>';
+            echo '<div style="background:#d1fae5;color:#065f46;padding:12px 16px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0;font-size:14px"><i class="fa-solid fa-check-circle"></i> Customer updated successfully.</div>';
         }
 
-        // Data Prep
+        // Data Prep (Optimized)
         $agent_val = get_user_meta($id, 'bagli_agent_id', true);
         $agents = get_users(['role__in' => ['sales_agent', 'administrator'], 'fields' => ['ID', 'display_name']]);
         
         // B2B Module Data (Custom System)
         $current_group = get_user_meta($id, 'b2b_group_slug', true);
         $current_role = get_user_meta($id, 'b2b_role', true);
+        $allowed_payments = get_user_meta($id, 'b2b_allowed_payments', true) ?: [];
         $b2b_groups = b2b_get_groups();
         $b2b_roles = get_option('b2b_roles', ['customer' => 'Customer', 'wholesaler' => 'Wholesaler', 'retailer' => 'Retailer']);
+        
+        // Get all available payment gateways
+        $all_gateways = [];
+        if(class_exists('WC_Payment_Gateways')) {
+            $wc_gateways = WC_Payment_Gateways::instance()->get_available_payment_gateways();
+            foreach($wc_gateways as $gid => $gateway) {
+                $all_gateways[$gid] = $gateway->get_title();
+            }
+        }
 
         b2b_adm_header('Edit Customer');
         ?>
-        <div style="margin-bottom:20px"><a href="<?= home_url('/b2b-panel/customers') ?>"><button class="secondary">&laquo; Back to List</button></a></div>
+        <style>
+        .modern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .compact-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+        .compact-card h4 { margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 8px; }
+        .compact-card h4 i { font-size: 13px; }
+        .compact-card label { font-size: 12px; display: block; margin-bottom: 4px; color: #6b7280; font-weight: 500; }
+        .compact-card select, .compact-card input[type="text"] { font-size: 13px; padding: 8px 10px; }
+        .compact-card .hint { font-size: 11px; color: #9ca3af; margin-top: 6px; line-height: 1.3; }
+        .compact-btn { padding: 8px 16px; font-size: 13px; }
+        .payment-checkboxes { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
+        .payment-checkboxes label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: #374151; }
+        .payment-checkboxes input[type="checkbox"] { margin: 0; cursor: pointer; }
+        @media (max-width: 968px) { .modern-grid { grid-template-columns: 1fr; } }
+        </style>
+        <div style="margin-bottom:15px;display:flex;justify-content:space-between;align-items:center">
+            <a href="<?= home_url('/b2b-panel/customers') ?>"><button class="secondary compact-btn">&laquo; Back to List</button></a>
+            <button type="submit" form="customer-form" class="compact-btn" style="background:var(--accent);color:white;border:none"><i class="fa-solid fa-save"></i> Save Customer</button>
+        </div>
         
-        <form method="post" class="grid-main" style="grid-template-columns:3fr 1fr;gap:25px">
-            <!-- LEFT -->
-            <div style="display:flex;flex-direction:column;gap:20px">
-                <div class="customer-section">
-                    <h3><i class="fa-solid fa-user"></i> Personal Information</h3>
-                    <div class="form-grid">
-                        <div><label>First Name</label><input type="text" name="first_name" value="<?= esc_attr($u->first_name) ?>" required></div>
-                        <div><label>Last Name</label><input type="text" name="last_name" value="<?= esc_attr($u->last_name) ?>" required></div>
-                        <div><label>Email Address</label><input type="email" name="email" value="<?= esc_attr($u->user_email) ?>" required></div>
-                        <div><label>Phone Number</label><input type="text" name="phone" value="<?= esc_attr(get_user_meta($id, 'billing_phone', true)) ?>"></div>
-                    </div>
+        <form method="post" id="customer-form">
+        <form method="post" id="customer-form">
+            <!-- Personal Information -->
+            <div class="customer-section">
+                <h3><i class="fa-solid fa-user"></i> Personal Information</h3>
+                <div class="form-grid">
+                    <div><label>First Name <span style="color:red">*</span></label><input type="text" name="first_name" value="<?= esc_attr($u->first_name) ?>" required></div>
+                    <div><label>Last Name <span style="color:red">*</span></label><input type="text" name="last_name" value="<?= esc_attr($u->last_name) ?>" required></div>
+                    <div><label>Email Address <span style="color:red">*</span></label><input type="email" name="email" value="<?= esc_attr($u->user_email) ?>" required></div>
+                    <div><label>Phone Number</label><input type="text" name="phone" value="<?= esc_attr(get_user_meta($id, 'billing_phone', true)) ?>"></div>
                 </div>
+            </div>
 
+            <!-- Address Grid (Billing + Shipping) -->
+            <div class="modern-grid">
                 <div class="customer-section">
                     <h3><i class="fa-solid fa-map-pin"></i> Billing Address</h3>
                     <div class="form-grid">
@@ -1790,16 +1827,10 @@ add_action('template_redirect', function () {
                 </div>
             </div>
 
-            <!-- RIGHT -->
-            <div style="display:flex;flex-direction:column;gap:20px">
-                <div class="card" style="border-top:3px solid var(--accent)">
-                    <h3 style="margin-top:0;color:#111827">Actions</h3>
-                    <button style="width:100%;padding:12px">Save Customer</button>
-                </div>
-
-                <!-- B2B Role Card -->
-                <div class="card" style="background:#f0f9ff;border-color:#3b82f6;">
-                    <h3 style="margin-top:0;color:#1e40af"><i class="fa-solid fa-user-tag"></i> B2B Role</h3>
+            <!-- B2B Settings Grid (Role + Group + Agent) -->
+            <div class="modern-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="compact-card" style="border-top:3px solid #3b82f6;">
+                    <h4><i class="fa-solid fa-user-tag"></i> B2B Role</h4>
                     <label>Customer Role</label>
                     <select name="b2b_role">
                         <option value="">-- No Role --</option>
@@ -1807,24 +1838,25 @@ add_action('template_redirect', function () {
                             <option value="<?= esc_attr($role_slug) ?>" <?= selected($current_role, $role_slug) ?>><?= esc_html($role_name) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <p style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Assign B2B role from our custom B2B Module.</p>
+                    <p class="hint">Assign B2B role for categorization</p>
                 </div>
 
-                <!-- B2B Group Card -->
-                <div class="card">
-                    <h3 style="margin-top:0;color:#111827"><i class="fa-solid fa-users-gear"></i> B2B Group</h3>
-                    <label>Customer Group</label>
+                <div class="compact-card" style="border-top:3px solid #10b981;">
+                    <h4><i class="fa-solid fa-users-gear"></i> B2B Group</h4>
+                    <label>Pricing Group</label>
                     <select name="b2b_group">
                         <option value="">-- Standard --</option>
                         <?php foreach($b2b_groups as $slug => $group_data): ?>
-                            <option value="<?= esc_attr($slug) ?>" <?= selected($current_group, $slug) ?>><?= esc_html($group_data['name']) ?></option>
+                            <option value="<?= esc_attr($slug) ?>" <?= selected($current_group, $slug) ?>>
+                                <?= esc_html($group_data['name']) ?> (<?= $group_data['discount'] ?>% off)
+                            </option>
                         <?php endforeach; ?>
                     </select>
-                    <p style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Select group for discounts and pricing rules.</p>
+                    <p class="hint">Discounts & minimum order rules</p>
                 </div>
 
-                <div class="card">
-                    <h3 style="margin-top:0;color:#111827"><i class="fa-solid fa-user-tie"></i> Sales Agent</h3>
+                <div class="compact-card" style="border-top:3px solid #8b5cf6;">
+                    <h4><i class="fa-solid fa-user-tie"></i> Sales Agent</h4>
                     <label>Assigned To</label>
                     <select name="assigned_agent">
                         <option value="">-- None --</option>
@@ -1832,13 +1864,36 @@ add_action('template_redirect', function () {
                             <option value="<?= $a->ID ?>" <?= selected($agent_val, $a->ID) ?>><?= esc_html($a->display_name) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <p style="font-size:12px;color:#6b7280;margin-top:8px;line-height:1.4">Orders will be visible to the selected agent.</p>
+                    <p class="hint">Orders visible to selected agent</p>
+                </div>
+            </div>
+
+            <!-- Payment & Security Grid -->
+            <div class="modern-grid">
+                <div class="compact-card" style="border-top:3px solid #f59e0b;">
+                    <h4><i class="fa-solid fa-credit-card"></i> Payment Permissions</h4>
+                    <p class="hint" style="margin-top:0;margin-bottom:10px">User-specific payment methods (overrides group defaults)</p>
+                    <?php if(!empty($all_gateways)): ?>
+                    <div class="payment-checkboxes">
+                        <?php foreach($all_gateways as $gid => $gtitle): ?>
+                        <label>
+                            <input type="checkbox" name="b2b_allowed_payments[]" value="<?= esc_attr($gid) ?>" 
+                                   <?= in_array($gid, $allowed_payments) ? 'checked' : '' ?>>
+                            <?= esc_html($gtitle) ?>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="hint" style="margin-bottom:0">Leave all unchecked to use group defaults</p>
+                    <?php else: ?>
+                    <p style="color:#ef4444;font-size:12px"><i class="fa-solid fa-exclamation-triangle"></i> No payment gateways detected</p>
+                    <?php endif; ?>
                 </div>
 
-                <div class="card" style="background:#fef2f2;border-color:#fca5a5">
-                    <h3 style="margin-top:0;color:#ef4444"><i class="fa-solid fa-lock"></i> Security</h3>
+                <div class="compact-card" style="border-top:3px solid #ef4444;">
+                    <h4><i class="fa-solid fa-lock"></i> Security</h4>
                     <label>New Password</label>
-                    <input type="text" name="new_pass" placeholder="Leave empty to keep">
+                    <input type="text" name="new_pass" placeholder="Leave empty to keep current password">
+                    <p class="hint">Change customer password (optional)</p>
                 </div>
             </div>
         </form>

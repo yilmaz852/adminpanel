@@ -18,6 +18,7 @@ add_action('init', function () {
 
     // 2. URL Kuralları
     add_rewrite_rule('^b2b-login/?$', 'index.php?b2b_adm_page=login', 'top');
+    add_rewrite_rule('^b2b-register/?$', 'index.php?b2b_adm_page=register', 'top');
     add_rewrite_rule('^b2b-panel/?$', 'index.php?b2b_adm_page=dashboard', 'top');
     add_rewrite_rule('^b2b-panel/orders/?$', 'index.php?b2b_adm_page=orders', 'top');
 	// Customers (New)
@@ -38,9 +39,9 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/b2b-module/form-editor/?$', 'index.php?b2b_adm_page=b2b_form_editor', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v11_fix')) {
+    if (!get_option('b2b_rewrite_v12_register')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v11_fix', true);
+        update_option('b2b_rewrite_v12_register', true);
     }
 });
 
@@ -897,6 +898,343 @@ add_action('template_redirect', function () {
     <?php
     exit;
 });
+
+/* =====================================================
+   4C. B2B REGISTRATION PAGE (/b2b-register)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'register') return;
+    
+    $success = false;
+    $error = '';
+    
+    // Form Gönderildiyse
+    if ($_POST && isset($_POST['b2b_register_nonce'])) {
+        if (!wp_verify_nonce($_POST['b2b_register_nonce'], 'b2b_register_action')) {
+            $error = 'Security check failed. Please try again.';
+        } else {
+            // Form verilerini al
+            $email = sanitize_email($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+            $first_name = sanitize_text_field($_POST['first_name'] ?? '');
+            $last_name = sanitize_text_field($_POST['last_name'] ?? '');
+            $company = sanitize_text_field($_POST['billing_company'] ?? '');
+            $phone = sanitize_text_field($_POST['billing_phone'] ?? '');
+            
+            // Validasyon
+            if (empty($email) || !is_email($email)) {
+                $error = 'Please enter a valid email address.';
+            } elseif (email_exists($email)) {
+                $error = 'This email is already registered.';
+            } elseif (strlen($password) < 8) {
+                $error = 'Password must be at least 8 characters long.';
+            } elseif (empty($first_name) || empty($last_name)) {
+                $error = 'First name and last name are required.';
+            } else {
+                // Kullanıcı oluştur
+                $username = sanitize_user(strtolower($first_name . $last_name . rand(100, 999)));
+                $user_id = wp_create_user($username, $password, $email);
+                
+                if (!is_wp_error($user_id)) {
+                    // User meta güncelle
+                    update_user_meta($user_id, 'first_name', $first_name);
+                    update_user_meta($user_id, 'last_name', $last_name);
+                    update_user_meta($user_id, 'billing_first_name', $first_name);
+                    update_user_meta($user_id, 'billing_last_name', $last_name);
+                    update_user_meta($user_id, 'billing_email', $email);
+                    update_user_meta($user_id, 'billing_company', $company);
+                    update_user_meta($user_id, 'billing_phone', $phone);
+                    
+                    // B2B status - pending onay için
+                    update_user_meta($user_id, 'b2b_status', 'pending');
+                    update_user_meta($user_id, 'b2b_group_slug', ''); // Admin atayacak
+                    
+                    // Custom fields (form editor'den)
+                    $custom_fields = b2b_get_custom_fields();
+                    foreach ($custom_fields as $field) {
+                        if (isset($_POST['custom_' . $field['key']])) {
+                            $value = sanitize_text_field($_POST['custom_' . $field['key']]);
+                            update_user_meta($user_id, 'b2b_custom_' . $field['key'], $value);
+                        }
+                    }
+                    
+                    $success = true;
+                } else {
+                    $error = 'Registration failed: ' . $user_id->get_error_message();
+                }
+            }
+        }
+    }
+    
+    // Form Editor ayarları
+    $standard_config = b2b_get_standard_fields_config();
+    $custom_fields = b2b_get_custom_fields();
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>B2B Registration | Register</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root {
+                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                --primary: #10b981;
+                --glass: rgba(255, 255, 255, 0.05);
+                --border: rgba(255, 255, 255, 0.1);
+                --text: #ffffff;
+                --text-muted: #94a3b8;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            body {
+                font-family: 'Outfit', sans-serif;
+                background: var(--bg-gradient);
+                color: var(--text);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 40px 20px;
+                position: relative;
+                overflow-x: hidden;
+            }
+
+            .bg-shape {
+                position: absolute;
+                border-radius: 50%;
+                filter: blur(80px);
+                z-index: -1;
+                opacity: 0.4;
+                animation: float 6s ease-in-out infinite;
+            }
+            .shape-1 { width: 300px; height: 300px; background: var(--primary); top: -50px; left: -50px; }
+            .shape-2 { width: 250px; height: 250px; background: #6366f1; bottom: -50px; right: -50px; animation-delay: 3s; }
+
+            @keyframes float {
+                0%, 100% { transform: translateY(0px); }
+                50% { transform: translateY(-20px); }
+            }
+
+            .register-card {
+                background: var(--glass);
+                border: 1px solid var(--border);
+                padding: 40px 30px;
+                border-radius: 20px;
+                width: 100%;
+                max-width: 500px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            }
+
+            .icon-box {
+                width: 60px;
+                height: 60px;
+                background: rgba(16, 185, 129, 0.1);
+                color: var(--primary);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                margin: 0 auto 20px;
+                border: 1px solid rgba(16, 185, 129, 0.3);
+            }
+
+            h2 { font-size: 1.5rem; margin-bottom: 5px; font-weight: 700; text-align: center; }
+            p.sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 30px; text-align: center; }
+
+            .form-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin-bottom: 15px;
+            }
+
+            .input-group { margin-bottom: 15px; text-align: left; }
+            label { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 5px; margin-left: 5px;}
+            label .req { color: #f87171; }
+            
+            input, textarea, select {
+                width: 100%;
+                padding: 12px 15px;
+                background: rgba(0, 0, 0, 0.2);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                color: #fff;
+                font-family: inherit;
+                font-size: 0.95rem;
+                transition: 0.3s;
+            }
+            input:focus, textarea:focus, select:focus {
+                outline: none;
+                border-color: var(--primary);
+                background: rgba(0, 0, 0, 0.3);
+                box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            }
+            input::placeholder, textarea::placeholder { color: rgba(255, 255, 255, 0.3); }
+            textarea { min-height: 80px; resize: vertical; }
+
+            button {
+                width: 100%;
+                padding: 12px;
+                margin-top: 10px;
+                background: var(--primary);
+                color: #fff;
+                border: none;
+                border-radius: 10px;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: 0.3s;
+                font-family: inherit;
+            }
+            button:hover {
+                background: #059669;
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            }
+
+            .success-msg {
+                background: rgba(16, 185, 129, 0.1);
+                color: #6ee7b7;
+                padding: 15px;
+                border-radius: 8px;
+                font-size: 0.9rem;
+                margin-bottom: 20px;
+                border: 1px solid rgba(16, 185, 129, 0.2);
+                text-align: center;
+            }
+
+            .error-msg {
+                background: rgba(239, 68, 68, 0.1);
+                color: #fca5a5;
+                padding: 10px;
+                border-radius: 8px;
+                font-size: 0.85rem;
+                margin-bottom: 20px;
+                border: 1px solid rgba(239, 68, 68, 0.2);
+            }
+
+            .login-link {
+                text-align: center;
+                margin-top: 20px;
+                color: var(--text-muted);
+                font-size: 0.9rem;
+            }
+            .login-link a {
+                color: var(--primary);
+                text-decoration: none;
+                font-weight: 600;
+            }
+            .login-link a:hover {
+                text-decoration: underline;
+            }
+
+            @media (max-width: 600px) {
+                .form-row {
+                    grid-template-columns: 1fr;
+                    gap: 0;
+                }
+            }
+        </style>
+    </head>
+    <body>
+
+        <div class="bg-shape shape-1"></div>
+        <div class="bg-shape shape-2"></div>
+
+        <form method="post" class="register-card">
+            <div class="icon-box">
+                <i class="fa-solid fa-user-plus"></i>
+            </div>
+            <h2>B2B Registration</h2>
+            <p class="sub">Create your business account to get started.</p>
+
+            <?php if($success): ?>
+                <div class="success-msg">
+                    <i class="fa-solid fa-circle-check"></i> <strong>Registration Successful!</strong><br>
+                    Your application has been submitted and is pending approval. We'll contact you soon.
+                </div>
+                <div class="login-link">
+                    <a href="<?= home_url('/b2b-login') ?>"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
+                </div>
+            <?php else: ?>
+
+                <?php if($error): ?>
+                    <div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> <?= esc_html($error) ?></div>
+                <?php endif; ?>
+
+                <?php wp_nonce_field('b2b_register_action', 'b2b_register_nonce'); ?>
+
+                <div class="form-row">
+                    <div class="input-group">
+                        <label>First Name <span class="req">*</span></label>
+                        <input type="text" name="first_name" required value="<?= $_POST['first_name'] ?? '' ?>">
+                    </div>
+                    <div class="input-group">
+                        <label>Last Name <span class="req">*</span></label>
+                        <input type="text" name="last_name" required value="<?= $_POST['last_name'] ?? '' ?>">
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Email Address <span class="req">*</span></label>
+                    <input type="email" name="email" required value="<?= $_POST['email'] ?? '' ?>">
+                </div>
+
+                <div class="input-group">
+                    <label>Password <span class="req">*</span> <small>(min. 8 characters)</small></label>
+                    <input type="password" name="password" required minlength="8">
+                </div>
+
+                <?php if (isset($standard_config['company']) && $standard_config['company']['enabled']): ?>
+                <div class="input-group">
+                    <label>Company Name <?= $standard_config['company']['required'] ? '<span class="req">*</span>' : '' ?></label>
+                    <input type="text" name="billing_company" <?= $standard_config['company']['required'] ? 'required' : '' ?> value="<?= $_POST['billing_company'] ?? '' ?>">
+                </div>
+                <?php endif; ?>
+
+                <?php if (isset($standard_config['phone']) && $standard_config['phone']['enabled']): ?>
+                <div class="input-group">
+                    <label>Phone <?= $standard_config['phone']['required'] ? '<span class="req">*</span>' : '' ?></label>
+                    <input type="tel" name="billing_phone" <?= $standard_config['phone']['required'] ? 'required' : '' ?> value="<?= $_POST['billing_phone'] ?? '' ?>">
+                </div>
+                <?php endif; ?>
+
+                <?php foreach ($custom_fields as $field): ?>
+                    <div class="input-group">
+                        <label><?= esc_html($field['label']) ?> <?= $field['required'] ? '<span class="req">*</span>' : '' ?></label>
+                        <?php if ($field['type'] === 'textarea'): ?>
+                            <textarea name="custom_<?= esc_attr($field['key']) ?>" <?= $field['required'] ? 'required' : '' ?>><?= $_POST['custom_' . $field['key']] ?? '' ?></textarea>
+                        <?php elseif ($field['type'] === 'select' && !empty($field['options'])): ?>
+                            <select name="custom_<?= esc_attr($field['key']) ?>" <?= $field['required'] ? 'required' : '' ?>>
+                                <option value="">- Select -</option>
+                                <?php foreach (explode(',', $field['options']) as $opt): ?>
+                                    <option value="<?= esc_attr(trim($opt)) ?>" <?= (($_POST['custom_' . $field['key']] ?? '') === trim($opt)) ? 'selected' : '' ?>><?= esc_html(trim($opt)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php else: ?>
+                            <input type="text" name="custom_<?= esc_attr($field['key']) ?>" <?= $field['required'] ? 'required' : '' ?> value="<?= $_POST['custom_' . $field['key']] ?? '' ?>">
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+
+                <button type="submit">Register <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
+
+                <div class="login-link">
+                    Already have an account? <a href="<?= home_url('/b2b-login') ?>">Login here</a>
+                </div>
+            <?php endif; ?>
+        </form>
+
+    </body>
+    </html>
+    <?php
+    exit;
+});
+
 /* =====================================================
    7. PAGE: DASHBOARD
 ===================================================== */

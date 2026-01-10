@@ -915,25 +915,25 @@ add_action('template_redirect', function () {
         } else {
             // Form verilerini al
             $email = sanitize_email($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? '';
             $first_name = sanitize_text_field($_POST['first_name'] ?? '');
             $last_name = sanitize_text_field($_POST['last_name'] ?? '');
-            $company = sanitize_text_field($_POST['billing_company'] ?? '');
-            $phone = sanitize_text_field($_POST['billing_phone'] ?? '');
+            $b2b_group = sanitize_text_field($_POST['b2b_group'] ?? '');
             
             // Validasyon
             if (empty($email) || !is_email($email)) {
                 $error = 'Please enter a valid email address.';
             } elseif (email_exists($email)) {
                 $error = 'This email is already registered.';
-            } elseif (strlen($password) < 8) {
-                $error = 'Password must be at least 8 characters long.';
             } elseif (empty($first_name) || empty($last_name)) {
                 $error = 'First name and last name are required.';
             } else {
-                // Kullanıcı oluştur
-                $username = sanitize_user(strtolower($first_name . $last_name . rand(100, 999)));
-                $user_id = wp_create_user($username, $password, $email);
+                // Kullanıcı oluştur (şifre YOK - onayda oluşturulacak)
+                $username = sanitize_user(str_replace('@', '_', $email));
+                $user_id = wp_insert_user([
+                    'user_login' => $username,
+                    'user_email' => $email,
+                    'role' => 'subscriber'
+                ]); // No password set
                 
                 if (!is_wp_error($user_id)) {
                     // User meta güncelle
@@ -942,21 +942,37 @@ add_action('template_redirect', function () {
                     update_user_meta($user_id, 'billing_first_name', $first_name);
                     update_user_meta($user_id, 'billing_last_name', $last_name);
                     update_user_meta($user_id, 'billing_email', $email);
-                    update_user_meta($user_id, 'billing_company', $company);
-                    update_user_meta($user_id, 'billing_phone', $phone);
+                    
+                    // All standard fields from Form Editor
+                    $standard_fields = ['billing_company', 'billing_phone', 'billing_city', 'billing_postcode', 'billing_address_1', 'billing_state', 'billing_country'];
+                    foreach ($standard_fields as $field_name) {
+                        if (isset($_POST[$field_name])) {
+                            update_user_meta($user_id, $field_name, sanitize_text_field($_POST[$field_name]));
+                        }
+                    }
                     
                     // B2B status - pending onay için
                     update_user_meta($user_id, 'b2b_status', 'pending');
+                    update_user_meta($user_id, 'b2b_requested_group', $b2b_group);
                     update_user_meta($user_id, 'b2b_group_slug', ''); // Admin atayacak
                     
                     // Custom fields (form editor'den)
                     $custom_fields = b2b_get_custom_fields();
-                    foreach ($custom_fields as $field) {
-                        if (isset($_POST['custom_' . $field['key']])) {
-                            $value = sanitize_text_field($_POST['custom_' . $field['key']]);
-                            update_user_meta($user_id, 'b2b_custom_' . $field['key'], $value);
+                    foreach ($custom_fields as $key => $field) {
+                        if (isset($_POST['custom_' . $key])) {
+                            $value = sanitize_text_field($_POST['custom_' . $key]);
+                            update_user_meta($user_id, 'b2b_custom_' . $key, $value);
                         }
                     }
+                    
+                    // Admin'e email gönder
+                    $admin_email = get_option('admin_email');
+                    $message = "New B2B registration:\n\n";
+                    $message .= "Name: $first_name $last_name\n";
+                    $message .= "Email: $email\n";
+                    $message .= "Requested Group: " . ($b2b_group ?: 'None') . "\n\n";
+                    $message .= "Review at: " . home_url('/b2b-panel/b2b-module');
+                    wp_mail($admin_email, 'New B2B Registration - ' . $first_name . ' ' . $last_name, $message);
                     
                     $success = true;
                 } else {
@@ -1185,38 +1201,55 @@ add_action('template_redirect', function () {
                 </div>
 
                 <div class="input-group">
-                    <label>Password <span class="req">*</span> <small>(min. 8 characters)</small></label>
-                    <input type="password" name="password" required minlength="8">
+                    <label>B2B Group <span class="req">*</span></label>
+                    <select name="b2b_group" required>
+                        <option value="">- Select Your Business Type -</option>
+                        <?php 
+                        $groups = b2b_get_groups();
+                        foreach ($groups as $slug => $group): ?>
+                            <option value="<?= esc_attr($slug) ?>" <?= (($_POST['b2b_group'] ?? '') === $slug) ? 'selected' : '' ?>><?= esc_html($group['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
 
-                <?php if (isset($standard_config['company']) && $standard_config['company']['enabled']): ?>
-                <div class="input-group">
-                    <label>Company Name <?= $standard_config['company']['required'] ? '<span class="req">*</span>' : '' ?></label>
-                    <input type="text" name="billing_company" <?= $standard_config['company']['required'] ? 'required' : '' ?> value="<?= $_POST['billing_company'] ?? '' ?>">
-                </div>
-                <?php endif; ?>
+                <?php 
+                // All 7 standard WooCommerce fields
+                $all_standard_fields = [
+                    'billing_company' => ['label' => 'Company Name', 'type' => 'text'],
+                    'billing_phone' => ['label' => 'Phone', 'type' => 'tel'],
+                    'billing_city' => ['label' => 'City', 'type' => 'text'],
+                    'billing_postcode' => ['label' => 'Postcode/ZIP', 'type' => 'text'],
+                    'billing_address_1' => ['label' => 'Address', 'type' => 'text'],
+                    'billing_state' => ['label' => 'State/Province', 'type' => 'text'],
+                    'billing_country' => ['label' => 'Country', 'type' => 'text']
+                ];
+                
+                foreach ($all_standard_fields as $field_name => $field_info): 
+                    $is_enabled = isset($standard_config[$field_name]['enabled']) ? $standard_config[$field_name]['enabled'] : 1;
+                    $is_required = isset($standard_config[$field_name]['required']) ? $standard_config[$field_name]['required'] : 0;
+                    
+                    if ($is_enabled): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($field_info['label']) ?> <?= $is_required ? '<span class="req">*</span>' : '' ?></label>
+                            <input type="<?= esc_attr($field_info['type']) ?>" name="<?= esc_attr($field_name) ?>" <?= $is_required ? 'required' : '' ?> value="<?= $_POST[$field_name] ?? '' ?>">
+                        </div>
+                    <?php endif; 
+                endforeach; ?>
 
-                <?php if (isset($standard_config['phone']) && $standard_config['phone']['enabled']): ?>
-                <div class="input-group">
-                    <label>Phone <?= $standard_config['phone']['required'] ? '<span class="req">*</span>' : '' ?></label>
-                    <input type="tel" name="billing_phone" <?= $standard_config['phone']['required'] ? 'required' : '' ?> value="<?= $_POST['billing_phone'] ?? '' ?>">
-                </div>
-                <?php endif; ?>
-
-                <?php foreach ($custom_fields as $field): ?>
+                <?php foreach ($custom_fields as $key => $field): ?>
                     <div class="input-group">
                         <label><?= esc_html($field['label']) ?> <?= $field['required'] ? '<span class="req">*</span>' : '' ?></label>
                         <?php if ($field['type'] === 'textarea'): ?>
-                            <textarea name="custom_<?= esc_attr($field['key']) ?>" <?= $field['required'] ? 'required' : '' ?>><?= $_POST['custom_' . $field['key']] ?? '' ?></textarea>
+                            <textarea name="custom_<?= esc_attr($key) ?>" <?= $field['required'] ? 'required' : '' ?>><?= $_POST['custom_' . $key] ?? '' ?></textarea>
                         <?php elseif ($field['type'] === 'select' && !empty($field['options'])): ?>
-                            <select name="custom_<?= esc_attr($field['key']) ?>" <?= $field['required'] ? 'required' : '' ?>>
+                            <select name="custom_<?= esc_attr($key) ?>" <?= $field['required'] ? 'required' : '' ?>>
                                 <option value="">- Select -</option>
                                 <?php foreach (explode(',', $field['options']) as $opt): ?>
-                                    <option value="<?= esc_attr(trim($opt)) ?>" <?= (($_POST['custom_' . $field['key']] ?? '') === trim($opt)) ? 'selected' : '' ?>><?= esc_html(trim($opt)) ?></option>
+                                    <option value="<?= esc_attr(trim($opt)) ?>" <?= (($_POST['custom_' . $key] ?? '') === trim($opt)) ? 'selected' : '' ?>><?= esc_html(trim($opt)) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         <?php else: ?>
-                            <input type="text" name="custom_<?= esc_attr($field['key']) ?>" <?= $field['required'] ? 'required' : '' ?> value="<?= $_POST['custom_' . $field['key']] ?? '' ?>">
+                            <input type="text" name="custom_<?= esc_attr($key) ?>" <?= $field['required'] ? 'required' : '' ?> value="<?= $_POST['custom_' . $key] ?? '' ?>">
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
@@ -1269,7 +1302,7 @@ add_action('template_redirect', function () {
 
     <div class="page-header"><h1 class="page-title">Overview</h1></div>
 
-    <div class="grid-main" style="display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:30px">
+    <div class="grid-main" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:30px">
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Sales This Month</small><div style="font-size:32px;font-weight:800;color:#10b981"><?= wc_price($month_sales?:0) ?></div></div>
             <i class="fa-solid fa-chart-line" style="font-size:40px;color:#e5e7eb"></i>
@@ -1278,6 +1311,16 @@ add_action('template_redirect', function () {
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Total Revenue</small><div style="font-size:32px;font-weight:800;color:#0f172a"><?= wc_price($total_sales?:0) ?></div></div>
             <i class="fa-solid fa-sack-dollar" style="font-size:40px;color:#e5e7eb"></i>
         </div>
+        <?php 
+        $pending_users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
+        $pending_count = count($pending_users);
+        ?>
+        <a href="<?= home_url('/b2b-panel/b2b-module') ?>" style="text-decoration:none;">
+            <div class="card" style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);color:#fff;cursor:pointer;transition:transform 0.3s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+                <div><small style="color:rgba(255,255,255,0.9);font-weight:600;text-transform:uppercase">Pending Approvals</small><div style="font-size:32px;font-weight:800;color:#fff"><?= $pending_count ?></div></div>
+                <i class="fa-solid fa-user-clock" style="font-size:40px;color:rgba(255,255,255,0.3)"></i>
+            </div>
+        </a>
     </div>
 
     <h3 style="margin-bottom:20px;color:#4b5563">Order Status & Delays</h3>
@@ -2254,11 +2297,45 @@ add_action('template_redirect', function () {
     
     if (isset($_POST['approve_user'])) {
         $uid = intval($_POST['uid']);
+        $group_slug = sanitize_text_field($_POST['grp'] ?? '');
+        $sales_agent = intval($_POST['sales_agent'] ?? 0);
+        
+        // Generate secure password
+        $password = wp_generate_password(12, true, true);
+        wp_set_password($password, $uid);
+        
+        // Update user meta
         update_user_meta($uid, 'b2b_status', 'approved');
-        if (!empty($_POST['grp'])) {
-            update_user_meta($uid, 'b2b_group_slug', sanitize_text_field($_POST['grp']));
+        if (!empty($group_slug)) {
+            update_user_meta($uid, 'b2b_group_slug', $group_slug);
         }
-        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">User approved successfully!</div>';
+        if ($sales_agent > 0) {
+            update_user_meta($uid, 'sales_agent', $sales_agent);
+        }
+        
+        // Send email to customer with credentials
+        $user = get_userdata($uid);
+        $groups = b2b_get_groups();
+        $group_info = isset($groups[$group_slug]) ? $groups[$group_slug] : null;
+        
+        $message = "Dear " . get_user_meta($uid, 'first_name', true) . ",\n\n";
+        $message .= "Great news! Your B2B account has been approved.\n\n";
+        $message .= "Login Credentials:\n";
+        $message .= "Username: " . $user->user_login . "\n";
+        $message .= "Password: " . $password . "\n";
+        $message .= "Login URL: " . home_url('/b2b-login') . "\n\n";
+        
+        if ($group_info) {
+            $message .= "Your B2B Group: " . $group_info['name'] . "\n";
+            $message .= "Discount: " . $group_info['discount'] . "%\n";
+            $message .= "Minimum Order: " . wc_price($group_info['min_order']) . "\n\n";
+        }
+        
+        $message .= "Welcome to our B2B program!\n\nBest regards,\n" . get_bloginfo('name');
+        
+        wp_mail($user->user_email, 'Your B2B Account Has Been Approved', $message);
+        
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">User approved successfully! Login credentials have been sent via email.</div>';
     }
     
     $users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
@@ -2277,39 +2354,58 @@ add_action('template_redirect', function () {
                     <th>Company / Name</th>
                     <th>Email</th>
                     <th>Phone</th>
-                    <th>City</th>
+                    <th>Requested Group</th>
                     <th>Assign Group</th>
+                    <th>Sales Agent</th>
                     <th style="text-align:right">Action</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($users)): ?>
-                    <tr><td colspan="6" style="text-align:center;padding:30px;color:#999">No pending applications.</td></tr>
-                <?php else: foreach ($users as $u): ?>
+                    <tr><td colspan="7" style="text-align:center;padding:30px;color:#999">No pending applications.</td></tr>
+                <?php else: foreach ($users as $u): 
+                    $requested_group = get_user_meta($u->ID, 'b2b_requested_group', true);
+                    $agents = get_users(['role' => 'sales_agent']);
+                ?>
                     <tr>
                         <td>
                             <strong><?= esc_html(get_user_meta($u->ID, 'billing_company', true) ?: $u->display_name) ?></strong><br>
-                            <small style="color:#6b7280"><?= esc_html($u->user_login) ?></small>
+                            <small style="color:#6b7280"><?= esc_html(get_user_meta($u->ID, 'first_name', true) . ' ' . get_user_meta($u->ID, 'last_name', true)) ?></small>
                         </td>
                         <td><?= esc_html($u->user_email) ?></td>
                         <td><?= esc_html(get_user_meta($u->ID, 'billing_phone', true)) ?></td>
-                        <td><?= esc_html(get_user_meta($u->ID, 'billing_city', true)) ?></td>
                         <td>
-                            <form method="post" style="display:inline-flex;gap:5px;margin:0;">
+                            <?php if ($requested_group && isset($groups[$requested_group])): ?>
+                                <span style="background:#dbeafe;color:#1e40af;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:600;">
+                                    <?= esc_html($groups[$requested_group]['name']) ?>
+                                </span>
+                            <?php else: ?>
+                                <span style="color:#9ca3af">-</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <form method="post" style="display:inline-flex;flex-direction:column;gap:8px;margin:0;">
                                 <input type="hidden" name="uid" value="<?= $u->ID ?>">
-                                <select name="grp" style="margin:0;padding:6px;">
+                                <select name="grp" style="margin:0;padding:6px;font-size:13px;">
                                     <option value="">-- Standard --</option>
                                     <?php foreach ($groups as $k => $v): ?>
-                                        <option value="<?= esc_attr($k) ?>"><?= esc_html($v['name']) ?></option>
+                                        <option value="<?= esc_attr($k) ?>" <?= $k === $requested_group ? 'selected' : '' ?>><?= esc_html($v['name']) ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                                <button type="submit" name="approve_user" style="padding:6px 12px;font-size:13px;">Approve</button>
-                            </form>
+                        </td>
+                        <td>
+                                <select name="sales_agent" style="margin:0;padding:6px;font-size:13px;">
+                                    <option value="0">-- None --</option>
+                                    <?php foreach ($agents as $agent): ?>
+                                        <option value="<?= $agent->ID ?>"><?= esc_html($agent->display_name) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
                         </td>
                         <td style="text-align:right">
-                            <a href="<?= home_url('/b2b-panel/customers/edit?id=' . $u->ID) ?>">
-                                <button class="secondary" style="padding:6px 12px;">View Profile</button>
-                            </a>
+                                <button type="submit" name="approve_user" style="padding:6px 12px;font-size:13px;background:#10b981;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">
+                                    <i class="fa-solid fa-check"></i> Approve & Send Credentials
+                                </button>
+                            </form>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>
@@ -2527,6 +2623,7 @@ add_action('template_redirect', function () {
                 $fields[$key] = [
                     'label' => sanitize_text_field($field_data['label']),
                     'type' => sanitize_text_field($field_data['type']),
+                    'options' => isset($field_data['options']) ? sanitize_text_field($field_data['options']) : '',
                     'required' => isset($field_data['required']) ? 1 : 0
                 ];
             }
@@ -2602,17 +2699,25 @@ add_action('template_redirect', function () {
             <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Custom Fields</h3>
             <div id="custom-fields-container">
                 <?php if (!empty($custom_fields)): foreach ($custom_fields as $key => $field): ?>
-                    <div class="custom-field-row" style="margin-bottom:15px;padding:15px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:8px;display:grid;grid-template-columns:1fr 150px 100px;gap:10px;align-items:center;">
-                        <input type="text" name="fields[<?= esc_attr($key) ?>][label]" value="<?= esc_attr($field['label']) ?>" placeholder="Field Label" style="margin:0;">
-                        <select name="fields[<?= esc_attr($key) ?>][type]" style="margin:0;">
-                            <option value="text" <?= selected($field['type'], 'text', false) ?>>Text</option>
-                            <option value="textarea" <?= selected($field['type'], 'textarea', false) ?>>Textarea</option>
-                            <option value="select" <?= selected($field['type'], 'select', false) ?>>Select</option>
-                        </select>
-                        <label style="display:flex;align-items:center;gap:5px;margin:0;">
-                            <input type="checkbox" name="fields[<?= esc_attr($key) ?>][required]" value="1" <?= checked($field['required'], 1, false) ?> style="width:18px;height:18px;margin:0;"> 
-                            Required
-                        </label>
+                    <div class="custom-field-row" style="margin-bottom:15px;padding:15px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:8px;">
+                        <div style="display:grid;grid-template-columns:2fr 1fr 100px 40px;gap:10px;align-items:center;margin-bottom:8px;">
+                            <input type="text" name="fields[<?= esc_attr($key) ?>][label]" value="<?= esc_attr($field['label']) ?>" placeholder="Field Label" style="margin:0;" required>
+                            <select name="fields[<?= esc_attr($key) ?>][type]" class="field-type-selector" style="margin:0;">
+                                <option value="text" <?= selected($field['type'], 'text', false) ?>>Text</option>
+                                <option value="textarea" <?= selected($field['type'], 'textarea', false) ?>>Textarea</option>
+                                <option value="select" <?= selected($field['type'], 'select', false) ?>>Dropdown</option>
+                            </select>
+                            <label style="display:flex;align-items:center;gap:5px;margin:0;">
+                                <input type="checkbox" name="fields[<?= esc_attr($key) ?>][required]" value="1" <?= checked($field['required'], 1, false) ?> style="width:18px;height:18px;margin:0;"> 
+                                Required
+                            </label>
+                            <button type="button" onclick="if(confirm('Delete this field?')) this.closest('.custom-field-row').remove();" style="background:#ef4444;color:#fff;border:none;padding:8px;border-radius:4px;cursor:pointer;font-size:14px;" title="Delete Field">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                        <?php if ($field['type'] === 'select'): ?>
+                            <input type="text" name="fields[<?= esc_attr($key) ?>][options]" value="<?= esc_attr($field['options'] ?? '') ?>" placeholder="Options (comma-separated: Option1,Option2,Option3)" style="width:100%;margin:0;font-size:12px;color:#6b7280;">
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; endif; ?>
             </div>
@@ -2626,20 +2731,41 @@ add_action('template_redirect', function () {
     
     <script>
     jQuery(document).ready(function($) {
+        // Add custom field with delete button and options field support
         $('#add-custom-field').click(function() {
             var key = 'field_' + Date.now();
-            var html = '<div class="custom-field-row" style="margin-bottom:15px;padding:15px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:8px;display:grid;grid-template-columns:1fr 150px 100px;gap:10px;align-items:center;">' +
-                '<input type="text" name="fields[' + key + '][label]" placeholder="Field Label" style="margin:0;">' +
-                '<select name="fields[' + key + '][type]" style="margin:0;">' +
+            var html = '<div class="custom-field-row" style="margin-bottom:15px;padding:15px;border:1px solid #e5e7eb;background:#f9fafb;border-radius:8px;">' +
+                '<div style="display:grid;grid-template-columns:2fr 1fr 100px 40px;gap:10px;align-items:center;margin-bottom:8px;">' +
+                '<input type="text" name="fields[' + key + '][label]" placeholder="Field Label" style="margin:0;" required>' +
+                '<select name="fields[' + key + '][type]" class="field-type-selector" style="margin:0;">' +
                 '<option value="text">Text</option>' +
                 '<option value="textarea">Textarea</option>' +
-                '<option value="select">Select</option>' +
+                '<option value="select">Dropdown</option>' +
                 '</select>' +
                 '<label style="display:flex;align-items:center;gap:5px;margin:0;">' +
                 '<input type="checkbox" name="fields[' + key + '][required]" value="1" style="width:18px;height:18px;margin:0;"> Required' +
                 '</label>' +
+                '<button type="button" onclick="if(confirm(\'Delete this field?\')) this.closest(\'.custom-field-row\').remove();" style="background:#ef4444;color:#fff;border:none;padding:8px;border-radius:4px;cursor:pointer;font-size:14px;" title="Delete Field">' +
+                '<i class="fa-solid fa-trash"></i>' +
+                '</button>' +
+                '</div>' +
                 '</div>';
             $('#custom-fields-container').append(html);
+        });
+        
+        // Handle dropdown type selection to show/hide options field
+        $(document).on('change', '.field-type-selector', function() {
+            var row = $(this).closest('.custom-field-row');
+            var existingOptions = row.find('input[name*="[options]"]');
+            
+            if ($(this).val() === 'select') {
+                if (existingOptions.length === 0) {
+                    var fieldName = $(this).attr('name').replace('[type]', '[options]');
+                    row.find('> div').after('<input type="text" name="' + fieldName + '" placeholder="Options (comma-separated: Option1,Option2,Option3)" style="width:100%;margin:0;font-size:12px;color:#6b7280;">');
+                }
+            } else {
+                existingOptions.remove();
+            }
         });
     });
     </script>

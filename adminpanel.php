@@ -183,6 +183,215 @@ add_filter('woocommerce_available_payment_gateways', function($gateways) {
 });
 
 /* =====================================================
+   3C. B2B AUTOMATIC DISCOUNT SYSTEM (Price Calculation Hooks)
+===================================================== */
+
+/**
+ * Get discounted price based on user's B2B group
+ */
+function b2b_get_discounted_price($price, $product_id = 0) {
+    $user_id = get_current_user_id();
+    if (!$user_id) return $price; // Guest users - no discount
+    
+    $group_slug = get_user_meta($user_id, 'b2b_group_slug', true);
+    if (!$group_slug) return $price; // No group assigned
+    
+    $groups = b2b_get_groups();
+    if (!isset($groups[$group_slug])) return $price; // Group doesn't exist
+    
+    $discount = floatval($groups[$group_slug]['discount']);
+    if ($discount <= 0) return $price; // No discount set
+    
+    // Calculate discounted price
+    $discounted = $price * (1 - ($discount / 100));
+    return max(0, $discounted); // Never go below 0
+}
+
+/**
+ * Apply discount to simple product prices
+ */
+add_filter('woocommerce_product_get_price', function($price, $product) {
+    return b2b_get_discounted_price($price, $product->get_id());
+}, 99, 2);
+
+add_filter('woocommerce_product_get_regular_price', function($price, $product) {
+    return b2b_get_discounted_price($price, $product->get_id());
+}, 99, 2);
+
+/**
+ * Apply discount to variable product prices
+ */
+add_filter('woocommerce_product_variation_get_price', function($price, $variation) {
+    return b2b_get_discounted_price($price, $variation->get_id());
+}, 99, 2);
+
+add_filter('woocommerce_product_variation_get_regular_price', function($price, $variation) {
+    return b2b_get_discounted_price($price, $variation->get_id());
+}, 99, 2);
+
+/**
+ * Apply discount in cart display
+ */
+add_filter('woocommerce_cart_item_price', function($price_html, $cart_item, $cart_item_key) {
+    $product = $cart_item['data'];
+    $original_price = $product->get_regular_price();
+    $discounted_price = b2b_get_discounted_price($original_price, $product->get_id());
+    
+    if ($discounted_price < $original_price) {
+        return wc_price($discounted_price);
+    }
+    return $price_html;
+}, 99, 3);
+
+/**
+ * Hide prices for guests (if enabled)
+ */
+add_filter('woocommerce_get_price_html', function($price_html, $product) {
+    if (b2b_is_price_hidden_for_guests() && !is_user_logged_in()) {
+        return '<a href="'.wp_login_url(get_permalink()).'" style="color:#3b82f6;font-weight:600;">Login to see price</a>';
+    }
+    return $price_html;
+}, 10, 2);
+
+/**
+ * Enforce minimum order amount at checkout
+ */
+add_action('woocommerce_checkout_process', function() {
+    $user_id = get_current_user_id();
+    if (!$user_id) return; // Skip for guests
+    
+    $group_slug = get_user_meta($user_id, 'b2b_group_slug', true);
+    if (!$group_slug) return; // No group assigned
+    
+    $groups = b2b_get_groups();
+    if (!isset($groups[$group_slug])) return;
+    
+    $min_order = floatval($groups[$group_slug]['min_order']);
+    if ($min_order <= 0) return; // No minimum set
+    
+    $cart_total = WC()->cart->get_subtotal();
+    if ($cart_total < $min_order) {
+        wc_add_notice(sprintf(
+            'Your B2B group (%s) requires a minimum order of %s. Current cart total: %s',
+            esc_html($groups[$group_slug]['name']),
+            wc_price($min_order),
+            wc_price($cart_total)
+        ), 'error');
+    }
+});
+
+/* =====================================================
+   3D. WORDPRESS USER PROFILE INTEGRATION (Bidirectional Sync)
+===================================================== */
+
+/**
+ * Add B2B fields to WordPress user profile
+ */
+function b2b_user_profile_fields($user) {
+    if (!current_user_can('manage_options')) return; // Only admins can see/edit
+    
+    $groups = b2b_get_groups();
+    $roles = get_option('b2b_roles', [
+        ['slug' => 'customer', 'name' => 'Customer'],
+        ['slug' => 'wholesaler', 'name' => 'Wholesaler'],
+        ['slug' => 'retailer', 'name' => 'Retailer']
+    ]);
+    
+    $user_group = get_user_meta($user->ID, 'b2b_group_slug', true);
+    $user_role = get_user_meta($user->ID, 'b2b_role', true);
+    $user_status = get_user_meta($user->ID, 'b2b_status', true);
+    $user_payments = get_user_meta($user->ID, 'b2b_allowed_payments', true);
+    
+    $all_gateways = WC()->payment_gateways->payment_gateways();
+    ?>
+    <h2 style="margin-top:30px;border-bottom:2px solid #3b82f6;padding-bottom:10px;">B2B Customer Information</h2>
+    <table class="form-table" role="presentation">
+        <tr>
+            <th><label for="b2b_group_slug">B2B Group</label></th>
+            <td>
+                <select name="b2b_group_slug" id="b2b_group_slug" class="regular-text">
+                    <option value="">-- None --</option>
+                    <?php foreach ($groups as $slug => $data): ?>
+                        <option value="<?= esc_attr($slug) ?>" <?= selected($user_group, $slug) ?>>
+                            <?= esc_html($data['name']) ?> (<?= $data['discount'] ?>% discount)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="description">Assign customer to a B2B pricing group for automatic discounts.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="b2b_role">B2B Role</label></th>
+            <td>
+                <select name="b2b_role" id="b2b_role" class="regular-text">
+                    <option value="">-- None --</option>
+                    <?php foreach ($roles as $role): ?>
+                        <option value="<?= esc_attr($role['slug']) ?>" <?= selected($user_role, $role['slug']) ?>>
+                            <?= esc_html($role['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="description">Categorize the customer type (for reporting and filtering).</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="b2b_status">B2B Status</label></th>
+            <td>
+                <select name="b2b_status" id="b2b_status" class="regular-text">
+                    <option value="pending" <?= selected($user_status, 'pending') ?>>Pending Approval</option>
+                    <option value="approved" <?= selected($user_status, 'approved') ?>>Approved</option>
+                </select>
+                <p class="description">Approval status for B2B access.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label>Allowed Payment Methods</label></th>
+            <td>
+                <?php foreach ($all_gateways as $gateway_id => $gateway): ?>
+                    <label style="display:block;margin-bottom:5px;">
+                        <input type="checkbox" name="b2b_allowed_payments[]" value="<?= esc_attr($gateway_id) ?>" 
+                            <?= (is_array($user_payments) && in_array($gateway_id, $user_payments)) ? 'checked' : '' ?>>
+                        <?= esc_html($gateway->get_title()) ?>
+                    </label>
+                <?php endforeach; ?>
+                <p class="description">Restrict which payment methods this user can use at checkout.</p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+add_action('show_user_profile', 'b2b_user_profile_fields');
+add_action('edit_user_profile', 'b2b_user_profile_fields');
+
+/**
+ * Save B2B fields from WordPress user profile
+ */
+function b2b_save_user_profile_fields($user_id) {
+    if (!current_user_can('manage_options')) return;
+    
+    if (isset($_POST['b2b_group_slug'])) {
+        update_user_meta($user_id, 'b2b_group_slug', sanitize_text_field($_POST['b2b_group_slug']));
+    }
+    
+    if (isset($_POST['b2b_role'])) {
+        update_user_meta($user_id, 'b2b_role', sanitize_text_field($_POST['b2b_role']));
+    }
+    
+    if (isset($_POST['b2b_status'])) {
+        update_user_meta($user_id, 'b2b_status', sanitize_text_field($_POST['b2b_status']));
+    }
+    
+    if (isset($_POST['b2b_allowed_payments'])) {
+        $payments = array_map('sanitize_text_field', $_POST['b2b_allowed_payments']);
+        update_user_meta($user_id, 'b2b_allowed_payments', $payments);
+    } else {
+        delete_user_meta($user_id, 'b2b_allowed_payments');
+    }
+}
+add_action('personal_options_update', 'b2b_save_user_profile_fields');
+add_action('edit_user_profile_update', 'b2b_save_user_profile_fields');
+
+/* =====================================================
    4. AJAX HANDLERS
 ===================================================== */
 // A. Order Details (Revize: Fotoğraflar ve Loglar aynı anda görünür)

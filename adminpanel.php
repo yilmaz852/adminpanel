@@ -191,7 +191,7 @@ add_filter('woocommerce_available_payment_gateways', function($gateways) {
  * AUTOMATIC B2B GROUP DISCOUNT SYSTEM
  * Applies group-based discounts to WooCommerce products
  * ==========================================================================
- */
+ * 
  * Apply discount to product prices (ONLY sale price, not regular price)
  * This allows WooCommerce to show: ~~Regular Price~~ Sale Price
  */

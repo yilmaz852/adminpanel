@@ -37,11 +37,12 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/b2b-module/roles/?$', 'index.php?b2b_adm_page=b2b_roles', 'top');
     add_rewrite_rule('^b2b-panel/b2b-module/settings/?$', 'index.php?b2b_adm_page=b2b_settings', 'top');
     add_rewrite_rule('^b2b-panel/b2b-module/form-editor/?$', 'index.php?b2b_adm_page=b2b_form_editor', 'top');
+    add_rewrite_rule('^b2b-panel/sales-agent/?$', 'index.php?b2b_adm_page=sales_agent', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v12_register')) {
+    if (!get_option('b2b_rewrite_v13_sales_agent')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v12_register', true);
+        update_option('b2b_rewrite_v13_sales_agent', true);
     }
 });
 
@@ -696,6 +697,9 @@ function b2b_adm_header($title) {
                 <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_settings'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> Settings</a>
                 <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_form_editor'?'active':'' ?>"><i class="fa-solid fa-pen-to-square"></i> Form Editor</a>
             </div>
+            
+            <!-- Sales Agent -->
+            <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -2858,6 +2862,158 @@ add_action('template_redirect', function () {
             </table>
         </div>
     </div>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   12F. SALES AGENT SETTINGS PAGE (Admin V10 Panel)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'sales_agent') return;
+    b2b_adm_guard();
+    b2b_adm_header('Sales Agent Settings');
+    
+    // Register settings
+    if (!did_action('admin_init')) {
+        add_action('admin_init', function () {
+            register_setting('sa_settings_group', 'sales_panel_title', [
+                'type' => 'string',
+                'sanitize_callback' => 'sanitize_text_field',
+                'default' => 'Sales Agent Panel'
+            ]);
+            register_setting('sa_settings_group', 'sales_commission_rate', [
+                'type' => 'number',
+                'sanitize_callback' => 'floatval',
+                'default' => 10
+            ]);
+            register_setting('sa_settings_group', 'sales_stale_days', [
+                'type' => 'integer',
+                'sanitize_callback' => 'intval',
+                'default' => 30
+            ]);
+            register_setting('sa_settings_group', 'sales_merge_products', [
+                'type' => 'boolean',
+                'sanitize_callback' => 'rest_sanitize_boolean',
+                'default' => false
+            ]);
+        });
+    }
+    
+    // Save Settings
+    if (isset($_POST['save_sales_agent_settings'])) {
+        // Verify nonce for security
+        if (!isset($_POST['sa_settings_nonce']) || !wp_verify_nonce($_POST['sa_settings_nonce'], 'sa_settings_save')) {
+            echo '<div style="background:#fee2e2;color:#b91c1c;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #fecaca;"><i class="fa-solid fa-exclamation-triangle"></i> Security check failed!</div>';
+        } else {
+            update_option('sales_panel_title', sanitize_text_field($_POST['sales_panel_title']));
+            update_option('sales_commission_rate', floatval($_POST['sales_commission_rate']));
+            update_option('sales_stale_days', intval($_POST['sales_stale_days']));
+            update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
+            
+            echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0;"><i class="fa-solid fa-check-circle"></i> Settings saved successfully!</div>';
+        }
+    }
+    
+    // Get current settings
+    $panel_title = get_option('sales_panel_title', 'Sales Agent Panel');
+    $commission_rate = get_option('sales_commission_rate', 10);
+    $stale_days = get_option('sales_stale_days', 30);
+    $merge_products = get_option('sales_merge_products', 0);
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-user-tie"></i> Sales Agent Settings</h1>
+        <p style="color:#6b7280;margin:5px 0 0 0;">Configure settings for Sales Agent system integration</p>
+    </div>
+    
+    <form method="post" style="max-width:900px;">
+        <?php wp_nonce_field('sa_settings_save', 'sa_settings_nonce'); ?>
+        
+        <!-- General Settings -->
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;display:flex;align-items:center;gap:10px;">
+                <i class="fa-solid fa-cog" style="color:#8b5cf6;"></i> General Settings
+            </h3>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:5px;color:#374151;">
+                    <i class="fa-solid fa-heading"></i> Panel Title
+                </label>
+                <input type="text" name="sales_panel_title" value="<?= esc_attr($panel_title) ?>" 
+                       style="width:100%;max-width:400px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;"
+                       placeholder="Sales Agent Panel" required>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 0;">Title displayed in Sales Agent dashboard</p>
+            </div>
+            
+            <div style="margin-bottom:0;">
+                <label style="display:block;font-weight:600;margin-bottom:5px;color:#374151;">
+                    <i class="fa-solid fa-percent"></i> Default Commission Rate
+                </label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <input type="number" name="sales_commission_rate" value="<?= esc_attr($commission_rate) ?>" 
+                           style="width:120px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;"
+                           min="0" max="100" step="0.1" required>
+                    <span style="color:#6b7280;font-weight:600;">%</span>
+                </div>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 0;">Commission percentage for sales agents</p>
+            </div>
+        </div>
+        
+        <!-- Advanced Options -->
+        <div class="card">
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;display:flex;align-items:center;gap:10px;">
+                <i class="fa-solid fa-sliders" style="color:#f59e0b;"></i> Advanced Options
+            </h3>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:5px;color:#374151;">
+                    <i class="fa-solid fa-calendar-xmark"></i> Stale Customer Threshold
+                </label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <input type="number" name="sales_stale_days" value="<?= esc_attr($stale_days) ?>" 
+                           style="width:120px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;"
+                           min="1" max="365" required>
+                    <span style="color:#6b7280;font-weight:600;">days</span>
+                </div>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 0;">Mark customer as inactive after this many days without activity</p>
+            </div>
+            
+            <div style="margin-bottom:0;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_merge_products" value="1" <?= checked($merge_products, 1, false) ?> 
+                           style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:600;color:#374151;">
+                        <i class="fa-solid fa-layer-group"></i> Merge Duplicate Products in Cart
+                    </span>
+                </label>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Automatically combine duplicate products into a single cart item</p>
+            </div>
+        </div>
+        
+        <!-- Integration Info -->
+        <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);border:1px solid #fbbf24;">
+            <h3 style="margin:0 0 15px 0;color:#92400e;display:flex;align-items:center;gap:10px;">
+                <i class="fa-solid fa-info-circle"></i> External Module Integration
+            </h3>
+            <p style="color:#92400e;font-size:13px;line-height:1.6;margin-bottom:15px;">
+                Settings are stored in <code style="background:rgba(146,64,14,0.1);padding:2px 6px;border-radius:4px;font-family:monospace;">wp_options</code> table and can be accessed from your Sales Agent module:
+            </p>
+            <pre style="background:rgba(146,64,14,0.1);padding:15px;border-radius:8px;overflow-x:auto;font-size:12px;color:#78350f;"><code>$title = get_option('sales_panel_title', 'Sales Agent Panel');
+$rate = get_option('sales_commission_rate', 10);
+$days = get_option('sales_stale_days', 30);
+$merge = get_option('sales_merge_products', 0);</code></pre>
+        </div>
+        
+        <div style="display:flex;gap:10px;margin-top:20px;">
+            <button type="submit" name="save_sales_agent_settings" style="background:#8b5cf6;color:#fff;padding:12px 24px;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:0.2s;display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+            <a href="<?= home_url('/b2b-panel') ?>" style="background:#6b7280;color:#fff;padding:12px 24px;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:0.2s;display:flex;align-items:center;gap:8px;text-decoration:none;">
+                <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </form>
     
     <?php b2b_adm_footer(); exit;
 });

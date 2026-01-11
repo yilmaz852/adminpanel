@@ -1611,7 +1611,13 @@ add_action('template_redirect', function () {
     
     $args = ['limit' => $per_page, 'paginate' => true, 'page' => $paged];
     if ($s) $args['s'] = $s;
-    if ($cat) $args['category'] = [$cat];
+    if ($cat) {
+        // Get category slug from term ID for WooCommerce query
+        $cat_term = get_term($cat, 'product_cat');
+        if ($cat_term && !is_wp_error($cat_term)) {
+            $args['category'] = [$cat_term->slug];
+        }
+    }
     if ($stock_status) $args['stock_status'] = $stock_status;
     
     $products = wc_get_products($args);

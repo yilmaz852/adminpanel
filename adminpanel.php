@@ -1630,7 +1630,7 @@ add_action('template_redirect', function () {
         <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;">
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <!-- Category Filter -->
-                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?category='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?><?= $per_page != 20 ? '&per_page='.$per_page : '' ?>'" style="margin:0;max-width:200px;">
+                <select onchange="if(this.value != '0') { window.location.href='<?= home_url('/b2b-panel/products') ?>?category='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?><?= $per_page != 20 ? '&per_page='.$per_page : '' ?>'; } else { window.location.href='<?= home_url('/b2b-panel/products') ?>?<?= $s ? 's='.urlencode($s).'&' : '' ?><?= $stock_status ? 'stock_status='.$stock_status.'&' : '' ?><?= $per_page != 20 ? 'per_page='.$per_page : '' ?>'.replace(/&$/, '').replace(/\?$/, ''); }" style="margin:0;max-width:200px;">
                     <option value="0">All Categories</option>
                     <?php foreach($categories as $c): ?>
                         <option value="<?= $c->term_id ?>" <?= selected($cat, $c->term_id) ?>><?= esc_html($c->name) ?> (<?= $c->count ?>)</option>
@@ -1772,13 +1772,26 @@ add_action('template_redirect', function () {
         <?php endif; ?>
     </div>
     <script>
+    // Products Column Toggle with localStorage
     function toggleColP(idx, show) { 
         var rows = document.getElementById('prodTable').rows; 
         for(var i=0; i<rows.length; i++) { 
             if(rows[i].cells.length > idx) rows[i].cells[idx].style.display = show ? '' : 'none'; 
-        } 
+        }
+        // Save state to localStorage
+        var colStates = JSON.parse(localStorage.getItem('b2b_products_columns') || '{}');
+        colStates[idx] = show;
+        localStorage.setItem('b2b_products_columns', JSON.stringify(colStates));
     }
+    
+    // Restore column visibility from localStorage
+    var savedColStates = JSON.parse(localStorage.getItem('b2b_products_columns') || '{}');
     document.querySelectorAll('#pColDrop input').forEach(function(cb, i){ 
+        // Restore saved state if exists
+        if(savedColStates.hasOwnProperty(i)) {
+            cb.checked = savedColStates[i];
+            toggleColP(i, savedColStates[i]);
+        }
         cb.addEventListener('change', function(){ toggleColP(i, this.checked); }); 
     });
     
@@ -2442,8 +2455,28 @@ add_action('template_redirect', function () {
         </div>
         
         <script>
-        function toggleColC(idx, show) { var rows = document.getElementById('custTable').rows; for(var i=0;i<rows.length;i++) { if(rows[i].cells.length>idx) rows[i].cells[idx].style.display=show?'':'none'; } }
-        document.querySelectorAll('#cColDrop input').forEach(function(cb, i){ cb.addEventListener('change', function(){ toggleColC(i, this.checked); }); });
+        // Customers Column Toggle with localStorage
+        function toggleColC(idx, show) { 
+            var rows = document.getElementById('custTable').rows; 
+            for(var i=0;i<rows.length;i++) { 
+                if(rows[i].cells.length>idx) rows[i].cells[idx].style.display=show?'':'none'; 
+            }
+            // Save state to localStorage
+            var colStates = JSON.parse(localStorage.getItem('b2b_customers_columns') || '{}');
+            colStates[idx] = show;
+            localStorage.setItem('b2b_customers_columns', JSON.stringify(colStates));
+        }
+        
+        // Restore column visibility from localStorage
+        var savedColStates = JSON.parse(localStorage.getItem('b2b_customers_columns') || '{}');
+        document.querySelectorAll('#cColDrop input').forEach(function(cb, i){ 
+            // Restore saved state if exists
+            if(savedColStates.hasOwnProperty(i)) {
+                cb.checked = savedColStates[i];
+                toggleColC(i, savedColStates[i]);
+            }
+            cb.addEventListener('change', function(){ toggleColC(i, this.checked); }); 
+        });
         </script>
         <?php
         b2b_adm_footer(); exit;

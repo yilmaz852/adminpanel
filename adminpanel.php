@@ -937,7 +937,7 @@ add_action('template_redirect', function () {
                 $user_id = wp_insert_user([
                     'user_login' => $username,
                     'user_email' => $email,
-                    'role' => 'subscriber'
+                    'role' => 'customer' // WooCommerce default customer role
                 ]); // No password set
                 
                 if (!is_wp_error($user_id)) {
@@ -2316,6 +2316,8 @@ add_action('template_redirect', function () {
         }
         if ($sales_agent > 0) {
             update_user_meta($uid, 'sales_agent', $sales_agent);
+            // Also update the field that Sales Agent snippet expects
+            update_user_meta($uid, '_sales_agent_assignment', $sales_agent);
         }
         
         // Send email to customer with credentials

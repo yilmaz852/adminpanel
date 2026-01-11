@@ -1606,8 +1606,10 @@ add_action('template_redirect', function () {
     $cat = isset($_GET['category']) ? intval($_GET['category']) : 0;
     $stock_status = isset($_GET['stock_status']) ? sanitize_text_field($_GET['stock_status']) : '';
     $paged = max(1, get_query_var('paged') ?: (isset($_GET['paged']) ? intval($_GET['paged']) : 1));
+    $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
+    $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
     
-    $args = ['limit' => 20, 'paginate' => true, 'page' => $paged];
+    $args = ['limit' => $per_page, 'paginate' => true, 'page' => $paged];
     if ($s) $args['s'] = $s;
     if ($cat) $args['category'] = [$cat];
     if ($stock_status) $args['stock_status'] = $stock_status;
@@ -1628,7 +1630,7 @@ add_action('template_redirect', function () {
         <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;">
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <!-- Category Filter -->
-                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?category='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?>'" style="margin:0;max-width:200px;">
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?category='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?><?= $per_page != 20 ? '&per_page='.$per_page : '' ?>'" style="margin:0;max-width:200px;">
                     <option value="0">All Categories</option>
                     <?php foreach($categories as $c): ?>
                         <option value="<?= $c->term_id ?>" <?= selected($cat, $c->term_id) ?>><?= esc_html($c->name) ?> (<?= $c->count ?>)</option>
@@ -1636,11 +1638,19 @@ add_action('template_redirect', function () {
                 </select>
                 
                 <!-- Stock Status Filter -->
-                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?stock_status='+this.value+'<?= $cat ? '&category='.$cat : '' ?><?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:180px;">
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?stock_status='+this.value+'<?= $cat ? '&category='.$cat : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $per_page != 20 ? '&per_page='.$per_page : '' ?>'" style="margin:0;max-width:180px;">
                     <option value="">All Stock Status</option>
                     <option value="instock" <?= selected($stock_status, 'instock') ?>>In Stock</option>
                     <option value="outofstock" <?= selected($stock_status, 'outofstock') ?>>Out of Stock</option>
                     <option value="onbackorder" <?= selected($stock_status, 'onbackorder') ?>>On Backorder</option>
+                </select>
+                
+                <!-- Per Page Selector -->
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?per_page='+this.value+'<?= $cat ? '&category='.$cat : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?><?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
+                    <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
+                    <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
+                    <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
+                    <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
                 </select>
                 
                 <!-- Column Toggler -->
@@ -1663,6 +1673,7 @@ add_action('template_redirect', function () {
             <form style="display:flex;gap:10px" method="get" action="<?= home_url('/b2b-panel/products') ?>">
                 <?php if($cat): ?><input type="hidden" name="category" value="<?= $cat ?>"><?php endif; ?>
                 <?php if($stock_status): ?><input type="hidden" name="stock_status" value="<?= $stock_status ?>"><?php endif; ?>
+                <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
                 <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search by name or SKU..." style="margin:0;min-width:250px;">
                 <button>Search</button>
                 <?php if($s || $cat || $stock_status): ?><a href="<?= home_url('/b2b-panel/products') ?>" style="padding:10px;color:#ef4444;text-decoration:none;font-weight:600;">Reset All</a><?php endif; ?>
@@ -1737,24 +1748,26 @@ add_action('template_redirect', function () {
         
         <!-- Pagination -->
         <?php if($products->max_num_pages > 1): ?>
-        <div style="margin-top:20px;text-align:center;display:flex;justify-content:center;gap:5px">
-            <?php 
-            $current = $paged;
-            $base_url = home_url('/b2b-panel/products');
-            $params = [];
-            if($s) $params[] = 's=' . urlencode($s);
-            if($cat) $params[] = 'category=' . $cat;
-            if($stock_status) $params[] = 'stock_status=' . $stock_status;
-            $query_string = !empty($params) ? '?' . implode('&', $params) : '';
-            
-            for($i = 1; $i <= $products->max_num_pages; $i++) {
-                $page_params = $params;
-                if($i > 1) $page_params[] = 'paged=' . $i;
-                $page_url = $base_url . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
-                $active_style = ($i == $current) ? 'background:#3b82f6;color:white;' : 'background:white;color:#374151;';
-                echo '<a href="' . $page_url . '" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;text-decoration:none;font-weight:600;' . $active_style . '">' . $i . '</a>';
-            }
-            ?>
+        <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+            <span style="color:#6b7280;font-size:14px;">Page:</span>
+            <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                <?php 
+                for($i = 1; $i <= $products->max_num_pages; $i++) {
+                    $page_params = [];
+                    if($s) $page_params[] = 's=' . urlencode($s);
+                    if($cat) $page_params[] = 'category=' . $cat;
+                    if($stock_status) $page_params[] = 'stock_status=' . $stock_status;
+                    if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
+                    if($i > 1) $page_params[] = 'paged=' . $i;
+                    $page_url = home_url('/b2b-panel/products') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                    $selected = ($i == $paged) ? 'selected' : '';
+                    echo '<option value="' . esc_attr($page_url) . '" ' . $selected . '>Page ' . $i . ' of ' . $products->max_num_pages . '</option>';
+                }
+                ?>
+            </select>
+            <span style="color:#6b7280;font-size:14px;">
+                (Showing <?= min($per_page, $products->total) ?> of <?= $products->total ?> products)
+            </span>
         </div>
         <?php endif; ?>
     </div>
@@ -2268,12 +2281,13 @@ add_action('template_redirect', function () {
     if ($page === 'customers') {
         $paged = max(1, $_GET['paged'] ?? 1);
         $s = isset($_GET['s']) ? trim($_GET['s']) : '';
-        $number = 20;
+        $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
+        $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
         
         $args = [
             'role__in' => ['customer', 'subscriber', 'sales_agent'], 
-            'number'   => $number,
-            'offset'   => ($paged - 1) * $number,
+            'number'   => $per_page,
+            'offset'   => ($paged - 1) * $per_page,
             'search'   => $s ? "*{$s}*" : '',
             'orderby'  => 'registered',
             'order'    => 'DESC'
@@ -2282,7 +2296,7 @@ add_action('template_redirect', function () {
         $user_query = new WP_User_Query($args);
         $users = $user_query->get_results();
         $total_users = $user_query->get_total();
-        $total_pages = ceil($total_users / $number);
+        $total_pages = ceil($total_users / $per_page);
 
         b2b_adm_header('Customer Management');
         ?>
@@ -2291,22 +2305,33 @@ add_action('template_redirect', function () {
         <div class="card">
             <!-- Toolbar -->
             <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;align-items:center">
-                <div class="col-toggler">
-                    <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
-                    <div id="cColDrop" class="col-dropdown">
-                        <label><input type="checkbox" checked data-col="0"> ID</label>
-                        <label><input type="checkbox" checked data-col="1"> Customer Info</label>
-                        <label><input type="checkbox" checked data-col="2"> Contact</label>
-                        <label><input type="checkbox" checked data-col="3"> B2B Group</label>
-                        <label><input type="checkbox" checked data-col="4"> Location</label>
-                        <label><input type="checkbox" checked data-col="5"> Role</label>
-                        <label><input type="checkbox" checked data-col="6"> Actions</label>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <div class="col-toggler">
+                        <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
+                        <div id="cColDrop" class="col-dropdown">
+                            <label><input type="checkbox" checked data-col="0"> ID</label>
+                            <label><input type="checkbox" checked data-col="1"> Customer Info</label>
+                            <label><input type="checkbox" checked data-col="2"> Contact</label>
+                            <label><input type="checkbox" checked data-col="3"> B2B Group</label>
+                            <label><input type="checkbox" checked data-col="4"> Location</label>
+                            <label><input type="checkbox" checked data-col="5"> Role</label>
+                            <label><input type="checkbox" checked data-col="6"> Actions</label>
+                        </div>
                     </div>
+                    
+                    <!-- Per Page Selector -->
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
+                        <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
+                        <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
+                        <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
+                        <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
+                    </select>
                 </div>
 
                 <div style="flex:1;display:flex;justify-content:flex-end;gap:10px">
                     <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">Total: <strong><?= $total_users ?></strong></span>
                     <form style="display:flex;gap:5px">
+                        <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
                         <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search customers..." style="margin:0;max-width:250px">
                         <button>Search</button>
                         <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
@@ -2394,8 +2419,24 @@ add_action('template_redirect', function () {
             </table>
 
             <?php if($total_pages > 1): ?>
-            <div style="margin-top:20px;text-align:center;display:flex;justify-content:center;gap:5px">
-                <?php echo paginate_links(['base'=>add_query_arg('paged','%#%'),'format'=>'','current'=>$paged,'total'=>$total_pages,'prev_text'=>'&laquo;','next_text'=>'&raquo;','type'=>'plain']); ?>
+            <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+                <span style="color:#6b7280;font-size:14px;">Page:</span>
+                <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                    <?php 
+                    for($i = 1; $i <= $total_pages; $i++) {
+                        $page_params = [];
+                        if($s) $page_params[] = 's=' . urlencode($s);
+                        if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
+                        if($i > 1) $page_params[] = 'paged=' . $i;
+                        $page_url = home_url('/b2b-panel/customers') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                        $selected = ($i == $paged) ? 'selected' : '';
+                        echo '<option value="' . esc_attr($page_url) . '" ' . $selected . '>Page ' . $i . ' of ' . $total_pages . '</option>';
+                    }
+                    ?>
+                </select>
+                <span style="color:#6b7280;font-size:14px;">
+                    (Showing <?= min($per_page * $paged, $total_users) ?> of <?= $total_users ?> customers)
+                </span>
             </div>
             <?php endif; ?>
         </div>

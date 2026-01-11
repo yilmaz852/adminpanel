@@ -30,6 +30,10 @@ add_action('init', function () {
     
     // Ürün Detay (Edit) - Bu satır en kritik olanı
     add_rewrite_rule('^b2b-panel/products/edit/?$', 'index.php?b2b_adm_page=product_edit', 'top');
+    
+    // Products Import/Export
+    add_rewrite_rule('^b2b-panel/products/import/?$', 'index.php?b2b_adm_page=products_import', 'top');
+    add_rewrite_rule('^b2b-panel/products/export/?$', 'index.php?b2b_adm_page=products_export', 'top');
 
     // B2B Module (V10 - New)
     add_rewrite_rule('^b2b-panel/b2b-module/?$', 'index.php?b2b_adm_page=b2b_approvals', 'top');
@@ -40,14 +44,15 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/sales-agent/?$', 'index.php?b2b_adm_page=sales_agent', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v13_sales_agent')) {
+    if (!get_option('b2b_rewrite_v14_products_module')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v13_sales_agent', true);
+        update_option('b2b_rewrite_v14_products_module', true);
     }
 });
 
 add_filter('query_vars', function ($vars) {
     $vars[] = 'b2b_adm_page';
+    $vars[] = 'paged';
     return $vars;
 });
 
@@ -82,6 +87,48 @@ function b2b_adm_add_log($pid, $type, $old, $new, $msg) {
     ]);
     update_post_meta($pid, '_b2b_stock_log', array_slice($logs, 0, 50));
 }
+
+/* =====================================================
+   3A. AJAX: QUICK EDIT STOCK
+===================================================== */
+add_action('wp_ajax_b2b_quick_edit_stock', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    $updates = isset($_POST['updates']) ? json_decode(stripslashes($_POST['updates']), true) : [];
+    
+    if(empty($updates)) {
+        wp_send_json_error('No updates provided');
+        return;
+    }
+    
+    $success_count = 0;
+    $user = wp_get_current_user();
+    
+    foreach($updates as $update) {
+        $product_id = intval($update['id']);
+        $new_qty = intval($update['qty']);
+        
+        $product = wc_get_product($product_id);
+        if(!$product) continue;
+        
+        $old_qty = $product->get_stock_quantity();
+        
+        // Update stock
+        $product->set_manage_stock(true);
+        $product->set_stock_quantity($new_qty);
+        $product->save();
+        
+        // Log the change
+        b2b_adm_add_log($product_id, 'stock', $old_qty, $new_qty, 'Quick Edit Stock Update');
+        
+        $success_count++;
+    }
+    
+    wp_send_json_success(['updated' => $success_count]);
+});
 
 /* =====================================================
    3B. B2B PRO SYSTEM v7.0 (Gelişmiş Ödeme İzinleri Matrisi)
@@ -683,7 +730,17 @@ function b2b_adm_header($title) {
         <div class="sidebar-nav">
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
-            <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-tags"></i> Products</a>
+            
+            <!-- Products Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-tags"></i> Products <i class="fa-solid fa-chevron-down"></i>
+            </div>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
+                <a href="<?= home_url('/b2b-panel/products/import') ?>" class="<?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>"><i class="fa-solid fa-file-import"></i> Import</a>
+                <a href="<?= home_url('/b2b-panel/products/export') ?>" class="<?= get_query_var('b2b_adm_page')=='products_export'?'active':'' ?>"><i class="fa-solid fa-file-export"></i> Export</a>
+            </div>
+            
             <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
             
             <!-- B2B Module with Submenu -->
@@ -1548,8 +1605,9 @@ add_action('template_redirect', function () {
     $s = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
     $cat = isset($_GET['category']) ? intval($_GET['category']) : 0;
     $stock_status = isset($_GET['stock_status']) ? sanitize_text_field($_GET['stock_status']) : '';
+    $paged = max(1, get_query_var('paged') ?: (isset($_GET['paged']) ? intval($_GET['paged']) : 1));
     
-    $args = ['limit' => 20, 'paginate' => true];
+    $args = ['limit' => 20, 'paginate' => true, 'page' => $paged];
     if ($s) $args['s'] = $s;
     if ($cat) $args['category'] = [$cat];
     if ($stock_status) $args['stock_status'] = $stock_status;
@@ -1559,13 +1617,18 @@ add_action('template_redirect', function () {
     
     b2b_adm_header('Product Management');
     ?>
-    <div class="page-header"><h1 class="page-title">Products</h1></div>
+    <div class="page-header">
+        <h1 class="page-title">Products</h1>
+        <button id="quickEditToggle" onclick="toggleQuickEdit()" class="secondary" style="display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-bolt"></i> Quick Edit Stock
+        </button>
+    </div>
     <div class="card">
         <!-- Enhanced Filter Bar -->
         <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;">
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <!-- Category Filter -->
-                <select onchange="location.href='?b2b_adm_page=products&category='+this.value+'&s=<?= esc_js($s) ?>&stock_status=<?= esc_js($stock_status) ?>'" style="margin:0;max-width:200px;">
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?category='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?>'" style="margin:0;max-width:200px;">
                     <option value="0">All Categories</option>
                     <?php foreach($categories as $c): ?>
                         <option value="<?= $c->term_id ?>" <?= selected($cat, $c->term_id) ?>><?= esc_html($c->name) ?> (<?= $c->count ?>)</option>
@@ -1573,7 +1636,7 @@ add_action('template_redirect', function () {
                 </select>
                 
                 <!-- Stock Status Filter -->
-                <select onchange="location.href='?b2b_adm_page=products&stock_status='+this.value+'&category=<?= $cat ?>&s=<?= esc_js($s) ?>'" style="margin:0;max-width:180px;">
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?stock_status='+this.value+'<?= $cat ? '&category='.$cat : '' ?><?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:180px;">
                     <option value="">All Stock Status</option>
                     <option value="instock" <?= selected($stock_status, 'instock') ?>>In Stock</option>
                     <option value="outofstock" <?= selected($stock_status, 'outofstock') ?>>Out of Stock</option>
@@ -1597,14 +1660,22 @@ add_action('template_redirect', function () {
             </div>
             
             <!-- Search Form -->
-            <form style="display:flex;gap:10px" method="get" action="<?= home_url('/') ?>">
-                <input type="hidden" name="b2b_adm_page" value="products">
+            <form style="display:flex;gap:10px" method="get" action="<?= home_url('/b2b-panel/products') ?>">
                 <?php if($cat): ?><input type="hidden" name="category" value="<?= $cat ?>"><?php endif; ?>
                 <?php if($stock_status): ?><input type="hidden" name="stock_status" value="<?= $stock_status ?>"><?php endif; ?>
                 <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search by name or SKU..." style="margin:0;min-width:250px;">
                 <button>Search</button>
                 <?php if($s || $cat || $stock_status): ?><a href="<?= home_url('/b2b-panel/products') ?>" style="padding:10px;color:#ef4444;text-decoration:none;font-weight:600;">Reset All</a><?php endif; ?>
             </form>
+        </div>
+        
+        <!-- Quick Edit Save Button (Hidden by default) -->
+        <div id="quickEditBar" style="display:none;margin-bottom:15px;padding:12px;background:#f0f9ff;border:2px solid #3b82f6;border-radius:8px;text-align:center;">
+            <strong style="color:#1e40af;margin-right:15px;">Quick Edit Mode Active</strong>
+            <button onclick="saveQuickEdit()" style="background:#10b981;color:white;padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                <i class="fa-solid fa-save"></i> Save All Changes
+            </button>
+            <button onclick="toggleQuickEdit()" class="secondary" style="margin-left:10px;">Cancel</button>
         </div>
         
         <!-- Enhanced Product Table -->
@@ -1628,20 +1699,22 @@ add_action('template_redirect', function () {
                 $img = wp_get_attachment_image_src($p->get_image_id(),'thumbnail');
                 $cats = wp_get_post_terms($p->get_id(), 'product_cat', ['fields' => 'names']);
             ?>
-            <tr>
+            <tr data-product-id="<?= $p->get_id() ?>">
                 <td data-col="0"><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
                 <td data-col="1"><strong><?= esc_html($p->get_name()) ?></strong></td>
                 <td data-col="2"><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
                 <td data-col="3"><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
                 <td data-col="4"><strong><?= $p->get_price_html() ?></strong></td>
-                <td data-col="5">
+                <td data-col="5" class="stock-cell">
                     <?php if($p->managing_stock()): 
                         $qty = $p->get_stock_quantity();
                         $color = $qty > 10 ? '#10b981' : ($qty > 0 ? '#f59e0b' : '#ef4444');
                     ?>
-                        <span style="color:<?= $color ?>;font-weight:600;"><?= $qty ?></span>
+                        <span class="stock-display" style="color:<?= $color ?>;font-weight:600;"><?= $qty ?></span>
+                        <input type="number" class="stock-input" data-product-id="<?= $p->get_id() ?>" value="<?= $qty ?>" style="display:none;width:80px;padding:4px;border:2px solid #3b82f6;border-radius:4px;" min="0">
                     <?php else: ?>
-                        <?= $p->is_in_stock() ? '<span style="color:#10b981;">In Stock</span>' : '<span style="color:#ef4444;">Out</span>' ?>
+                        <span class="stock-display"><?= $p->is_in_stock() ? '<span style="color:#10b981;">In Stock</span>' : '<span style="color:#ef4444;">Out</span>' ?></span>
+                        <span class="stock-input" style="display:none;color:#6b7280;font-size:11px;">N/A</span>
                     <?php endif; ?>
                 </td>
                 <td data-col="6">
@@ -1666,23 +1739,21 @@ add_action('template_redirect', function () {
         <?php if($products->max_num_pages > 1): ?>
         <div style="margin-top:20px;text-align:center;display:flex;justify-content:center;gap:5px">
             <?php 
-            $current = max(1, get_query_var('paged'));
+            $current = $paged;
             $base_url = home_url('/b2b-panel/products');
             $params = [];
             if($s) $params[] = 's=' . urlencode($s);
             if($cat) $params[] = 'category=' . $cat;
             if($stock_status) $params[] = 'stock_status=' . $stock_status;
-            $param_str = !empty($params) ? '&' . implode('&', $params) : '';
+            $query_string = !empty($params) ? '?' . implode('&', $params) : '';
             
-            echo paginate_links([
-                'base' => $base_url . '%_%',
-                'format' => '&paged=%#%' . $param_str,
-                'current' => $current,
-                'total' => $products->max_num_pages,
-                'prev_text' => '&laquo;',
-                'next_text' => '&raquo;',
-                'type' => 'plain'
-            ]); 
+            for($i = 1; $i <= $products->max_num_pages; $i++) {
+                $page_params = $params;
+                if($i > 1) $page_params[] = 'paged=' . $i;
+                $page_url = $base_url . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                $active_style = ($i == $current) ? 'background:#3b82f6;color:white;' : 'background:white;color:#374151;';
+                echo '<a href="' . $page_url . '" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;text-decoration:none;font-weight:600;' . $active_style . '">' . $i . '</a>';
+            }
             ?>
         </div>
         <?php endif; ?>
@@ -1697,9 +1768,271 @@ add_action('template_redirect', function () {
     document.querySelectorAll('#pColDrop input').forEach(function(cb, i){ 
         cb.addEventListener('change', function(){ toggleColP(i, this.checked); }); 
     });
+    
+    // Quick Edit Functionality
+    let quickEditMode = false;
+    
+    function toggleQuickEdit() {
+        quickEditMode = !quickEditMode;
+        const displays = document.querySelectorAll('.stock-display');
+        const inputs = document.querySelectorAll('.stock-input');
+        const bar = document.getElementById('quickEditBar');
+        const btn = document.getElementById('quickEditToggle');
+        
+        displays.forEach(el => el.style.display = quickEditMode ? 'none' : '');
+        inputs.forEach(el => el.style.display = quickEditMode ? 'inline-block' : 'none');
+        bar.style.display = quickEditMode ? 'block' : 'none';
+        btn.style.background = quickEditMode ? '#10b981' : '';
+        btn.style.color = quickEditMode ? 'white' : '';
+        
+        if(!quickEditMode) {
+            // Reset inputs to original values when canceling
+            inputs.forEach(input => {
+                if(input.tagName === 'INPUT') {
+                    const row = input.closest('tr');
+                    const display = row.querySelector('.stock-display');
+                    if(display) {
+                        const originalValue = display.textContent.trim();
+                        if(!isNaN(originalValue)) {
+                            input.value = originalValue;
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    function saveQuickEdit() {
+        const inputs = document.querySelectorAll('.stock-input[type="number"]');
+        const updates = [];
+        
+        inputs.forEach(input => {
+            const productId = input.getAttribute('data-product-id');
+            const newQty = parseInt(input.value);
+            if(productId && !isNaN(newQty)) {
+                updates.push({id: productId, qty: newQty});
+            }
+        });
+        
+        if(updates.length === 0) {
+            alert('No changes to save.');
+            return;
+        }
+        
+        // Show loading state
+        const saveBtn = event.target;
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+        saveBtn.disabled = true;
+        
+        // AJAX call to save
+        fetch('<?= admin_url('admin-ajax.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=b2b_quick_edit_stock&updates=' + encodeURIComponent(JSON.stringify(updates))
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert('Stock quantities updated successfully!');
+                location.reload();
+            } else {
+                alert('Error: ' + (data.data || 'Unknown error'));
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+            }
+        })
+        .catch(error => {
+            alert('Error saving changes: ' + error);
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+        });
+    }
     </script>
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   9B. PAGE: PRODUCTS IMPORT
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'products_import') return;
+    b2b_adm_guard();
+    
+    // Handle CSV import
+    $import_message = '';
+    if(isset($_POST['import_products']) && isset($_FILES['csv_file'])) {
+        $file = $_FILES['csv_file'];
+        if($file['error'] === 0 && pathinfo($file['name'], PATHINFO_EXTENSION) === 'csv') {
+            $handle = fopen($file['tmp_name'], 'r');
+            $row = 0;
+            $imported = 0;
+            $updated = 0;
+            
+            while (($data = fgetcsv($handle, 1000, ',')) !== FALSE) {
+                $row++;
+                if($row === 1) continue; // Skip header
+                
+                // Expected format: SKU, Name, Price, Stock, Category
+                $sku = isset($data[0]) ? sanitize_text_field($data[0]) : '';
+                $name = isset($data[1]) ? sanitize_text_field($data[1]) : '';
+                $price = isset($data[2]) ? floatval($data[2]) : 0;
+                $stock = isset($data[3]) ? intval($data[3]) : 0;
+                $category = isset($data[4]) ? sanitize_text_field($data[4]) : '';
+                
+                if(empty($sku)) continue;
+                
+                // Check if product exists by SKU
+                $product_id = wc_get_product_id_by_sku($sku);
+                
+                if($product_id) {
+                    // Update existing product
+                    $product = wc_get_product($product_id);
+                    $product->set_regular_price($price);
+                    $product->set_price($price);
+                    $product->set_manage_stock(true);
+                    $product->set_stock_quantity($stock);
+                    $product->save();
+                    $updated++;
+                } else {
+                    // Create new product
+                    $product = new WC_Product_Simple();
+                    $product->set_name($name);
+                    $product->set_sku($sku);
+                    $product->set_regular_price($price);
+                    $product->set_price($price);
+                    $product->set_manage_stock(true);
+                    $product->set_stock_quantity($stock);
+                    $product->set_status('publish');
+                    
+                    if(!empty($category)) {
+                        $term = get_term_by('name', $category, 'product_cat');
+                        if($term) {
+                            $product->set_category_ids([$term->term_id]);
+                        }
+                    }
+                    
+                    $product->save();
+                    $imported++;
+                }
+            }
+            fclose($handle);
+            $import_message = "<div style='padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;'><strong>Success!</strong> Imported {$imported} new products, updated {$updated} existing products.</div>";
+        } else {
+            $import_message = "<div style='padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;'><strong>Error!</strong> Invalid file. Please upload a CSV file.</div>";
+        }
+    }
+    
+    b2b_adm_header('Import Products');
+    ?>
+    <div class="page-header"><h1 class="page-title">Import Products</h1></div>
+    <div class="card">
+        <?= $import_message ?>
+        
+        <div style="max-width:600px;">
+            <h3 style="margin-top:0;">Upload CSV File</h3>
+            <p style="color:#6b7280;">Import products from a CSV file. The file should have the following columns: <code>SKU, Name, Price, Stock, Category</code></p>
+            
+            <form method="post" enctype="multipart/form-data" style="margin-top:20px;">
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:8px;font-weight:600;">Select CSV File</label>
+                    <input type="file" name="csv_file" accept=".csv" required style="display:block;width:100%;padding:10px;border:2px dashed #e5e7eb;border-radius:8px;">
+                </div>
+                
+                <button type="submit" name="import_products" style="background:#3b82f6;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+                    <i class="fa-solid fa-file-import"></i> Import Products
+                </button>
+            </form>
+            
+            <div style="margin-top:30px;padding:15px;background:#f3f4f6;border-radius:8px;">
+                <h4 style="margin-top:0;">CSV Format Example:</h4>
+                <pre style="background:white;padding:10px;border-radius:4px;overflow-x:auto;">SKU,Name,Price,Stock,Category
+PROD001,Sample Product 1,29.99,100,Electronics
+PROD002,Sample Product 2,49.99,50,Clothing</pre>
+            </div>
+            
+            <div style="margin-top:20px;">
+                <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;">
+                    <button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button>
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   9C. PAGE: PRODUCTS EXPORT
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'products_export') return;
+    b2b_adm_guard();
+    
+    // Handle export
+    if(isset($_POST['export_products'])) {
+        $args = ['limit' => -1, 'status' => 'publish'];
+        $products = wc_get_products($args);
+        
+        // Set headers for CSV download
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="products-export-' . date('Y-m-d') . '.csv"');
+        
+        $output = fopen('php://output', 'w');
+        
+        // CSV Header
+        fputcsv($output, ['SKU', 'Name', 'Price', 'Stock', 'Category', 'Status']);
+        
+        // Product rows
+        foreach($products as $product) {
+            $cats = wp_get_post_terms($product->get_id(), 'product_cat', ['fields' => 'names']);
+            fputcsv($output, [
+                $product->get_sku(),
+                $product->get_name(),
+                $product->get_regular_price(),
+                $product->get_stock_quantity() ?: 0,
+                !empty($cats) ? implode(', ', $cats) : '',
+                $product->get_status()
+            ]);
+        }
+        
+        fclose($output);
+        exit;
+    }
+    
+    b2b_adm_header('Export Products');
+    ?>
+    <div class="page-header"><h1 class="page-title">Export Products</h1></div>
+    <div class="card">
+        <div style="max-width:600px;">
+            <h3 style="margin-top:0;">Export to CSV</h3>
+            <p style="color:#6b7280;">Export all products to a CSV file with SKU, Name, Price, Stock, Category, and Status columns.</p>
+            
+            <form method="post" style="margin-top:20px;">
+                <button type="submit" name="export_products" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+                    <i class="fa-solid fa-file-export"></i> Export All Products
+                </button>
+            </form>
+            
+            <div style="margin-top:30px;padding:15px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;">
+                <h4 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> Export Information</h4>
+                <ul style="color:#1e40af;margin:0;">
+                    <li>All published products will be exported</li>
+                    <li>CSV format: SKU, Name, Price, Stock, Category, Status</li>
+                    <li>File name: products-export-YYYY-MM-DD.csv</li>
+                    <li>You can edit the CSV and re-import it</li>
+                </ul>
+            </div>
+            
+            <div style="margin-top:20px;">
+                <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;">
+                    <button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button>
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
 /* =====================================================
    10. PAGE: PRODUCT EDIT (FULL STOCK LOGIC FIXED)
 ===================================================== */

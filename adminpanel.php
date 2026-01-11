@@ -1262,7 +1262,7 @@ add_action('template_redirect', function () {
                 <button type="submit">Register <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
 
                 <div class="login-link">
-                    Already have an account? <a href="<?= home_url('/b2b-login') ?>">Login here</a>
+                    Already have an account? <a href="<?= home_url() ?>">Login here</a>
                 </div>
             <?php endif; ?>
         </form>

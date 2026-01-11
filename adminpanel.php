@@ -65,6 +65,49 @@ add_filter('query_vars', function ($vars) {
 });
 
 /* =====================================================
+   1B. WOOCOMMERCE TAX EXEMPTION INTEGRATION
+===================================================== */
+// Hook into WooCommerce to check if customer is tax exempt
+add_filter('woocommerce_customer_is_vat_exempt', function($is_vat_exempt) {
+    if(!is_user_logged_in()) return $is_vat_exempt;
+    
+    $user_id = get_current_user_id();
+    $tax_exempt = get_user_meta($user_id, 'b2b_tax_exempt', true);
+    
+    // If user is marked as tax exempt, remove all taxes
+    if($tax_exempt == 1) {
+        return true;
+    }
+    
+    return $is_vat_exempt;
+}, 10, 1);
+
+// Alternative: Remove tax rates for exempt customers
+add_filter('woocommerce_product_get_tax_class', function($tax_class, $product) {
+    if(is_user_logged_in()) {
+        $user_id = get_current_user_id();
+        $tax_exempt = get_user_meta($user_id, 'b2b_tax_exempt', true);
+        
+        if($tax_exempt == 1) {
+            return 'Zero rate'; // Return zero tax class
+        }
+    }
+    return $tax_class;
+}, 10, 2);
+
+// Set customer as VAT exempt in cart/checkout
+add_action('woocommerce_before_calculate_totals', function($cart) {
+    if(is_user_logged_in()) {
+        $user_id = get_current_user_id();
+        $tax_exempt = get_user_meta($user_id, 'b2b_tax_exempt', true);
+        
+        if($tax_exempt == 1) {
+            WC()->customer->set_is_vat_exempt(true);
+        }
+    }
+}, 10, 1);
+
+/* =====================================================
    2. SECURITY GUARD (ADMIN ONLY)
 ===================================================== */
 function b2b_adm_guard() {
@@ -1036,6 +1079,40 @@ add_action('template_redirect', function () {
                     update_user_meta($user_id, 'b2b_requested_group', $b2b_group);
                     update_user_meta($user_id, 'b2b_group_slug', ''); // Admin atayacak
                     
+                    // Tax Exemption (from registration form)
+                    $tax_exempt_requested = isset($_POST['tax_exempt']) ? 1 : 0;
+                    $tax_id = sanitize_text_field($_POST['tax_id'] ?? '');
+                    $tax_notes = sanitize_textarea_field($_POST['tax_notes'] ?? '');
+                    
+                    update_user_meta($user_id, 'b2b_tax_exempt_requested', $tax_exempt_requested);
+                    update_user_meta($user_id, 'b2b_tax_id', $tax_id);
+                    update_user_meta($user_id, 'b2b_tax_notes', $tax_notes);
+                    
+                    // Auto-approve if setting enabled, otherwise pending
+                    $tax_auto = get_option('b2b_tax_auto_remove', 0);
+                    if($tax_exempt_requested && $tax_auto) {
+                        update_user_meta($user_id, 'b2b_tax_exempt', 1);
+                        update_user_meta($user_id, 'b2b_tax_request', 0);
+                    } elseif($tax_exempt_requested) {
+                        update_user_meta($user_id, 'b2b_tax_exempt', 0);
+                        update_user_meta($user_id, 'b2b_tax_request', 1);
+                        update_user_meta($user_id, 'b2b_tax_request_date', current_time('mysql'));
+                    }
+                    
+                    // Handle file upload for tax certificate
+                    if($tax_exempt_requested && isset($_FILES['tax_certificate']) && $_FILES['tax_certificate']['error'] === 0) {
+                        $allowed_types = explode(',', get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png'));
+                        $file_ext = strtolower(pathinfo($_FILES['tax_certificate']['name'], PATHINFO_EXTENSION));
+                        
+                        if(in_array($file_ext, $allowed_types)) {
+                            require_once(ABSPATH . 'wp-admin/includes/file.php');
+                            $upload = wp_handle_upload($_FILES['tax_certificate'], ['test_form' => false]);
+                            if(isset($upload['url'])) {
+                                update_user_meta($user_id, 'b2b_tax_certificate', $upload['url']);
+                            }
+                        }
+                    }
+                    
                     // Custom fields (form editor'den)
                     $custom_fields = b2b_get_custom_fields();
                     foreach ($custom_fields as $key => $field) {
@@ -1241,7 +1318,7 @@ add_action('template_redirect', function () {
         <div class="bg-shape shape-1"></div>
         <div class="bg-shape shape-2"></div>
 
-        <form method="post" class="register-card">
+        <form method="post" class="register-card" enctype="multipart/form-data">
             <div class="icon-box">
                 <i class="fa-solid fa-user-plus"></i>
             </div>
@@ -1333,6 +1410,46 @@ add_action('template_redirect', function () {
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
+
+                <!-- Tax Exemption Section -->
+                <?php 
+                $tax_enable_text = get_option('b2b_tax_enable_text', 1);
+                $tax_text_label = get_option('b2b_tax_text_label', 'Tax ID');
+                $tax_enable_textarea = get_option('b2b_tax_enable_textarea', 0);
+                $tax_textarea_label = get_option('b2b_tax_textarea_label', 'Additional Information');
+                $tax_enable_file = get_option('b2b_tax_enable_file', 1);
+                $tax_file_label = get_option('b2b_tax_file_label', 'Tax Certificate');
+                ?>
+                <div class="input-group" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:20px;margin-top:20px;">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:15px;">
+                        <input type="checkbox" name="tax_exempt" id="tax_exempt" value="1" onchange="document.getElementById('tax_fields').style.display=this.checked?'block':'none'" style="width:auto;">
+                        <span style="font-weight:600;color:#fff;">Request Tax Exemption</span>
+                    </label>
+                    
+                    <div id="tax_fields" style="display:none;margin-left:30px;padding-left:15px;border-left:2px solid rgba(16,185,129,0.3);">
+                        <?php if($tax_enable_text): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($tax_text_label) ?></label>
+                            <input type="text" name="tax_id" placeholder="Enter your tax ID number">
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if($tax_enable_textarea): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($tax_textarea_label) ?></label>
+                            <textarea name="tax_notes" placeholder="Additional information or notes"></textarea>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if($tax_enable_file): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($tax_file_label) ?></label>
+                            <input type="file" name="tax_certificate" accept=".<?= str_replace(',', ',.', get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png')) ?>" style="padding:8px;">
+                            <small style="color:rgba(255,255,255,0.5);font-size:0.75rem;display:block;margin-top:5px;">Allowed: <?= get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png') ?></small>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
 
                 <button type="submit">Register <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
 
@@ -2778,6 +2895,11 @@ add_action('template_redirect', function () {
             if(isset($_POST['b2b_group'])) $b2b_data['b2b_group_slug'] = sanitize_text_field($_POST['b2b_group']);
             if(isset($_POST['b2b_role'])) $b2b_data['b2b_role'] = sanitize_text_field($_POST['b2b_role']);
             
+            // Tax Exemption
+            $b2b_data['b2b_tax_exempt'] = isset($_POST['tax_exempt']) ? 1 : 0;
+            $b2b_data['b2b_tax_id'] = sanitize_text_field($_POST['tax_id'] ?? '');
+            $b2b_data['b2b_tax_notes'] = sanitize_textarea_field($_POST['tax_notes'] ?? '');
+            
             // User-Specific Payment Permissions
             if(isset($_POST['b2b_allowed_payments']) && is_array($_POST['b2b_allowed_payments'])) {
                 $b2b_data['b2b_allowed_payments'] = array_map('sanitize_text_field', $_POST['b2b_allowed_payments']);
@@ -2942,6 +3064,45 @@ add_action('template_redirect', function () {
                     <input type="text" name="new_pass" placeholder="Leave empty to keep current password">
                     <p class="hint">Change customer password (optional)</p>
                 </div>
+            </div>
+            
+            <!-- Tax Exemption Section -->
+            <?php 
+            $tax_exempt = get_user_meta($id, 'b2b_tax_exempt', true);
+            $tax_id = get_user_meta($id, 'b2b_tax_id', true);
+            $tax_notes = get_user_meta($id, 'b2b_tax_notes', true);
+            $tax_certificate = get_user_meta($id, 'b2b_tax_certificate', true);
+            $tax_approved_date = get_user_meta($id, 'b2b_tax_approved_date', true);
+            ?>
+            <div class="customer-section" style="border-left:4px solid #10b981;">
+                <h3><i class="fa-solid fa-receipt"></i> Tax Exemption Status</h3>
+                <div class="form-grid">
+                    <div>
+                        <label style="display:flex;align-items:center;gap:10px;font-size:14px;">
+                            <input type="checkbox" name="tax_exempt" value="1" <?= checked($tax_exempt, 1) ?> style="width:20px;height:20px;">
+                            <span style="font-weight:600;color:#111827;">Tax Exempt</span>
+                        </label>
+                        <?php if($tax_exempt == 1 && $tax_approved_date): ?>
+                        <p style="color:#10b981;font-size:12px;margin-top:5px;">
+                            <i class="fa-solid fa-check-circle"></i> Approved on <?= date('Y-m-d', strtotime($tax_approved_date)) ?>
+                        </p>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <label>Tax ID / VAT Number</label>
+                        <input type="text" name="tax_id" value="<?= esc_attr($tax_id) ?>" placeholder="e.g., VAT-123456789">
+                    </div>
+                </div>
+                <div>
+                    <label>Tax Notes / Additional Information</label>
+                    <textarea name="tax_notes" rows="2" placeholder="Any notes about tax exemption"><?= esc_textarea($tax_notes) ?></textarea>
+                </div>
+                <?php if($tax_certificate): ?>
+                <div style="margin-top:10px;padding:10px;background:#f0f9ff;border-radius:6px;">
+                    <small style="color:#0369a1;font-weight:600;"><i class="fa-solid fa-file-pdf"></i> Tax Certificate:</small>
+                    <a href="<?= esc_url($tax_certificate) ?>" target="_blank" style="margin-left:10px;color:#3b82f6;font-size:12px;">View Document</a>
+                </div>
+                <?php endif; ?>
             </div>
         </form>
         <?php

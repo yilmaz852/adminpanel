@@ -1,3 +1,4 @@
+<?php
 /**
  * =====================================================
  * B2B ADMIN PANEL V10.0 (ENGLISH - ADMIN ONLY - FULL FEATURES + B2B MODULE)

@@ -113,6 +113,141 @@ add_action('woocommerce_before_calculate_totals', function($cart) {
 }, 10, 1);
 
 /* =====================================================
+   WOOCOMMERCE SHIPPING INTEGRATION (B2B Shipping Module)
+===================================================== */
+
+// Add B2B shipping methods to WooCommerce checkout
+add_filter('woocommerce_package_rates', function($rates, $package) {
+    if(!is_user_logged_in()) {
+        return $rates;
+    }
+    
+    $user_id = get_current_user_id();
+    $customer = WC()->customer;
+    $country = $customer->get_shipping_country();
+    
+    // Get all shipping zones
+    $zones = get_option('b2b_shipping_zones', []);
+    
+    // Find matching zones for customer's country
+    $matched_zones = [];
+    foreach($zones as $zone_id => $zone) {
+        if(!($zone['active'] ?? 0)) continue;
+        
+        $regions = $zone['regions'] ?? [];
+        if(empty($regions) || in_array($country, $regions)) {
+            $matched_zones[] = ['id' => $zone_id, 'data' => $zone];
+        }
+    }
+    
+    if(empty($matched_zones)) {
+        return $rates;
+    }
+    
+    // Sort by priority
+    usort($matched_zones, function($a, $b) {
+        return ($a['data']['priority'] ?? 999) - ($b['data']['priority'] ?? 999);
+    });
+    
+    // Get customer's groups
+    $customer_groups = get_user_meta($user_id, 'b2b_groups', true) ?: [];
+    
+    // Get customer shipping overrides
+    $customer_overrides = get_user_meta($user_id, 'b2b_shipping_overrides', true) ?: [];
+    
+    // Build B2B shipping methods
+    $b2b_rates = [];
+    $cart_total = WC()->cart->get_subtotal();
+    
+    foreach($matched_zones as $zone_info) {
+        $zone_id = $zone_info['id'];
+        $zone = $zone_info['data'];
+        
+        // Check group permissions
+        $group_override = null;
+        if(!empty($customer_groups)) {
+            foreach($customer_groups as $group_id) {
+                if(isset($zone['group_permissions'][$group_id]) && $zone['group_permissions'][$group_id]['allowed']) {
+                    $group_override = $zone['group_permissions'][$group_id];
+                    break;
+                }
+            }
+        }
+        
+        // Check customer override
+        $customer_override = $customer_overrides[$zone_id] ?? null;
+        
+        // Flat Rate Method
+        if($zone['methods']['flat_rate']['enabled'] ?? 0) {
+            // Check if method is hidden for group
+            if($group_override && in_array('flat_rate', $group_override['hidden_methods'] ?? [])) {
+                // Skip this method
+            } else {
+                // Determine cost (priority: customer > group > default)
+                $cost = $zone['methods']['flat_rate']['cost'] ?? 0;
+                
+                if($customer_override && isset($customer_override['flat_rate_cost'])) {
+                    $cost = $customer_override['flat_rate_cost'];
+                } elseif($group_override && isset($group_override['flat_rate_cost'])) {
+                    $cost = $group_override['flat_rate_cost'];
+                }
+                
+                $title = $zone['methods']['flat_rate']['title'] ?? 'Flat Rate';
+                
+                $b2b_rates['b2b_flat_'.$zone_id] = new WC_Shipping_Rate(
+                    'b2b_flat_'.$zone_id,
+                    $title,
+                    $cost,
+                    [],
+                    'b2b_shipping'
+                );
+            }
+        }
+        
+        // Free Shipping Method
+        if($zone['methods']['free_shipping']['enabled'] ?? 0) {
+            // Check if method is hidden for group
+            if($group_override && in_array('free_shipping', $group_override['hidden_methods'] ?? [])) {
+                // Skip this method
+            } else {
+                // Determine minimum amount (priority: customer > group > default)
+                $min_amount = $zone['methods']['free_shipping']['min_amount'] ?? 0;
+                
+                if($customer_override && isset($customer_override['free_shipping'])) {
+                    if($customer_override['free_shipping'] === 'always') {
+                        $min_amount = 0;
+                    } elseif(is_numeric($customer_override['free_shipping'])) {
+                        $min_amount = $customer_override['free_shipping'];
+                    }
+                } elseif($group_override && isset($group_override['free_shipping_min'])) {
+                    $min_amount = $group_override['free_shipping_min'];
+                }
+                
+                // Check if cart meets minimum
+                if($cart_total >= $min_amount) {
+                    $title = $zone['methods']['free_shipping']['title'] ?? 'Free Shipping';
+                    
+                    $b2b_rates['b2b_free_'.$zone_id] = new WC_Shipping_Rate(
+                        'b2b_free_'.$zone_id,
+                        $title,
+                        0,
+                        [],
+                        'b2b_shipping'
+                    );
+                }
+            }
+        }
+    }
+    
+    // If we have B2B rates, replace WooCommerce default rates
+    if(!empty($b2b_rates)) {
+        return $b2b_rates;
+    }
+    
+    return $rates;
+}, 10, 2);
+
+/* =====================================================
    2. SECURITY GUARD (ADMIN ONLY)
 ===================================================== */
 function b2b_adm_guard() {
@@ -3287,6 +3422,20 @@ add_action('template_redirect', function () {
             $b2b_data['b2b_tax_id'] = sanitize_text_field($_POST['tax_id'] ?? '');
             $b2b_data['b2b_tax_notes'] = sanitize_textarea_field($_POST['tax_notes'] ?? '');
             
+            // Shipping Overrides
+            $shipping_overrides = [];
+            if(isset($_POST['shipping_overrides']) && is_array($_POST['shipping_overrides'])) {
+                foreach($_POST['shipping_overrides'] as $zone_id => $override_data) {
+                    if(!empty($override_data['enabled'])) {
+                        $shipping_overrides[$zone_id] = [
+                            'flat_rate_cost' => isset($override_data['flat_rate_cost']) && $override_data['flat_rate_cost'] !== '' ? floatval($override_data['flat_rate_cost']) : null,
+                            'free_shipping' => isset($override_data['free_shipping']) ? $override_data['free_shipping'] : null
+                        ];
+                    }
+                }
+            }
+            $b2b_data['b2b_shipping_overrides'] = $shipping_overrides;
+            
             // User-Specific Payment Permissions
             if(isset($_POST['b2b_allowed_payments']) && is_array($_POST['b2b_allowed_payments'])) {
                 $b2b_data['b2b_allowed_payments'] = array_map('sanitize_text_field', $_POST['b2b_allowed_payments']);
@@ -3491,6 +3640,54 @@ add_action('template_redirect', function () {
                 </div>
                 <?php endif; ?>
             </div>
+            
+            <!-- Shipping Overrides Section -->
+            <?php 
+            $shipping_zones = get_option('b2b_shipping_zones', []);
+            $shipping_overrides = get_user_meta($id, 'b2b_shipping_overrides', true) ?: [];
+            ?>
+            <?php if(!empty($shipping_zones)): ?>
+            <div class="customer-section" style="border-left:4px solid #3b82f6;">
+                <h3><i class="fa-solid fa-truck"></i> Shipping Overrides (Optional)</h3>
+                <p style="color:#6b7280;font-size:13px;margin-bottom:15px;">Configure custom shipping rates for this customer. Leave unchecked to use group/default rates.</p>
+                
+                <?php foreach($shipping_zones as $zone_id => $zone): ?>
+                <?php 
+                $override = $shipping_overrides[$zone_id] ?? [];
+                $is_enabled = !empty($override);
+                ?>
+                <div style="margin-bottom:15px;padding:15px;background:#f9fafb;border-radius:8px;border:2px solid <?= $is_enabled ? '#3b82f6' : '#e5e7eb' ?>;">
+                    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;">
+                        <input type="checkbox" name="shipping_overrides[<?= esc_attr($zone_id) ?>][enabled]" value="1" <?= checked($is_enabled, true) ?> onchange="this.closest('div').style.borderColor = this.checked ? '#3b82f6' : '#e5e7eb'">
+                        <span style="font-weight:600;font-size:14px;"><?= esc_html($zone['name']) ?></span>
+                        <span style="font-size:12px;color:#6b7280;">(<?= esc_html(implode(', ', $zone['regions'] ?? [])) ?>)</span>
+                    </label>
+                    
+                    <div style="margin-left:30px;display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                        <div>
+                            <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:5px;">Flat Rate Cost ($)</label>
+                            <input type="number" name="shipping_overrides[<?= esc_attr($zone_id) ?>][flat_rate_cost]" value="<?= esc_attr($override['flat_rate_cost'] ?? '') ?>" step="0.01" min="0" placeholder="Default: $<?= esc_attr($zone['methods']['flat_rate']['cost'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+                            <small style="color:#6b7280;font-size:11px;">Leave empty for default</small>
+                        </div>
+                        
+                        <div>
+                            <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:5px;">Free Shipping</label>
+                            <select name="shipping_overrides[<?= esc_attr($zone_id) ?>][free_shipping]" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+                                <option value="">Use Default</option>
+                                <option value="always" <?= selected($override['free_shipping'] ?? '', 'always') ?>>Always Free</option>
+                                <option value="0" <?= selected($override['free_shipping'] ?? '', '0') ?>>Minimum $0</option>
+                                <option value="25" <?= selected($override['free_shipping'] ?? '', '25') ?>>Minimum $25</option>
+                                <option value="50" <?= selected($override['free_shipping'] ?? '', '50') ?>>Minimum $50</option>
+                                <option value="75" <?= selected($override['free_shipping'] ?? '', '75') ?>>Minimum $75</option>
+                                <option value="100" <?= selected($override['free_shipping'] ?? '', '100') ?>>Minimum $100</option>
+                            </select>
+                            <small style="color:#6b7280;font-size:11px;">Customer-specific free shipping</small>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </form>
         <?php
         b2b_adm_footer(); exit;
@@ -5190,6 +5387,21 @@ add_action('template_redirect', function () {
         $regions_input = isset($_POST['zone_regions'][0]) ? $_POST['zone_regions'][0] : '';
         $regions = array_map('trim', explode(',', $regions_input));
         
+        // Process group permissions
+        $group_permissions = [];
+        if(isset($_POST['group_permissions']) && is_array($_POST['group_permissions'])) {
+            foreach($_POST['group_permissions'] as $group_id => $group_data) {
+                if(isset($group_data['allowed'])) {
+                    $group_permissions[$group_id] = [
+                        'allowed' => 1,
+                        'flat_rate_cost' => isset($group_data['flat_rate_cost']) ? floatval($group_data['flat_rate_cost']) : null,
+                        'free_shipping_min' => isset($group_data['free_shipping_min']) ? floatval($group_data['free_shipping_min']) : null,
+                        'hidden_methods' => $group_data['hidden_methods'] ?? []
+                    ];
+                }
+            }
+        }
+        
         $zones[$zone_id] = [
             'name' => sanitize_text_field($_POST['zone_name']),
             'description' => sanitize_textarea_field($_POST['zone_description']),
@@ -5207,7 +5419,8 @@ add_action('template_redirect', function () {
                     'min_amount' => floatval($_POST['free_shipping_min'] ?? 0),
                     'title' => sanitize_text_field($_POST['free_shipping_title'] ?? 'Free Shipping')
                 ]
-            ]
+            ],
+            'group_permissions' => $group_permissions
         ];
         
         update_option('b2b_shipping_zones', $zones);
@@ -5234,7 +5447,18 @@ add_action('template_redirect', function () {
     if(isset($_GET['edit'])) {
         $edit_id = sanitize_text_field($_GET['edit']);
         if($edit_id == 'new') {
-            $edit_zone = ['name' => '', 'description' => '', 'regions' => [], 'active' => 1, 'priority' => 1, 'methods' => ['flat_rate' => ['enabled' => 1, 'cost' => 0, 'title' => 'Flat Rate'], 'free_shipping' => ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping']]];
+            $edit_zone = [
+                'name' => '', 
+                'description' => '', 
+                'regions' => [], 
+                'active' => 1, 
+                'priority' => 1, 
+                'methods' => [
+                    'flat_rate' => ['enabled' => 1, 'cost' => 0, 'title' => 'Flat Rate'], 
+                    'free_shipping' => ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping']
+                ],
+                'group_permissions' => []
+            ];
         } else {
             $edit_zone = $zones[$edit_id] ?? null;
         }
@@ -5319,6 +5543,57 @@ add_action('template_redirect', function () {
                     </div>
                 </div>
             </div>
+            
+            <!-- Group Permissions -->
+            <h4 style="margin-top:30px;">Group-Based Permissions (Optional)</h4>
+            <p style="color:#6b7280;margin-bottom:20px;">Configure special rates for specific B2B groups. Leave unchecked to use default rates.</p>
+            
+            <?php
+            // Get all B2B groups
+            $b2b_groups = get_option('b2b_groups', []);
+            if(!empty($b2b_groups)):
+                foreach($b2b_groups as $group_id => $group_data):
+                    $group_perms = $edit_zone['group_permissions'][$group_id] ?? [];
+                    $is_allowed = isset($group_perms['allowed']) && $group_perms['allowed'];
+            ?>
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;border:2px solid <?= $is_allowed ? '#10b981' : '#e5e7eb' ?>;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:15px;cursor:pointer;">
+                    <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][allowed]" value="1" <?= checked($is_allowed, true) ?> onchange="this.closest('div').style.borderColor = this.checked ? '#10b981' : '#e5e7eb'">
+                    <span style="font-weight:600;font-size:15px;"><?= esc_html($group_data['name'] ?? $group_id) ?></span>
+                </label>
+                
+                <div style="margin-left:30px;display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;">Flat Rate Cost ($)</label>
+                        <input type="number" name="group_permissions[<?= esc_attr($group_id) ?>][flat_rate_cost]" value="<?= esc_attr($group_perms['flat_rate_cost'] ?? '') ?>" step="0.01" min="0" placeholder="Default: <?= esc_attr($edit_zone['methods']['flat_rate']['cost'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small style="color:#6b7280;">Leave empty to use default</small>
+                    </div>
+                    
+                    <div>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;">Free Shipping Min ($)</label>
+                        <input type="number" name="group_permissions[<?= esc_attr($group_id) ?>][free_shipping_min]" value="<?= esc_attr($group_perms['free_shipping_min'] ?? '') ?>" step="0.01" min="0" placeholder="Default: <?= esc_attr($edit_zone['methods']['free_shipping']['min_amount'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small style="color:#6b7280;">Set 0 for always free</small>
+                    </div>
+                </div>
+                
+                <div style="margin-left:30px;margin-top:10px;">
+                    <label style="display:block;margin-bottom:5px;font-size:13px;">Hide Methods (Optional)</label>
+                    <label style="display:inline-flex;align-items:center;gap:5px;margin-right:15px;">
+                        <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][hidden_methods][]" value="flat_rate" <?= checked(in_array('flat_rate', $group_perms['hidden_methods'] ?? []), true) ?>>
+                        <span style="font-size:13px;">Hide Flat Rate</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:5px;">
+                        <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][hidden_methods][]" value="free_shipping" <?= checked(in_array('free_shipping', $group_perms['hidden_methods'] ?? []), true) ?>>
+                        <span style="font-size:13px;">Hide Free Shipping</span>
+                    </label>
+                </div>
+            </div>
+            <?php 
+                endforeach;
+            else:
+            ?>
+            <p style="color:#6b7280;font-style:italic;">No B2B groups configured. Create groups in B2B Module → Groups.</p>
+            <?php endif; ?>
             
             <button type="submit" name="save_zone" class="primary">Save Zone</button>
             <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" style="margin-left:10px;"><button type="button" class="secondary">Cancel</button></a>

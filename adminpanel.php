@@ -53,11 +53,13 @@ add_action('init', function () {
     // Settings Module (V11 - New)
     add_rewrite_rule('^b2b-panel/settings/?$', 'index.php?b2b_adm_page=settings_general', 'top');
     add_rewrite_rule('^b2b-panel/settings/tax-exemption/?$', 'index.php?b2b_adm_page=settings_tax', 'top');
+    add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
+    add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v16_price_adjuster')) {
+    if (!get_option('b2b_rewrite_v17_shipping')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v16_price_adjuster', true);
+        update_option('b2b_rewrite_v17_shipping', true);
     }
 });
 
@@ -182,6 +184,44 @@ add_action('wp_ajax_b2b_quick_edit_stock', function() {
     }
     
     wp_send_json_success(['updated' => $success_count]);
+});
+
+/* =====================================================
+   3A2. AJAX: DELETE PRODUCT
+===================================================== */
+add_action('wp_ajax_b2b_delete_product', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'b2b_delete_product')) {
+        wp_send_json_error('Security check failed');
+        return;
+    }
+    
+    $product_id = intval($_POST['product_id']);
+    
+    if (!$product_id) {
+        wp_send_json_error('Invalid product ID');
+        return;
+    }
+    
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error('Product not found');
+        return;
+    }
+    
+    // Delete the product using WooCommerce function (proper cleanup)
+    $result = $product->delete(true); // true = force delete (skip trash)
+    
+    if ($result) {
+        wp_send_json_success(['message' => 'Product deleted successfully']);
+    } else {
+        wp_send_json_error('Failed to delete product');
+    }
 });
 
 /* =====================================================
@@ -818,9 +858,10 @@ function b2b_adm_header($title) {
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit'])?'active':'' ?>">
                 <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
                 <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
+                <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
             </div>
         </div>
         <div style="margin-top:auto;padding:20px">
@@ -1885,6 +1926,7 @@ add_action('template_redirect', function () {
                     <a href="<?= home_url('/b2b-panel/products/edit?id=' . $p->get_id()) ?>">
                         <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
                     </a>
+                    <button class="delete-product-btn" data-product-id="<?= $p->get_id() ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;margin-left:5px;"><i class="fa-solid fa-trash"></i></button>
                 </td>
             </tr>
             <?php endforeach; endif; ?>
@@ -2019,6 +2061,44 @@ add_action('template_redirect', function () {
             saveBtn.disabled = false;
         });
     }
+    
+    // Delete Product Functionality
+    document.querySelectorAll('.delete-product-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const productId = this.getAttribute('data-product-id');
+            const productName = this.getAttribute('data-product-name');
+            
+            if(!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+                return;
+            }
+            
+            // Disable button during request
+            this.disabled = true;
+            this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'action=b2b_delete_product&product_id=' + productId + '&nonce=<?= wp_create_nonce("b2b_delete_product") ?>'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    alert('Product deleted successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + (data.data || 'Unknown error'));
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fa-solid fa-trash"></i>';
+                }
+            })
+            .catch(error => {
+                alert('Error deleting product: ' + error);
+                this.disabled = false;
+                this.innerHTML = '<i class="fa-solid fa-trash"></i>';
+            });
+        });
+    });
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -2804,6 +2884,8 @@ add_action('template_redirect', function () {
 
     <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none"><button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button></a>
+        <button id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:8px 16px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;"><i class="fa-solid fa-trash"></i> Delete Product</button>
+    </div>
         <span style="background:<?= $is_variable?'#fef3c7':'#d1fae5' ?>;color:<?= $is_variable?'#92400e':'#065f46' ?>;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700">
             <?= $is_variable ? 'VARIABLE PRODUCT' : 'SIMPLE PRODUCT' ?>
         </span>
@@ -2916,6 +2998,45 @@ add_action('template_redirect', function () {
             </div>
         </div>
     </form>
+    
+    <script>
+    // Delete Product from Detail Page
+    document.getElementById('delete-product-detail-btn').addEventListener('click', function() {
+        const productId = this.getAttribute('data-product-id');
+        const productName = this.getAttribute('data-product-name');
+        
+        if(!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+            return;
+        }
+        
+        // Disable button during request
+        this.disabled = true;
+        this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...';
+        
+        fetch('<?= admin_url('admin-ajax.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=b2b_delete_product&product_id=' + productId + '&nonce=<?= wp_create_nonce("b2b_delete_product") ?>'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert('Product deleted successfully!');
+                window.location.href = '<?= home_url('/b2b-panel/products') ?>';
+            } else {
+                alert('Error: ' + (data.data || 'Unknown error'));
+                this.disabled = false;
+                this.innerHTML = '<i class="fa-solid fa-trash"></i> Delete Product';
+            }
+        })
+        .catch(error => {
+            alert('Error deleting product: ' + error);
+            this.disabled = false;
+            this.innerHTML = '<i class="fa-solid fa-trash"></i> Delete Product';
+        });
+    });
+    </script>
+    
     <?php b2b_adm_footer(); exit;
 });
   
@@ -5046,6 +5167,217 @@ add_action('template_redirect', function () {
             <?php endforeach; ?>
             </tbody>
         </table>
+    </div>
+    <?php endif; ?>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   SHIPPING MODULE - PHASE 1
+===================================================== */
+// Shipping Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_shipping') return;
+    b2b_adm_guard();
+    
+    // Handle zone save/delete
+    $message = '';
+    if(isset($_POST['save_zone'])) {
+        $zones = get_option('b2b_shipping_zones', []);
+        $zone_id = isset($_POST['zone_id']) && !empty($_POST['zone_id']) && $_POST['zone_id'] != 'new' ? sanitize_text_field($_POST['zone_id']) : uniqid('zone_');
+        
+        $regions_input = isset($_POST['zone_regions'][0]) ? $_POST['zone_regions'][0] : '';
+        $regions = array_map('trim', explode(',', $regions_input));
+        
+        $zones[$zone_id] = [
+            'name' => sanitize_text_field($_POST['zone_name']),
+            'description' => sanitize_textarea_field($_POST['zone_description']),
+            'regions' => array_filter($regions),
+            'active' => isset($_POST['zone_active']) ? 1 : 0,
+            'priority' => intval($_POST['zone_priority'] ?? 1),
+            'methods' => [
+                'flat_rate' => [
+                    'enabled' => isset($_POST['flat_rate_enabled']) ? 1 : 0,
+                    'cost' => floatval($_POST['flat_rate_cost'] ?? 0),
+                    'title' => sanitize_text_field($_POST['flat_rate_title'] ?? 'Flat Rate')
+                ],
+                'free_shipping' => [
+                    'enabled' => isset($_POST['free_shipping_enabled']) ? 1 : 0,
+                    'min_amount' => floatval($_POST['free_shipping_min'] ?? 0),
+                    'title' => sanitize_text_field($_POST['free_shipping_title'] ?? 'Free Shipping')
+                ]
+            ]
+        ];
+        
+        update_option('b2b_shipping_zones', $zones);
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Shipping zone saved.</div>';
+        
+        // Redirect to list after save
+        if($_GET['edit'] ?? '' === 'new') {
+            wp_redirect(home_url('/b2b-panel/settings/shipping'));
+            exit;
+        }
+    }
+    
+    if(isset($_GET['delete'])) {
+        $zones = get_option('b2b_shipping_zones', []);
+        unset($zones[sanitize_text_field($_GET['delete'])]);
+        update_option('b2b_shipping_zones', $zones);
+        wp_redirect(home_url('/b2b-panel/settings/shipping'));
+        exit;
+    }
+    
+    $zones = get_option('b2b_shipping_zones', []);
+    $edit_zone = null;
+    $edit_id = '';
+    if(isset($_GET['edit'])) {
+        $edit_id = sanitize_text_field($_GET['edit']);
+        if($edit_id == 'new') {
+            $edit_zone = ['name' => '', 'description' => '', 'regions' => [], 'active' => 1, 'priority' => 1, 'methods' => ['flat_rate' => ['enabled' => 1, 'cost' => 0, 'title' => 'Flat Rate'], 'free_shipping' => ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping']]];
+        } else {
+            $edit_zone = $zones[$edit_id] ?? null;
+        }
+    }
+    
+    b2b_adm_header('Shipping Settings');
+    
+    echo $message;
+    ?>
+    <div class="page-header"><h1 class="page-title">Shipping Zones</h1></div>
+    
+    <?php if($edit_zone): ?>
+    <!-- Edit Zone Form -->
+    <div class="card" style="margin-bottom:20px;">
+        <h3 style="margin-top:0;"><?= $edit_id == 'new' ? 'Add New Shipping Zone' : 'Edit Shipping Zone' ?></h3>
+        <form method="POST">
+            <input type="hidden" name="zone_id" value="<?= esc_attr($edit_id) ?>">
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Zone Name *</label>
+                <input type="text" name="zone_name" value="<?= esc_attr($edit_zone['name']) ?>" required style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Description</label>
+                <textarea name="zone_description" rows="3" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($edit_zone['description']) ?></textarea>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Regions (Countries)</label>
+                <input type="text" name="zone_regions[]" value="<?= esc_attr(implode(', ', $edit_zone['regions'] ?? [])) ?>" placeholder="TR, US, GB" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small>Comma-separated country codes</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;">
+                    <input type="checkbox" name="zone_active" value="1" <?= checked($edit_zone['active'] ?? 0, 1) ?>>
+                    <span>Active</span>
+                </label>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Priority</label>
+                <input type="number" name="zone_priority" value="<?= esc_attr($edit_zone['priority'] ?? 1) ?>" min="1" style="width:100px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <h4>Shipping Methods</h4>
+            
+            <!-- Flat Rate -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <input type="checkbox" name="flat_rate_enabled" value="1" <?= checked($edit_zone['methods']['flat_rate']['enabled'] ?? 0, 1) ?>>
+                    <span style="font-weight:600;">Flat Rate Shipping</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <div style="margin-bottom:10px;">
+                        <label>Title</label>
+                        <input type="text" name="flat_rate_title" value="<?= esc_attr($edit_zone['methods']['flat_rate']['title'] ?? 'Flat Rate') ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                    <div>
+                        <label>Cost ($)</label>
+                        <input type="number" name="flat_rate_cost" value="<?= esc_attr($edit_zone['methods']['flat_rate']['cost'] ?? 0) ?>" step="0.01" min="0" style="width:150px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Free Shipping -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <input type="checkbox" name="free_shipping_enabled" value="1" <?= checked($edit_zone['methods']['free_shipping']['enabled'] ?? 0, 1) ?>>
+                    <span style="font-weight:600;">Free Shipping</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <div style="margin-bottom:10px;">
+                        <label>Title</label>
+                        <input type="text" name="free_shipping_title" value="<?= esc_attr($edit_zone['methods']['free_shipping']['title'] ?? 'Free Shipping') ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                    <div>
+                        <label>Minimum Order Amount ($)</label>
+                        <input type="number" name="free_shipping_min" value="<?= esc_attr($edit_zone['methods']['free_shipping']['min_amount'] ?? 0) ?>" step="0.01" min="0" style="width:150px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small>Set to 0 for always free</small>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" name="save_zone" class="primary">Save Zone</button>
+            <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" style="margin-left:10px;"><button type="button" class="secondary">Cancel</button></a>
+        </form>
+    </div>
+    <?php else: ?>
+    <!-- Add New Zone Button -->
+    <div style="margin-bottom:20px;">
+        <a href="<?= home_url('/b2b-panel/settings/shipping?edit=new') ?>"><button class="primary"><i class="fa-solid fa-plus"></i> Add Shipping Zone</button></a>
+    </div>
+    <?php endif; ?>
+    
+    <?php if(!$edit_zone): ?>
+    <!-- Zones List -->
+    <div class="card">
+        <h3 style="margin-top:0;">Configured Zones</h3>
+        <?php if(empty($zones)): ?>
+            <p style="color:#6b7280;">No shipping zones configured yet. Click "Add Shipping Zone" to create one.</p>
+        <?php else: ?>
+            <table class="wp-list-table widefat fixed striped" style="width:100%;">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Regions</th>
+                        <th>Methods</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($zones as $zone_id => $zone): ?>
+                    <tr>
+                        <td><strong><?= esc_html($zone['name']) ?></strong><br><small><?= esc_html($zone['description']) ?></small></td>
+                        <td><?= esc_html(implode(', ', $zone['regions'] ?? [])) ?></td>
+                        <td>
+                            <?php 
+                            $methods = [];
+                            if($zone['methods']['flat_rate']['enabled'] ?? 0) $methods[] = 'Flat Rate ($'.number_format($zone['methods']['flat_rate']['cost'], 2).')';
+                            if($zone['methods']['free_shipping']['enabled'] ?? 0) {
+                                $min = $zone['methods']['free_shipping']['min_amount'] ?? 0;
+                                $methods[] = 'Free Shipping' . ($min > 0 ? ' (min $'.number_format($min, 2).')' : '');
+                            }
+                            echo $methods ? implode('<br>', $methods) : 'No methods';
+                            ?>
+                        </td>
+                        <td>
+                            <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:<?= ($zone['active'] ?? 0) ? '#d1fae5' : '#fee2e2' ?>;color:<?= ($zone['active'] ?? 0) ? '#065f46' : '#991b1b' ?>">
+                                <?= ($zone['active'] ?? 0) ? 'ACTIVE' : 'INACTIVE' ?>
+                            </span>
+                        </td>
+                        <td>
+                            <a href="<?= home_url('/b2b-panel/settings/shipping?edit='.urlencode($zone_id)) ?>"><button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button></a>
+                            <a href="<?= home_url('/b2b-panel/settings/shipping?delete='.urlencode($zone_id)) ?>" onclick="return confirm('Are you sure you want to delete this zone?')"><button class="secondary" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;margin-left:5px;"><i class="fa-solid fa-trash"></i></button></a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
     

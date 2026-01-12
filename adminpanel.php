@@ -21,6 +21,10 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-register/?$', 'index.php?b2b_adm_page=register', 'top');
     add_rewrite_rule('^b2b-panel/?$', 'index.php?b2b_adm_page=dashboard', 'top');
     add_rewrite_rule('^b2b-panel/orders/?$', 'index.php?b2b_adm_page=orders', 'top');
+    
+    // Reports
+    add_rewrite_rule('^b2b-panel/reports/?$', 'index.php?b2b_adm_page=reports', 'top');
+    
 	// Customers (New)
     add_rewrite_rule('^b2b-panel/customers/?$', 'index.php?b2b_adm_page=customers', 'top');
     add_rewrite_rule('^b2b-panel/customers/edit/?$', 'index.php?b2b_adm_page=customer_edit', 'top');
@@ -1219,6 +1223,7 @@ function b2b_adm_header($title) {
         <div class="sidebar-nav">
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
+            <a href="<?= home_url('/b2b-panel/reports') ?>" class="<?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
             
             <!-- Products Module with Submenu -->
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
@@ -1989,6 +1994,394 @@ add_action('template_redirect', function () {
         </tbody></table>
     </div>
 
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   7B. PAGE: REPORTS MODULE (Comprehensive Analytics)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'reports') return;
+    b2b_adm_guard();
+    
+    global $wpdb;
+    
+    // Get date range from query params
+    $range = isset($_GET['range']) ? sanitize_text_field($_GET['range']) : '30days';
+    $start_date = '';
+    $end_date = date('Y-m-d 23:59:59');
+    
+    switch($range) {
+        case 'today':
+            $start_date = date('Y-m-d 00:00:00');
+            break;
+        case '7days':
+            $start_date = date('Y-m-d 00:00:00', strtotime('-7 days'));
+            break;
+        case '30days':
+            $start_date = date('Y-m-d 00:00:00', strtotime('-30 days'));
+            break;
+        case 'thismonth':
+            $start_date = date('Y-m-01 00:00:00');
+            break;
+        case 'lastmonth':
+            $start_date = date('Y-m-01 00:00:00', strtotime('first day of last month'));
+            $end_date = date('Y-m-t 23:59:59', strtotime('last day of last month'));
+            break;
+        case 'thisyear':
+            $start_date = date('Y-01-01 00:00:00');
+            break;
+        default:
+            $start_date = date('Y-m-d 00:00:00', strtotime('-30 days'));
+    }
+    
+    // Sales Reports Query
+    $sales_query = $wpdb->prepare("
+        SELECT 
+            COUNT(DISTINCT p.ID) as order_count,
+            SUM(pm.meta_value) as total_sales,
+            AVG(pm.meta_value) as avg_order_value
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND pm.meta_key = '_order_total'
+        AND p.post_date BETWEEN %s AND %s
+    ", $start_date, $end_date);
+    
+    $sales_data = $wpdb->get_row($sales_query);
+    
+    // Daily sales breakdown
+    $daily_sales = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            DATE(p.post_date) as date,
+            COUNT(DISTINCT p.ID) as orders,
+            SUM(pm.meta_value) as revenue
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND pm.meta_key = '_order_total'
+        AND p.post_date BETWEEN %s AND %s
+        GROUP BY DATE(p.post_date)
+        ORDER BY date DESC
+        LIMIT 30
+    ", $start_date, $end_date));
+    
+    // Top Customers Query
+    $top_customers = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            pm_customer.meta_value as customer_id,
+            COUNT(DISTINCT p.ID) as order_count,
+            SUM(pm_total.meta_value) as total_spent
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+        INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND p.post_date BETWEEN %s AND %s
+        AND pm_customer.meta_value > 0
+        GROUP BY pm_customer.meta_value
+        ORDER BY total_spent DESC
+        LIMIT 10
+    ", $start_date, $end_date));
+    
+    // B2B Group Analysis
+    $b2b_groups = b2b_get_groups();
+    $group_sales = [];
+    foreach($b2b_groups as $slug => $group) {
+        // Get users in this group
+        $users_in_group = get_users([
+            'meta_key' => 'b2b_group_slug',
+            'meta_value' => $slug,
+            'fields' => 'ID'
+        ]);
+        
+        if(!empty($users_in_group)) {
+            $user_ids = implode(',', $users_in_group);
+            $group_data = $wpdb->get_row($wpdb->prepare("
+                SELECT 
+                    COUNT(DISTINCT p.ID) as order_count,
+                    SUM(pm_total.meta_value) as total_sales
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+                INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+                WHERE p.post_type = 'shop_order'
+                AND p.post_status = 'wc-completed'
+                AND p.post_date BETWEEN %s AND %s
+                AND pm_customer.meta_value IN ($user_ids)
+            ", $start_date, $end_date));
+            
+            $group_sales[] = [
+                'name' => $group['name'],
+                'orders' => $group_data->order_count ?? 0,
+                'sales' => $group_data->total_sales ?? 0
+            ];
+        }
+    }
+    
+    // Top Products Performance
+    $top_products = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            pm_product.meta_value as product_id,
+            SUM(pm_qty.meta_value) as quantity_sold,
+            SUM(pm_total.meta_value) as revenue
+        FROM {$wpdb->prefix}woocommerce_order_items oi
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm_product ON oi.order_item_id = pm_product.order_item_id AND pm_product.meta_key = '_product_id'
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm_qty ON oi.order_item_id = pm_qty.order_item_id AND pm_qty.meta_key = '_qty'
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm_total ON oi.order_item_id = pm_total.order_item_id AND pm_total.meta_key = '_line_total'
+        INNER JOIN {$wpdb->posts} p ON oi.order_id = p.ID
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND p.post_date BETWEEN %s AND %s
+        GROUP BY pm_product.meta_value
+        ORDER BY revenue DESC
+        LIMIT 10
+    ", $start_date, $end_date));
+    
+    // Low Stock Alert
+    $low_stock_products = $wpdb->get_results("
+        SELECT p.ID, p.post_title, pm_stock.meta_value as stock
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm_stock ON p.ID = pm_stock.post_id AND pm_stock.meta_key = '_stock'
+        WHERE p.post_type = 'product'
+        AND p.post_status = 'publish'
+        AND CAST(pm_stock.meta_value AS SIGNED) <= 10
+        AND CAST(pm_stock.meta_value AS SIGNED) > 0
+        ORDER BY CAST(pm_stock.meta_value AS SIGNED) ASC
+        LIMIT 20
+    ");
+    
+    b2b_adm_header('Reports & Analytics');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">Reports & Analytics</h1>
+        <div style="display:flex;gap:10px;align-items:center;">
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/reports') ?>?range='+this.value" style="margin:0;padding:8px 12px;">
+                <option value="today" <?= selected($range, 'today') ?>>Today</option>
+                <option value="7days" <?= selected($range, '7days') ?>>Last 7 Days</option>
+                <option value="30days" <?= selected($range, '30days') ?>>Last 30 Days</option>
+                <option value="thismonth" <?= selected($range, 'thismonth') ?>>This Month</option>
+                <option value="lastmonth" <?= selected($range, 'lastmonth') ?>>Last Month</option>
+                <option value="thisyear" <?= selected($range, 'thisyear') ?>>This Year</option>
+            </select>
+        </div>
+    </div>
+    
+    <!-- Sales Overview -->
+    <div class="card" style="margin-bottom:25px;">
+        <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-line" style="color:#10b981;margin-right:10px;"></i>Sales Overview</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:20px;">
+            <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);padding:20px;border-radius:12px;color:white;">
+                <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Total Sales</div>
+                <div style="font-size:32px;font-weight:800;"><?= wc_price($sales_data->total_sales ?? 0) ?></div>
+                <div style="font-size:11px;opacity:0.8;margin-top:5px;"><?= ucfirst(str_replace(['days', 'thismonth', 'lastmonth', 'thisyear'], ['Days', 'This Month', 'Last Month', 'This Year'], $range)) ?></div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%);padding:20px;border-radius:12px;color:white;">
+                <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Total Orders</div>
+                <div style="font-size:32px;font-weight:800;"><?= number_format($sales_data->order_count ?? 0) ?></div>
+                <div style="font-size:11px;opacity:0.8;margin-top:5px;">Completed Orders</div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);padding:20px;border-radius:12px;color:white;">
+                <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Avg Order Value</div>
+                <div style="font-size:32px;font-weight:800;"><?= wc_price($sales_data->avg_order_value ?? 0) ?></div>
+                <div style="font-size:11px;opacity:0.8;margin-top:5px;">Per Order</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Daily Sales Trend -->
+    <div class="card" style="margin-bottom:25px;">
+        <h3 style="margin-top:0;"><i class="fa-solid fa-calendar-days" style="color:#3b82f6;margin-right:10px;"></i>Daily Sales Trend</h3>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;min-width:600px;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:12px;">Date</th>
+                        <th style="text-align:center;padding:12px;">Orders</th>
+                        <th style="text-align:right;padding:12px;">Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(!empty($daily_sales)): foreach($daily_sales as $day): ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:12px;"><strong><?= date('D, M j, Y', strtotime($day->date)) ?></strong></td>
+                        <td style="text-align:center;padding:12px;">
+                            <span style="background:#dbeafe;color:#1e40af;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">
+                                <?= $day->orders ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;padding:12px;"><strong style="color:#10b981;font-size:15px;"><?= wc_price($day->revenue) ?></strong></td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" style="text-align:center;padding:30px;color:#9ca3af;">No sales data for this period.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Two Column Layout -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));gap:25px;margin-bottom:25px;">
+        
+        <!-- Top Customers -->
+        <div class="card">
+            <h3 style="margin-top:0;"><i class="fa-solid fa-star" style="color:#f59e0b;margin-right:10px;"></i>Top Customers</h3>
+            <table style="width:100%;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:10px;">Customer</th>
+                        <th style="text-align:center;padding:10px;">Orders</th>
+                        <th style="text-align:right;padding:10px;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(!empty($top_customers)): foreach($top_customers as $customer): 
+                        $user = get_userdata($customer->customer_id);
+                        if(!$user) continue;
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:10px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <div style="width:32px;height:32px;background:#e0e7ff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#4f46e5;font-weight:700;font-size:12px;">
+                                    <?= strtoupper(substr($user->display_name, 0, 1)) ?>
+                                </div>
+                                <div>
+                                    <strong style="display:block;font-size:13px;"><?= esc_html($user->display_name) ?></strong>
+                                    <small style="color:#9ca3af;"><?= esc_html($user->user_email) ?></small>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="text-align:center;padding:10px;">
+                            <span style="background:#f3f4f6;color:#374151;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">
+                                <?= $customer->order_count ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;padding:10px;"><strong style="color:#10b981;"><?= wc_price($customer->total_spent) ?></strong></td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" style="text-align:center;padding:20px;color:#9ca3af;">No customer data available.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- B2B Group Analysis -->
+        <div class="card">
+            <h3 style="margin-top:0;"><i class="fa-solid fa-users-gear" style="color:#8b5cf6;margin-right:10px;"></i>B2B Group Analysis</h3>
+            <table style="width:100%;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:10px;">Group</th>
+                        <th style="text-align:center;padding:10px;">Orders</th>
+                        <th style="text-align:right;padding:10px;">Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(!empty($group_sales)): 
+                        usort($group_sales, function($a, $b) { return $b['sales'] - $a['sales']; });
+                        foreach($group_sales as $gs): 
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:10px;"><strong><?= esc_html($gs['name']) ?></strong></td>
+                        <td style="text-align:center;padding:10px;">
+                            <span style="background:#e0e7ff;color:#4f46e5;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">
+                                <?= $gs['orders'] ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;padding:10px;"><strong style="color:#10b981;"><?= wc_price($gs['sales']) ?></strong></td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" style="text-align:center;padding:20px;color:#9ca3af;">No group data available.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Top Products Performance -->
+    <div class="card" style="margin-bottom:25px;">
+        <h3 style="margin-top:0;"><i class="fa-solid fa-trophy" style="color:#ef4444;margin-right:10px;"></i>Top Products Performance</h3>
+        <table style="width:100%;">
+            <thead>
+                <tr style="background:#f9fafb;">
+                    <th style="text-align:left;padding:12px;">Product</th>
+                    <th style="text-align:center;padding:12px;">Qty Sold</th>
+                    <th style="text-align:right;padding:12px;">Revenue</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if(!empty($top_products)): foreach($top_products as $tp): 
+                    $product = wc_get_product($tp->product_id);
+                    if(!$product) continue;
+                ?>
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:12px;">
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <?php if($product->get_image_id()): ?>
+                            <img src="<?= wp_get_attachment_image_url($product->get_image_id(), 'thumbnail') ?>" style="width:40px;height:40px;border-radius:6px;object-fit:cover;">
+                            <?php else: ?>
+                            <div style="width:40px;height:40px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+                                <i class="fa-solid fa-image" style="color:#d1d5db;"></i>
+                            </div>
+                            <?php endif; ?>
+                            <div>
+                                <strong style="display:block;"><?= esc_html($product->get_name()) ?></strong>
+                                <small style="color:#9ca3af;">SKU: <?= $product->get_sku() ?: '-' ?></small>
+                            </div>
+                        </div>
+                    </td>
+                    <td style="text-align:center;padding:12px;">
+                        <span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">
+                            <?= number_format($tp->quantity_sold) ?>
+                        </span>
+                    </td>
+                    <td style="text-align:right;padding:12px;"><strong style="color:#10b981;font-size:15px;"><?= wc_price($tp->revenue) ?></strong></td>
+                </tr>
+                <?php endforeach; else: ?>
+                <tr><td colspan="3" style="text-align:center;padding:30px;color:#9ca3af;">No product sales data for this period.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Low Stock Alert -->
+    <?php if(!empty($low_stock_products)): ?>
+    <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;">
+        <h3 style="margin-top:0;color:#991b1b;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:10px;"></i>Low Stock Alert</h3>
+        <p style="color:#7f1d1d;margin-bottom:15px;">The following products have low stock levels and may need reordering:</p>
+        <table style="width:100%;background:white;border-radius:8px;">
+            <thead>
+                <tr style="background:#fee2e2;">
+                    <th style="text-align:left;padding:10px;color:#991b1b;">Product</th>
+                    <th style="text-align:center;padding:10px;color:#991b1b;">Stock</th>
+                    <th style="text-align:right;padding:10px;color:#991b1b;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($low_stock_products as $lsp): ?>
+                <tr style="border-bottom:1px solid #fee2e2;">
+                    <td style="padding:10px;"><strong><?= esc_html($lsp->post_title) ?></strong></td>
+                    <td style="text-align:center;padding:10px;">
+                        <span style="background:#fee2e2;color:#dc2626;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">
+                            <?= $lsp->stock ?> left
+                        </span>
+                    </td>
+                    <td style="text-align:right;padding:10px;">
+                        <a href="<?= home_url('/b2b-panel/products/edit?id=' . $lsp->ID) ?>">
+                            <button class="secondary" style="padding:6px 12px;font-size:12px;">Update Stock</button>
+                        </a>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+    
     <?php b2b_adm_footer(); exit;
 });
 

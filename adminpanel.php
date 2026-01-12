@@ -986,17 +986,15 @@ function b2b_adm_header($title) {
                 <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_form_editor'?'active':'' ?>"><i class="fa-solid fa-pen-to-square"></i> Form Editor</a>
             </div>
             
-            <!-- Sales Agent -->
-            <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
-            
             <!-- Settings Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','sales_agent'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','sales_agent'])?'active':'' ?>">
                 <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
                 <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
                 <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
+                <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
         </div>
         <div style="margin-top:auto;padding:20px">
@@ -3017,9 +3015,9 @@ add_action('template_redirect', function () {
         @media(max-width:900px) { .grid-edit { grid-template-columns: 1fr; } }
     </style>
 
-    <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
-        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none"><button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button></a>
-        <button id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:8px 16px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;"><i class="fa-solid fa-trash"></i> Delete Product</button>
+    <div style="margin-bottom:20px;display:inline-flex;gap:15px;align-items:center">
+        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;color:#6b7280;font-size:14px;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-arrow-left"></i> Back</a>
+        <button id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:5px;cursor:pointer;font-size:18px;line-height:1;" title="Delete Product"><i class="fa-solid fa-trash"></i></button>
     </div>
         <span style="background:<?= $is_variable?'#fef3c7':'#d1fae5' ?>;color:<?= $is_variable?'#92400e':'#065f46' ?>;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700">
             <?= $is_variable ? 'VARIABLE PRODUCT' : 'SIMPLE PRODUCT' ?>
@@ -3840,7 +3838,7 @@ add_action('template_redirect', function () {
     // Save Group
     if (isset($_POST['save_grp'])) {
         $groups = b2b_get_groups();
-        $slug = sanitize_title($_POST['name']);
+        $slug = isset($_POST['edit_slug']) && !empty($_POST['edit_slug']) ? sanitize_key($_POST['edit_slug']) : sanitize_title($_POST['name']);
         $groups[$slug] = [
             'name' => sanitize_text_field($_POST['name']),
             'discount' => floatval($_POST['discount']),
@@ -3860,6 +3858,12 @@ add_action('template_redirect', function () {
     }
     
     $groups = b2b_get_groups();
+    $edit_group = null;
+    $edit_slug = '';
+    if(isset($_GET['edit'])) {
+        $edit_slug = sanitize_key($_GET['edit']);
+        $edit_group = $groups[$edit_slug] ?? null;
+    }
     ?>
     
     <div class="page-header">
@@ -3869,18 +3873,25 @@ add_action('template_redirect', function () {
     
     <div style="display:grid;grid-template-columns:1fr 2fr;gap:25px;">
         <div class="card">
-            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Add New Group</h3>
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;"><?= $edit_group ? 'Edit Group' : 'Add New Group' ?></h3>
             <form method="post">
+                <?php if($edit_group): ?>
+                <input type="hidden" name="edit_slug" value="<?= esc_attr($edit_slug) ?>">
+                <?php endif; ?>
+                
                 <label>Group Name</label>
-                <input type="text" name="name" required>
+                <input type="text" name="name" value="<?= esc_attr($edit_group['name'] ?? '') ?>" required>
                 
                 <label>Discount Rate (%)</label>
-                <input type="number" step="0.01" name="discount" value="0">
+                <input type="number" step="0.01" name="discount" value="<?= esc_attr($edit_group['discount'] ?? 0) ?>">
                 
                 <label>Minimum Order Amount</label>
-                <input type="number" name="min_order" value="0" step="0.01">
+                <input type="number" name="min_order" value="<?= esc_attr($edit_group['min_order'] ?? 0) ?>" step="0.01">
                 
-                <button type="submit" name="save_grp" style="width:100%;padding:12px;margin-top:10px;">Save Group</button>
+                <button type="submit" name="save_grp" style="width:100%;padding:12px;margin-top:10px;"><?= $edit_group ? 'Update Group' : 'Save Group' ?></button>
+                <?php if($edit_group): ?>
+                <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" style="display:block;text-align:center;margin-top:10px;color:#6b7280;text-decoration:none;">Cancel</a>
+                <?php endif; ?>
             </form>
         </div>
         
@@ -3902,14 +3913,17 @@ add_action('template_redirect', function () {
                     <?php else: foreach ($groups as $slug => $data): 
                         $count = count(get_users(['meta_key' => 'b2b_group_slug', 'meta_value' => $slug]));
                     ?>
-                        <tr>
+                        <tr style="<?= $edit_slug == $slug ? 'background:#fef3c7;' : '' ?>">
                             <td><strong><?= esc_html($data['name']) ?></strong></td>
                             <td><span style="background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;">%<?= $data['discount'] ?></span></td>
                             <td><?= wc_price($data['min_order']) ?></td>
                             <td><?= $count ?></td>
                             <td style="text-align:right;">
+                                <a href="?b2b_adm_page=b2b_groups&edit=<?= urlencode($slug) ?>">
+                                    <button class="secondary" style="padding:6px 12px;font-size:12px;margin-right:5px;"><i class="fa-solid fa-pen"></i> Edit</button>
+                                </a>
                                 <a href="?b2b_adm_page=b2b_groups&del=<?= urlencode($slug) ?>" onclick="return confirm('Are you sure you want to delete this group?')">
-                                    <button class="secondary" style="padding:6px 12px;background:#fef2f2;color:#ef4444;border-color:#fca5a5;">Delete</button>
+                                    <button class="secondary" style="padding:6px 12px;background:#fef2f2;color:#ef4444;border-color:#fca5a5;font-size:12px;"><i class="fa-solid fa-trash"></i></button>
                                 </a>
                             </td>
                         </tr>
@@ -4197,7 +4211,7 @@ add_action('template_redirect', function () {
     // Save Role
     if (isset($_POST['save_role'])) {
         $roles = get_option('b2b_roles', []);
-        $slug = sanitize_title($_POST['role_name']);
+        $slug = isset($_POST['edit_slug']) && !empty($_POST['edit_slug']) ? sanitize_key($_POST['edit_slug']) : sanitize_title($_POST['role_name']);
         $roles[$slug] = sanitize_text_field($_POST['role_name']);
         update_option('b2b_roles', $roles);
         echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0">Role saved successfully!</div>';
@@ -4214,6 +4228,14 @@ add_action('template_redirect', function () {
     
     $roles = get_option('b2b_roles', ['customer' => 'Customer', 'wholesaler' => 'Wholesaler', 'retailer' => 'Retailer']);
     
+    // Edit mode
+    $edit_role = null;
+    $edit_slug = '';
+    if(isset($_GET['edit'])) {
+        $edit_slug = sanitize_key($_GET['edit']);
+        $edit_role = $roles[$edit_slug] ?? null;
+    }
+    
     // Count users per role
     $role_counts = [];
     foreach($roles as $slug => $name) {
@@ -4228,12 +4250,19 @@ add_action('template_redirect', function () {
     
     <div style="display:grid;grid-template-columns:1fr 2fr;gap:25px;">
         <div class="card">
-            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;">Add New Role</h3>
+            <h3 style="margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;"><?= $edit_role ? 'Edit Role' : 'Add New Role' ?></h3>
             <form method="post">
-                <label>Role Name</label>
-                <input type="text" name="role_name" placeholder="e.g. Premium Wholesaler" required>
+                <?php if($edit_role): ?>
+                <input type="hidden" name="edit_slug" value="<?= esc_attr($edit_slug) ?>">
+                <?php endif; ?>
                 
-                <button type="submit" name="save_role" style="width:100%;padding:12px;margin-top:10px;">Add Role</button>
+                <label>Role Name</label>
+                <input type="text" name="role_name" placeholder="e.g. Premium Wholesaler" value="<?= esc_attr($edit_role ?? '') ?>" required>
+                
+                <button type="submit" name="save_role" style="width:100%;padding:12px;margin-top:10px;"><?= $edit_role ? 'Update Role' : 'Add Role' ?></button>
+                <?php if($edit_role): ?>
+                <a href="<?= home_url('/b2b-panel/b2b-module/roles') ?>" style="display:block;text-align:center;margin-top:10px;color:#6b7280;text-decoration:none;">Cancel</a>
+                <?php endif; ?>
             </form>
             <p style="font-size:12px;color:#6b7280;margin-top:15px;line-height:1.5;">
                 <i class="fa-solid fa-info-circle"></i> Roles help categorize B2B customers. Assign roles when editing customer profiles.
@@ -4255,13 +4284,16 @@ add_action('template_redirect', function () {
                     <?php if (empty($roles)): ?>
                         <tr><td colspan="4" style="text-align:center;padding:20px;color:#999">No roles created yet.</td></tr>
                     <?php else: foreach ($roles as $slug => $name): ?>
-                        <tr>
+                        <tr style="<?= $edit_slug == $slug ? 'background:#fef3c7;' : '' ?>">
                             <td><strong><?= esc_html($name) ?></strong></td>
                             <td><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($slug) ?></code></td>
                             <td><span style="background:#eff6ff;color:#1e40af;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;"><?= $role_counts[$slug] ?> users</span></td>
                             <td style="text-align:right;">
+                                <a href="?b2b_adm_page=b2b_roles&edit=<?= urlencode($slug) ?>">
+                                    <button class="secondary" style="padding:6px 12px;font-size:12px;margin-right:5px;"><i class="fa-solid fa-pen"></i> Edit</button>
+                                </a>
                                 <a href="?b2b_adm_page=b2b_roles&del=<?= urlencode($slug) ?>" onclick="return confirm('Delete this role? Users with this role will not be affected.')">
-                                    <button class="secondary" style="padding:6px 12px;background:#fef2f2;color:#ef4444;border-color:#fca5a5;">Delete</button>
+                                    <button class="secondary" style="padding:6px 12px;background:#fef2f2;color:#ef4444;border-color:#fca5a5;font-size:12px;"><i class="fa-solid fa-trash"></i></button>
                                 </a>
                             </td>
                         </tr>
@@ -5254,13 +5286,21 @@ add_action('template_redirect', function () {
     
     <?= $message ?>
     
+    <style>
+        .tax-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 20px; }
+        @media(max-width: 900px) { .tax-grid { grid-template-columns: 1fr; } }
+        .field-card { padding: 15px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 8px; transition: border-color 0.2s; }
+        .field-card:hover { border-color: #d1d5db; }
+        .field-card.active { border-color: #3b82f6; background: #eff6ff; }
+    </style>
+    
     <!-- Settings Form -->
     <div class="card" style="margin-bottom:20px;">
         <h3 style="margin-top:0;">General Settings</h3>
         <form method="post">
             <div style="margin-bottom:20px;">
                 <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
-                    <input type="checkbox" name="tax_auto_remove" value="1" <?= checked($tax_auto, 1) ?>>
+                    <input type="checkbox" name="tax_auto_remove" value="1" <?= checked($tax_auto, 1) ?> style="width:18px;height:18px;">
                     <span style="font-weight:600;">Remove Tax Automatically</span>
                 </label>
                 <small style="color:#6b7280;margin-left:30px;">Disable tax for approved users automatically</small>
@@ -5268,61 +5308,68 @@ add_action('template_redirect', function () {
             
             <hr style="margin:20px 0;border:none;border-top:1px solid #e5e7eb;">
             
-            <h4>Tax Exemption Form Fields</h4>
+            <h4 style="margin-bottom:10px;">Tax Exemption Form Fields</h4>
             <p style="color:#6b7280;margin-bottom:20px;">Configure which fields appear in the customer tax exemption request form.</p>
             
-            <!-- Text Field -->
-            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
-                    <input type="checkbox" name="enable_text_field" value="1" <?= checked($enable_text, 1) ?>>
-                    <span style="font-weight:600;">Enable Text Field</span>
-                </label>
-                <div style="margin-left:30px;">
-                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
-                        <input type="checkbox" name="text_required" value="1" <?= checked($text_required, 1) ?>>
-                        <span>Required</span>
+            <!-- 2 Column Grid for Fields -->
+            <div class="tax-grid">
+                <!-- Text Field -->
+                <div class="field-card">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:15px;">
+                        <input type="checkbox" name="enable_text_field" value="1" <?= checked($enable_text, 1) ?> style="width:18px;height:18px;">
+                        <span style="font-weight:600;font-size:15px;"><i class="fa-solid fa-keyboard"></i> Text Field</span>
                     </label>
-                    <label style="display:block;margin-bottom:5px;font-size:13px;">Field Label</label>
-                    <input type="text" name="text_label" value="<?= esc_attr($text_label) ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <div style="margin-left:0;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px;">
+                            <input type="checkbox" name="text_required" value="1" <?= checked($text_required, 1) ?> style="width:16px;height:16px;">
+                            <span style="font-size:13px;">Required</span>
+                        </label>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:#374151;">Field Label</label>
+                        <input type="text" name="text_label" value="<?= esc_attr($text_label) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                    </div>
+                </div>
+                
+                <!-- Textarea Field -->
+                <div class="field-card">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:15px;">
+                        <input type="checkbox" name="enable_textarea" value="1" <?= checked($enable_textarea, 1) ?> style="width:18px;height:18px;">
+                        <span style="font-weight:600;font-size:15px;"><i class="fa-solid fa-align-left"></i> Textarea Field</span>
+                    </label>
+                    <div style="margin-left:0;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px;">
+                            <input type="checkbox" name="textarea_required" value="1" <?= checked($textarea_required, 1) ?> style="width:16px;height:16px;">
+                            <span style="font-size:13px;">Required</span>
+                        </label>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:#374151;">Field Label</label>
+                        <input type="text" name="textarea_label" value="<?= esc_attr($textarea_label) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                    </div>
                 </div>
             </div>
             
-            <!-- Textarea Field -->
-            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
-                    <input type="checkbox" name="enable_textarea" value="1" <?= checked($enable_textarea, 1) ?>>
-                    <span style="font-weight:600;">Enable Textarea Field</span>
+            <!-- File Upload Field (Full Width) -->
+            <div class="field-card" style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:15px;">
+                    <input type="checkbox" name="enable_file" value="1" <?= checked($enable_file, 1) ?> style="width:18px;height:18px;">
+                    <span style="font-weight:600;font-size:15px;"><i class="fa-solid fa-file-arrow-up"></i> File Upload Field</span>
                 </label>
-                <div style="margin-left:30px;">
-                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
-                        <input type="checkbox" name="textarea_required" value="1" <?= checked($textarea_required, 1) ?>>
-                        <span>Required</span>
-                    </label>
-                    <label style="display:block;margin-bottom:5px;font-size:13px;">Field Label</label>
-                    <input type="text" name="textarea_label" value="<?= esc_attr($textarea_label) ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:15px;">
+                    <div>
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px;">
+                            <input type="checkbox" name="file_required" value="1" <?= checked($file_required, 1) ?> style="width:16px;height:16px;">
+                            <span style="font-size:13px;">Required</span>
+                        </label>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:#374151;">Field Label</label>
+                        <input type="text" name="file_label" value="<?= esc_attr($file_label) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:#374151;margin-top:32px;">Allowed File Types</label>
+                        <input type="text" name="allowed_types" value="<?= esc_attr($allowed_types) ?>" placeholder="pdf,jpg,jpeg,png" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                        <small style="display:block;color:#6b7280;margin-top:5px;font-size:11px;">Comma-separated file extensions</small>
+                    </div>
                 </div>
             </div>
             
-            <!-- File Upload Field -->
-            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
-                    <input type="checkbox" name="enable_file" value="1" <?= checked($enable_file, 1) ?>>
-                    <span style="font-weight:600;">Enable File Upload Field</span>
-                </label>
-                <div style="margin-left:30px;">
-                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
-                        <input type="checkbox" name="file_required" value="1" <?= checked($file_required, 1) ?>>
-                        <span>Required</span>
-                    </label>
-                    <label style="display:block;margin-bottom:5px;font-size:13px;">Field Label</label>
-                    <input type="text" name="file_label" value="<?= esc_attr($file_label) ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:10px;">
-                    <label style="display:block;margin-bottom:5px;font-size:13px;">Allowed File Types</label>
-                    <input type="text" name="allowed_types" value="<?= esc_attr($allowed_types) ?>" placeholder="pdf,jpg,jpeg,png" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
-                    <small style="display:block;color:#6b7280;margin-top:5px;">Comma-separated file extensions</small>
-                </div>
-            </div>
-            
-            <button type="submit" name="save_tax_settings" style="background:#10b981;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+            <button type="submit" name="save_tax_settings" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">
                 <i class="fa-solid fa-save"></i> Save Settings
             </button>
         </form>
@@ -5470,7 +5517,76 @@ add_action('template_redirect', function () {
     ?>
     <div class="page-header"><h1 class="page-title">Shipping Zones</h1></div>
     
-    <?php if($edit_zone): ?>
+    <?php 
+    // Handle WooCommerce Import
+    if(isset($_GET['wc_import']) && $_GET['wc_import'] == '1') {
+        if(class_exists('WC_Shipping_Zones')) {
+            $wc_zones = WC_Shipping_Zones::get_zones();
+            $b2b_zones = get_option('b2b_shipping_zones', []);
+            $imported_count = 0;
+            
+            foreach($wc_zones as $wc_zone_data) {
+                $zone_id = 'wc_' . $wc_zone_data['id'];
+                
+                // Get zone object for methods
+                $wc_zone = new WC_Shipping_Zone($wc_zone_data['id']);
+                $shipping_methods = $wc_zone->get_shipping_methods();
+                
+                $flat_rate_data = ['enabled' => 0, 'cost' => 0, 'title' => 'Flat Rate'];
+                $free_ship_data = ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping'];
+                
+                foreach($shipping_methods as $method) {
+                    if($method->id == 'flat_rate' && $method->enabled == 'yes') {
+                        $flat_rate_data = [
+                            'enabled' => 1,
+                            'cost' => floatval($method->get_option('cost', 0)),
+                            'title' => $method->get_title()
+                        ];
+                    }
+                    if($method->id == 'free_shipping' && $method->enabled == 'yes') {
+                        $free_ship_data = [
+                            'enabled' => 1,
+                            'min_amount' => floatval($method->get_option('min_amount', 0)),
+                            'title' => $method->get_title()
+                        ];
+                    }
+                }
+                
+                // Get regions
+                $regions = [];
+                foreach($wc_zone_data['zone_locations'] as $location) {
+                    if($location->type == 'country') {
+                        $regions[] = $location->code;
+                    }
+                }
+                
+                $b2b_zones[$zone_id] = [
+                    'name' => $wc_zone_data['zone_name'],
+                    'description' => 'Imported from WooCommerce',
+                    'regions' => $regions,
+                    'active' => 1,
+                    'priority' => $wc_zone_data['zone_order'],
+                    'methods' => [
+                        'flat_rate' => $flat_rate_data,
+                        'free_shipping' => $free_ship_data
+                    ],
+                    'group_permissions' => []
+                ];
+                $imported_count++;
+            }
+            
+            update_option('b2b_shipping_zones', $b2b_zones);
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Imported ' . $imported_count . ' shipping zone(s) from WooCommerce.</div>';
+            echo $message;
+            wp_redirect(home_url('/b2b-panel/settings/shipping'));
+            exit;
+        } else {
+            $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;"><strong>Error!</strong> WooCommerce is not active or shipping zones are not available.</div>';
+            echo $message;
+        }
+    }
+    
+    if($edit_zone): ?>
     <!-- Edit Zone Form -->
     <div class="card" style="margin-bottom:20px;">
         <h3 style="margin-top:0;"><?= $edit_id == 'new' ? 'Add New Shipping Zone' : 'Edit Shipping Zone' ?></h3>
@@ -5601,8 +5717,11 @@ add_action('template_redirect', function () {
     </div>
     <?php else: ?>
     <!-- Add New Zone Button -->
-    <div style="margin-bottom:20px;">
+    <div style="margin-bottom:20px;display:flex;gap:10px;">
         <a href="<?= home_url('/b2b-panel/settings/shipping?edit=new') ?>"><button class="primary"><i class="fa-solid fa-plus"></i> Add Shipping Zone</button></a>
+        <?php if(class_exists('WC_Shipping_Zones')): ?>
+        <a href="<?= home_url('/b2b-panel/settings/shipping?wc_import=1') ?>"><button class="secondary" style="background:#3b82f6;color:white;border:none;"><i class="fa-solid fa-download"></i> Import from WooCommerce</button></a>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
     

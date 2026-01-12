@@ -28,6 +28,9 @@ add_action('init', function () {
     // Ürünler Listesi
     add_rewrite_rule('^b2b-panel/products/?$', 'index.php?b2b_adm_page=products', 'top');
     
+    // Ürün Yeni Ekle (Add New)
+    add_rewrite_rule('^b2b-panel/products/add-new/?$', 'index.php?b2b_adm_page=product_add_new', 'top');
+    
     // Ürün Detay (Edit) - Bu satır en kritik olanı
     add_rewrite_rule('^b2b-panel/products/edit/?$', 'index.php?b2b_adm_page=product_edit', 'top');
     
@@ -117,11 +120,20 @@ add_action('woocommerce_before_calculate_totals', function($cart) {
 ===================================================== */
 
 /**
- * Helper function: Get all shipping zones (from WooCommerce native)
+ * Helper function: Get all shipping zones (from WooCommerce native) with caching
  */
-function b2b_get_all_shipping_zones() {
+function b2b_get_all_shipping_zones($force_refresh = false) {
     if(!class_exists('WC_Shipping_Zones')) {
         return [];
+    }
+    
+    // Check cache first
+    $cache_key = 'b2b_shipping_zones_v1';
+    if(!$force_refresh) {
+        $cached = wp_cache_get($cache_key, 'b2b_shipping');
+        if($cached !== false) {
+            return $cached;
+        }
     }
     
     $wc_zones = WC_Shipping_Zones::get_zones();
@@ -180,7 +192,17 @@ function b2b_get_all_shipping_zones() {
         ];
     }
     
+    // Cache for 1 hour
+    wp_cache_set($cache_key, $zones, 'b2b_shipping', HOUR_IN_SECONDS);
+    
     return $zones;
+}
+
+/**
+ * Clear shipping zones cache
+ */
+function b2b_clear_shipping_zones_cache() {
+    wp_cache_delete('b2b_shipping_zones_v1', 'b2b_shipping');
 }
 
 /**
@@ -274,6 +296,9 @@ function b2b_save_shipping_zone($zone_id, $zone_data) {
         update_option('b2b_zone_extensions', $extensions);
     }
     
+    // Clear cache after saving
+    b2b_clear_shipping_zones_cache();
+    
     return $saved_zone_id;
 }
 
@@ -292,6 +317,9 @@ function b2b_delete_shipping_zone($zone_id) {
     $extensions = get_option('b2b_zone_extensions', []);
     unset($extensions[$zone_id]);
     update_option('b2b_zone_extensions', $extensions);
+    
+    // Clear cache after deletion
+    b2b_clear_shipping_zones_cache();
     
     return true;
 }
@@ -1193,11 +1221,11 @@ function b2b_adm_header($title) {
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
             
             <!-- Products Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-tags"></i> Products <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'||get_query_var('b2b_adm_page')=='product_add_new'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
                 <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="<?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>"><i class="fa-solid fa-folder-tree"></i> Categories</a>
                 <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="<?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</a>
                 <a href="<?= home_url('/b2b-panel/products/import') ?>" class="<?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>"><i class="fa-solid fa-file-import"></i> Import</a>
@@ -2173,7 +2201,7 @@ add_action('template_redirect', function () {
     <div class="page-header">
         <h1 class="page-title">Products</h1>
         <div style="display:flex;gap:10px;">
-            <a href="<?= admin_url('post-new.php?post_type=product') ?>" target="_blank">
+            <a href="<?= home_url('/b2b-panel/products/add-new') ?>">
                 <button class="primary" style="display:flex;align-items:center;gap:8px;">
                     <i class="fa-solid fa-plus"></i> Add New Product
                 </button>
@@ -3447,6 +3475,100 @@ add_action('template_redirect', function () {
         });
     });
     </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   10B. PAGE: PRODUCT ADD NEW (Internal)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'product_add_new') return;
+    b2b_adm_guard();
+    
+    // Handle form submission
+    if (isset($_POST['create_product'])) {
+        $product_name = sanitize_text_field($_POST['product_name']);
+        $product_sku = sanitize_text_field($_POST['product_sku']);
+        $product_price = floatval($_POST['product_price']);
+        $product_stock = intval($_POST['product_stock']);
+        $product_type = sanitize_text_field($_POST['product_type'] ?? 'simple');
+        
+        // Create new product
+        $product = new WC_Product_Simple();
+        $product->set_name($product_name);
+        $product->set_status('draft'); // Start as draft
+        
+        if($product_sku) {
+            $product->set_sku($product_sku);
+        }
+        
+        if($product_price > 0) {
+            $product->set_regular_price($product_price);
+        }
+        
+        // Stock management
+        $product->set_manage_stock(true);
+        $product->set_stock_quantity($product_stock);
+        $product->set_stock_status($product_stock > 0 ? 'instock' : 'outofstock');
+        
+        // Save and get ID
+        $new_id = $product->save();
+        
+        if($new_id) {
+            // Redirect to edit page
+            wp_redirect(home_url('/b2b-panel/products/edit?id=' . $new_id . '&created=1'));
+            exit;
+        }
+    }
+    
+    b2b_adm_header('Add New Product');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title">Add New Product</h1>
+    </div>
+    
+    <div class="card" style="max-width:800px;">
+        <form method="POST">
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Product Name *</label>
+                <input type="text" name="product_name" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Enter product name">
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">SKU</label>
+                    <input type="text" name="product_sku" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Product SKU">
+                    <small style="color:#6b7280;">Optional. Leave empty for auto-generate.</small>
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Regular Price ($)</label>
+                    <input type="number" name="product_price" step="0.01" min="0" value="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Stock Quantity</label>
+                <input type="number" name="product_stock" min="0" value="0" style="width:200px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+            </div>
+            
+            <input type="hidden" name="product_type" value="simple">
+            
+            <div style="padding:20px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;">
+                <p style="margin:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> <strong>Note:</strong> Product will be created as <strong>draft</strong>. You can add more details (description, images, categories) on the edit page.</p>
+            </div>
+            
+            <div style="display:flex;gap:10px;">
+                <button type="submit" name="create_product" class="primary" style="padding:12px 24px;">
+                    <i class="fa-solid fa-plus"></i> Create Product
+                </button>
+                <a href="<?= home_url('/b2b-panel/products') ?>">
+                    <button type="button" class="secondary" style="padding:12px 24px;">Cancel</button>
+                </a>
+            </div>
+        </form>
+    </div>
     
     <?php b2b_adm_footer(); exit;
 });

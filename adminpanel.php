@@ -3884,7 +3884,18 @@ add_action('template_redirect', function () {
         $product_name = sanitize_text_field($_POST['product_name']);
         $product_sku = sanitize_text_field($_POST['product_sku']);
         $product_price = floatval($_POST['product_price']);
+        $product_sale_price = floatval($_POST['product_sale_price'] ?? 0);
         $product_stock = intval($_POST['product_stock']);
+        $product_description = wp_kses_post($_POST['product_description'] ?? '');
+        $product_short_description = wp_kses_post($_POST['product_short_description'] ?? '');
+        $product_categories = isset($_POST['product_categories']) ? array_map('intval', $_POST['product_categories']) : [];
+        $product_weight = sanitize_text_field($_POST['product_weight'] ?? '');
+        $product_length = sanitize_text_field($_POST['product_length'] ?? '');
+        $product_width = sanitize_text_field($_POST['product_width'] ?? '');
+        $product_height = sanitize_text_field($_POST['product_height'] ?? '');
+        $stock_status = sanitize_text_field($_POST['stock_status'] ?? 'instock');
+        $tax_status = sanitize_text_field($_POST['tax_status'] ?? 'taxable');
+        $tax_class = sanitize_text_field($_POST['tax_class'] ?? '');
         $product_type = sanitize_text_field($_POST['product_type'] ?? 'simple');
         
         // Create new product
@@ -3896,14 +3907,51 @@ add_action('template_redirect', function () {
             $product->set_sku($product_sku);
         }
         
+        // Pricing
         if($product_price > 0) {
             $product->set_regular_price($product_price);
+        }
+        if($product_sale_price > 0 && $product_sale_price < $product_price) {
+            $product->set_sale_price($product_sale_price);
+        }
+        
+        // Description
+        if($product_description) {
+            $product->set_description($product_description);
+        }
+        if($product_short_description) {
+            $product->set_short_description($product_short_description);
+        }
+        
+        // Categories
+        if(!empty($product_categories)) {
+            $product->set_category_ids($product_categories);
+        }
+        
+        // Weight & Dimensions
+        if($product_weight) {
+            $product->set_weight($product_weight);
+        }
+        if($product_length) {
+            $product->set_length($product_length);
+        }
+        if($product_width) {
+            $product->set_width($product_width);
+        }
+        if($product_height) {
+            $product->set_height($product_height);
         }
         
         // Stock management
         $product->set_manage_stock(true);
         $product->set_stock_quantity($product_stock);
-        $product->set_stock_status($product_stock > 0 ? 'instock' : 'outofstock');
+        $product->set_stock_status($stock_status);
+        
+        // Tax
+        $product->set_tax_status($tax_status);
+        if($tax_class) {
+            $product->set_tax_class($tax_class);
+        }
         
         // Save and get ID
         $new_id = $product->save();
@@ -3915,14 +3963,27 @@ add_action('template_redirect', function () {
         }
     }
     
+    // Get categories for dropdown
+    $product_categories = get_terms([
+        'taxonomy' => 'product_cat',
+        'hide_empty' => false,
+        'orderby' => 'name',
+        'order' => 'ASC'
+    ]);
+    
     b2b_adm_header('Add New Product');
     ?>
     <div class="page-header">
         <h1 class="page-title">Add New Product</h1>
     </div>
     
-    <div class="card" style="max-width:800px;">
+    <div class="card" style="max-width:1000px;">
         <form method="POST">
+            <!-- Basic Information -->
+            <h3 style="margin-top:0;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-info-circle" style="color:#3b82f6;"></i> Basic Information
+            </h3>
+            
             <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Product Name *</label>
                 <input type="text" name="product_name" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Enter product name">
@@ -3936,20 +3997,126 @@ add_action('template_redirect', function () {
                 </div>
                 
                 <div>
-                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Regular Price ($)</label>
-                    <input type="number" name="product_price" step="0.01" min="0" value="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Categories</label>
+                    <select name="product_categories[]" multiple style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;min-height:100px;">
+                        <?php if(!empty($product_categories)): foreach($product_categories as $cat): ?>
+                        <option value="<?= $cat->term_id ?>"><?= esc_html($cat->name) ?></option>
+                        <?php endforeach; endif; ?>
+                    </select>
+                    <small style="color:#6b7280;">Hold Ctrl/Cmd to select multiple</small>
                 </div>
             </div>
             
+            <!-- Descriptions -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-file-lines" style="color:#10b981;"></i> Descriptions
+            </h3>
+            
             <div style="margin-bottom:20px;">
-                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Stock Quantity</label>
-                <input type="number" name="product_stock" min="0" value="0" style="width:200px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Short Description</label>
+                <textarea name="product_short_description" rows="3" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Brief product summary (shown in product listings)"></textarea>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Full Description</label>
+                <textarea name="product_description" rows="6" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Detailed product description"></textarea>
+            </div>
+            
+            <!-- Pricing -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-dollar-sign" style="color:#f59e0b;"></i> Pricing
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Regular Price ($) *</label>
+                    <input type="number" name="product_price" step="0.01" min="0" value="0" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Sale Price ($)</label>
+                    <input type="number" name="product_sale_price" step="0.01" min="0" value="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                    <small style="color:#6b7280;">Optional. Must be less than regular price.</small>
+                </div>
+            </div>
+            
+            <!-- Inventory -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-boxes-stacked" style="color:#8b5cf6;"></i> Inventory
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Stock Quantity</label>
+                    <input type="number" name="product_stock" min="0" value="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Stock Status</label>
+                    <select name="stock_status" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                        <option value="instock">In Stock</option>
+                        <option value="outofstock">Out of Stock</option>
+                        <option value="onbackorder">On Backorder</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Shipping -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-truck" style="color:#ef4444;"></i> Shipping
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Weight (kg)</label>
+                    <input type="number" name="product_weight" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Length (cm)</label>
+                    <input type="number" name="product_length" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Width (cm)</label>
+                    <input type="number" name="product_width" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Height (cm)</label>
+                    <input type="number" name="product_height" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+            </div>
+            
+            <!-- Tax Settings -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-receipt" style="color:#14b8a6;"></i> Tax Settings
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Tax Status</label>
+                    <select name="tax_status" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                        <option value="taxable">Taxable</option>
+                        <option value="shipping">Shipping only</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Tax Class</label>
+                    <select name="tax_class" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                        <option value="">Standard</option>
+                        <option value="reduced-rate">Reduced rate</option>
+                        <option value="zero-rate">Zero rate</option>
+                    </select>
+                </div>
             </div>
             
             <input type="hidden" name="product_type" value="simple">
             
-            <div style="padding:20px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;">
-                <p style="margin:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> <strong>Note:</strong> Product will be created as <strong>draft</strong>. You can add more details (description, images, categories) on the edit page.</p>
+            <div style="padding:20px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;margin-top:30px;">
+                <p style="margin:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> <strong>Note:</strong> Product will be created as <strong>draft</strong>. You can add images and additional details on the edit page.</p>
             </div>
             
             <div style="display:flex;gap:10px;">

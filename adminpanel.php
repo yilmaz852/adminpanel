@@ -539,6 +539,58 @@ add_action('wp_ajax_b2b_delete_product', function() {
     }
 });
 
+// AJAX handler for duplicating products
+add_action('wp_ajax_b2b_duplicate_product', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'b2b_duplicate_product')) {
+        wp_send_json_error('Security check failed');
+        return;
+    }
+    
+    $product_id = intval($_POST['product_id']);
+    
+    if (!$product_id) {
+        wp_send_json_error('Invalid product ID');
+        return;
+    }
+    
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error('Product not found');
+        return;
+    }
+    
+    // Duplicate the product
+    $duplicate = new WC_Product_Simple();
+    $duplicate->set_name($product->get_name() . ' (Copy)');
+    $duplicate->set_slug('');
+    $duplicate->set_sku('');
+    $duplicate->set_regular_price($product->get_regular_price());
+    $duplicate->set_sale_price($product->get_sale_price());
+    $duplicate->set_description($product->get_description());
+    $duplicate->set_short_description($product->get_short_description());
+    $duplicate->set_category_ids($product->get_category_ids());
+    $duplicate->set_status('draft');
+    
+    // Save and get new ID
+    $new_id = $duplicate->save();
+    
+    if ($new_id) {
+        wp_send_json_success([
+            'message' => 'Product duplicated successfully',
+            'new_id' => $new_id,
+            'edit_url' => home_url('/b2b-panel/products/edit?id=' . $new_id)
+        ]);
+    } else {
+        wp_send_json_error('Failed to duplicate product');
+    }
+});
+
 /* =====================================================
    3B. B2B PRO SYSTEM v7.0 (Gelişmiş Ödeme İzinleri Matrisi)
    
@@ -2120,9 +2172,16 @@ add_action('template_redirect', function () {
     ?>
     <div class="page-header">
         <h1 class="page-title">Products</h1>
-        <button id="quickEditToggle" onclick="toggleQuickEdit()" class="secondary" style="display:flex;align-items:center;gap:8px;">
-            <i class="fa-solid fa-bolt"></i> Quick Edit Stock
-        </button>
+        <div style="display:flex;gap:10px;">
+            <a href="<?= admin_url('post-new.php?post_type=product') ?>" target="_blank">
+                <button class="primary" style="display:flex;align-items:center;gap:8px;">
+                    <i class="fa-solid fa-plus"></i> Add New Product
+                </button>
+            </a>
+            <button id="quickEditToggle" onclick="toggleQuickEdit()" class="secondary" style="display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-bolt"></i> Quick Edit Stock
+            </button>
+        </div>
     </div>
     <div class="card">
         <!-- Enhanced Filter Bar -->
@@ -2239,6 +2298,7 @@ add_action('template_redirect', function () {
                     <a href="<?= home_url('/b2b-panel/products/edit?id=' . $p->get_id()) ?>">
                         <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
                     </a>
+                    <button class="duplicate-product-btn" data-product-id="<?= $p->get_id() ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 12px;font-size:12px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;margin-left:5px;"><i class="fa-solid fa-copy"></i></button>
                     <button class="delete-product-btn" data-product-id="<?= $p->get_id() ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;margin-left:5px;"><i class="fa-solid fa-trash"></i></button>
                 </td>
             </tr>
@@ -2409,6 +2469,44 @@ add_action('template_redirect', function () {
                 alert('Error deleting product: ' + error);
                 this.disabled = false;
                 this.innerHTML = '<i class="fa-solid fa-trash"></i>';
+            });
+        });
+    });
+    
+    // Duplicate product handler
+    document.querySelectorAll('.duplicate-product-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const productId = this.getAttribute('data-product-id');
+            const productName = this.getAttribute('data-product-name');
+            
+            if(!confirm(`Duplicate "${productName}"?`)) {
+                return;
+            }
+            
+            // Disable button during request
+            this.disabled = true;
+            this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'action=b2b_duplicate_product&product_id=' + productId + '&nonce=<?= wp_create_nonce("b2b_duplicate_product") ?>'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    alert('Product duplicated successfully! Redirecting to edit...');
+                    window.location.href = data.data.edit_url;
+                } else {
+                    alert('Error: ' + (data.data || 'Unknown error'));
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fa-solid fa-copy"></i>';
+                }
+            })
+            .catch(error => {
+                alert('Error duplicating product: ' + error);
+                this.disabled = false;
+                this.innerHTML = '<i class="fa-solid fa-copy"></i>';
             });
         });
     });
@@ -3368,6 +3466,10 @@ add_action('template_redirect', function () {
         $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
         $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
         
+        // Filter parameters
+        $filter_group = isset($_GET['filter_group']) ? sanitize_text_field($_GET['filter_group']) : '';
+        $filter_role = isset($_GET['filter_role']) ? sanitize_text_field($_GET['filter_role']) : '';
+        
         $args = [
             'role__in' => ['customer', 'subscriber', 'sales_agent'], 
             'number'   => $per_page,
@@ -3377,10 +3479,41 @@ add_action('template_redirect', function () {
             'order'    => 'DESC'
         ];
         
+        // Add meta query for filters
+        $meta_query = [];
+        if($filter_group) {
+            $meta_query[] = [
+                'key' => 'b2b_group_slug',
+                'value' => $filter_group,
+                'compare' => '='
+            ];
+        }
+        if($filter_role) {
+            $meta_query[] = [
+                'key' => 'b2b_role',
+                'value' => $filter_role,
+                'compare' => '='
+            ];
+        }
+        if(!empty($meta_query)) {
+            $args['meta_query'] = $meta_query;
+            if(count($meta_query) > 1) {
+                $args['meta_query']['relation'] = 'AND';
+            }
+        }
+        
         $user_query = new WP_User_Query($args);
         $users = $user_query->get_results();
         $total_users = $user_query->get_total();
         $total_pages = ceil($total_users / $per_page);
+        
+        // Get groups and roles for filters
+        $all_groups = b2b_get_groups();
+        $all_roles = get_option('b2b_roles', [
+            ['slug' => 'customer', 'name' => 'Customer'],
+            ['slug' => 'wholesaler', 'name' => 'Wholesaler'],
+            ['slug' => 'retailer', 'name' => 'Retailer']
+        ]);
 
         b2b_adm_header('Customer Management');
         ?>
@@ -3389,7 +3522,7 @@ add_action('template_redirect', function () {
         <div class="card">
             <!-- Toolbar -->
             <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;align-items:center">
-                <div style="display:flex;gap:10px;align-items:center;">
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <div class="col-toggler">
                         <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
                         <div id="cColDrop" class="col-dropdown">
@@ -3404,21 +3537,49 @@ add_action('template_redirect', function () {
                     </div>
                     
                     <!-- Per Page Selector -->
-                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_group ? '&filter_group='.urlencode($filter_group) : '' ?><?= $filter_role ? '&filter_role='.urlencode($filter_role) : '' ?>'" style="margin:0;max-width:120px;">
                         <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
                         <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
                         <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
                         <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
                     </select>
+                    
+                    <!-- Group Filter -->
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?filter_group='+this.value+'<?= $per_page != 20 ? '&per_page='.$per_page : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_role ? '&filter_role='.urlencode($filter_role) : '' ?>'" style="margin:0;max-width:150px;">
+                        <option value="">All Groups</option>
+                        <?php foreach($all_groups as $slug => $group): ?>
+                            <option value="<?= esc_attr($slug) ?>" <?= selected($filter_group, $slug) ?>><?= esc_html($group['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <!-- Role Filter -->
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?filter_role='+this.value+'<?= $per_page != 20 ? '&per_page='.$per_page : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_group ? '&filter_group='.urlencode($filter_group) : '' ?>'" style="margin:0;max-width:150px;">
+                        <option value="">All Roles</option>
+                        <?php foreach($all_roles as $role): ?>
+                            <option value="<?= esc_attr($role['slug']) ?>" <?= selected($filter_role, $role['slug']) ?>><?= esc_html($role['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <?php if($filter_group || $filter_role): ?>
+                        <a href="<?= home_url('/b2b-panel/customers') ?>?<?= $per_page != 20 ? 'per_page='.$per_page : '' ?><?= $s ? ($per_page != 20 ? '&' : '').'s='.urlencode($s) : '' ?>" style="padding:8px 12px;color:#ef4444;text-decoration:none;white-space:nowrap;background:#fee2e2;border-radius:6px;font-size:13px;"><i class="fa-solid fa-times"></i> Clear Filters</a>
+                    <?php endif; ?>
                 </div>
 
                 <div style="flex:1;display:flex;justify-content:flex-end;gap:10px">
-                    <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">Total: <strong><?= $total_users ?></strong></span>
+                    <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">
+                        <?php if($filter_group || $filter_role): ?>
+                            Filtered: <strong><?= $total_users ?></strong>
+                        <?php else: ?>
+                            Total: <strong><?= $total_users ?></strong>
+                        <?php endif; ?>
+                    </span>
                     <form style="display:flex;gap:5px">
                         <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
+                        <?php if($filter_group): ?><input type="hidden" name="filter_group" value="<?= esc_attr($filter_group) ?>"><?php endif; ?>
+                        <?php if($filter_role): ?><input type="hidden" name="filter_role" value="<?= esc_attr($filter_role) ?>"><?php endif; ?>
                         <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search customers..." style="margin:0;max-width:250px">
                         <button>Search</button>
-                        <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
+                        <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>?<?= $per_page != 20 ? 'per_page='.$per_page : '' ?><?= $filter_group ? ($per_page != 20 ? '&' : '').'filter_group='.urlencode($filter_group) : '' ?><?= $filter_role ? ($per_page != 20 || $filter_group ? '&' : '').'filter_role='.urlencode($filter_role) : '' ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
                     </form>
                 </div>
             </div>
@@ -3454,9 +3615,21 @@ add_action('template_redirect', function () {
                         }
                     }
                     // -------------------
+                    
+                    // Get B2B role
+                    $b2b_role_slug = get_user_meta($u->ID, 'b2b_role', true);
+                    $b2b_role_name = '-';
+                    if($b2b_role_slug) {
+                        foreach($all_roles as $role) {
+                            if($role['slug'] == $b2b_role_slug) {
+                                $b2b_role_name = $role['name'];
+                                break;
+                            }
+                        }
+                    }
 
-                    $role_bg = in_array('sales_agent', $u->roles) ? '#dbeafe' : '#f3f4f6';
-                    $role_col = in_array('sales_agent', $u->roles) ? '#1e40af' : '#374151';
+                    $role_bg = $b2b_role_slug ? '#dbeafe' : '#f3f4f6';
+                    $role_col = $b2b_role_slug ? '#1e40af' : '#6b7280';
                 ?>
                 <tr>
                     <td data-col="0">#<?= $u->ID ?></td>
@@ -3489,7 +3662,7 @@ add_action('template_redirect', function () {
                     </td>
                     <td data-col="5">
                         <span style="background:<?= $role_bg ?>;color:<?= $role_col ?>;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase">
-                            <?= !empty($u->roles) ? $u->roles[0] : 'Guest' ?>
+                            <?= esc_html($b2b_role_name) ?>
                         </span>
                     </td>
                     <td data-col="6" style="text-align:right">
@@ -3511,6 +3684,8 @@ add_action('template_redirect', function () {
                         $page_params = [];
                         if($s) $page_params[] = 's=' . urlencode($s);
                         if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
+                        if($filter_group) $page_params[] = 'filter_group=' . urlencode($filter_group);
+                        if($filter_role) $page_params[] = 'filter_role=' . urlencode($filter_role);
                         if($i > 1) $page_params[] = 'paged=' . $i;
                         $page_url = home_url('/b2b-panel/customers') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
                         $selected = ($i == $paged) ? 'selected' : '';

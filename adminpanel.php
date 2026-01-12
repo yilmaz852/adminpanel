@@ -38,6 +38,9 @@ add_action('init', function () {
     // Products Categories
     add_rewrite_rule('^b2b-panel/products/categories/?$', 'index.php?b2b_adm_page=products_categories', 'top');
     add_rewrite_rule('^b2b-panel/products/categories/edit/?$', 'index.php?b2b_adm_page=category_edit', 'top');
+    
+    // Products Price Adjuster
+    add_rewrite_rule('^b2b-panel/products/price-adjuster/?$', 'index.php?b2b_adm_page=price_adjuster', 'top');
 
     // B2B Module (V10 - New)
     add_rewrite_rule('^b2b-panel/b2b-module/?$', 'index.php?b2b_adm_page=b2b_approvals', 'top');
@@ -52,9 +55,9 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/tax-exemption/?$', 'index.php?b2b_adm_page=settings_tax', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v15_settings_categories')) {
+    if (!get_option('b2b_rewrite_v16_price_adjuster')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v15_settings_categories', true);
+        update_option('b2b_rewrite_v16_price_adjuster', true);
     }
 });
 
@@ -783,12 +786,13 @@ function b2b_adm_header($title) {
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
             
             <!-- Products Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-tags"></i> Products <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
                 <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
                 <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="<?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>"><i class="fa-solid fa-folder-tree"></i> Categories</a>
+                <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="<?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</a>
                 <a href="<?= home_url('/b2b-panel/products/import') ?>" class="<?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>"><i class="fa-solid fa-file-import"></i> Import</a>
                 <a href="<?= home_url('/b2b-panel/products/export') ?>" class="<?= get_query_var('b2b_adm_page')=='products_export'?'active':'' ?>"><i class="fa-solid fa-file-export"></i> Export</a>
             </div>
@@ -2428,6 +2432,268 @@ add_action('template_redirect', function () {
         </form>
     </div>
     <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   9F. PAGE: PRICE ADJUSTER
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'price_adjuster') return;
+    b2b_adm_guard();
+    
+    // Price calculation function
+    function b2b_calculate_price($price, $type, $value, $action, $rounding = false) {
+        if ($type === 'percent') {
+            $delta = $price * ($value / 100);
+        } else {
+            $delta = $value;
+        }
+        $new_price = ($action === 'increase') ? $price + $delta : max(0, $price - $delta);
+
+        if ($rounding) {
+            $fraction = $new_price - floor($new_price);
+            $new_price = ($fraction >= 0.5) ? ceil($new_price) : floor($new_price);
+        }
+        return $new_price;
+    }
+    
+    $per_page = 20;
+    $paged = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+    $offset = ($paged - 1) * $per_page;
+
+    // Read filter inputs from GET
+    $category_ids = isset($_GET['cpa_categories']) ? array_map('intval', (array) $_GET['cpa_categories']) : [];
+    $type = isset($_GET['cpa_type']) ? sanitize_text_field($_GET['cpa_type']) : 'percent';
+    $value = isset($_GET['cpa_value']) ? floatval($_GET['cpa_value']) : 0;
+    $action = isset($_GET['cpa_action']) ? sanitize_text_field($_GET['cpa_action']) : 'increase';
+    $rounding = isset($_GET['cpa_rounding']) ? true : false;
+    $search = isset($_GET['cpa_search']) ? sanitize_text_field($_GET['cpa_search']) : '';
+
+    b2b_adm_header('Price Adjuster');
+    
+    echo '<div class="page-header"><h1 class="page-title"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</h1></div>';
+    
+    // Filter form
+    echo '<div class="card">';
+    echo '<form method="get" action="'.esc_url(home_url('/b2b-panel/products/price-adjuster')).'">';
+    echo '<table style="width:100%;max-width:800px;"><tbody>';
+    
+    // Categories select
+    echo '<tr><th style="width:200px;text-align:left;padding:10px;"><label for="cpa_categories">Categories</label></th><td style="padding:10px;">';
+    echo '<select name="cpa_categories[]" id="cpa_categories" multiple="multiple" style="width:100%;max-width:400px;height:100px;">';
+    $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
+    foreach ($categories as $cat) {
+        $sel = in_array($cat->term_id, $category_ids) ? 'selected' : '';
+        echo '<option value="'.esc_attr($cat->term_id).'" '.$sel.'>'.esc_html($cat->name).'</option>';
+    }
+    echo '</select>';
+    echo '<p style="color:#6b7280;font-size:13px;margin:5px 0 0 0;">Hold Ctrl/Cmd to select multiple categories</p>';
+    echo '</td></tr>';
+
+    // Adjustment type / value / action / rounding / search
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_type">Adjustment Type</label></th><td style="padding:10px;">';
+    echo '<select name="cpa_type" id="cpa_type" style="max-width:200px;">';
+    echo '<option value="percent"'.($type==='percent' ? ' selected':'').'>Percentage (%)</option>';
+    echo '<option value="fixed"'.($type==='fixed' ? ' selected':'').'>Fixed Amount</option>';
+    echo '</select>';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_value">Value</label></th><td style="padding:10px;">';
+    echo '<input type="number" step="0.01" name="cpa_value" id="cpa_value" value="'.esc_attr($value).'" required style="max-width:200px;" />';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_action">Action</label></th><td style="padding:10px;">';
+    echo '<select name="cpa_action" id="cpa_action" style="max-width:200px;">';
+    echo '<option value="increase"'.($action==='increase' ? ' selected':'').'>Increase</option>';
+    echo '<option value="decrease"'.($action==='decrease' ? ' selected':'').'>Decrease</option>';
+    echo '</select>';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_rounding">Rounding</label></th><td style="padding:10px;">';
+    echo '<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="cpa_rounding" id="cpa_rounding" value="1"'.($rounding ? ' checked':'').'> Round to nearest whole number (>= .5 rounds up)</label>';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_search">Search</label></th><td style="padding:10px;">';
+    echo '<input type="search" name="cpa_search" id="cpa_search" value="'.esc_attr($search).'" placeholder="Product name or SKU" style="width:100%;max-width:400px;" />';
+    echo '</td></tr>';
+
+    echo '</tbody></table>';
+
+    // Preview button
+    echo '<p style="margin-top:20px;"><input type="submit" name="cpa_preview" class="button" style="background:#3b82f6;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;" value="Preview Changes"></p>';
+    echo '</form>';
+    echo '</div>';
+
+    // If preview requested
+    if (isset($_GET['cpa_preview'])) {
+        // Build WP_Query args
+        $args = [
+            'post_type' => 'product',
+            'posts_per_page' => -1,
+            's' => $search,
+            'fields' => 'ids'
+        ];
+        if (!empty($category_ids)) {
+            $args['tax_query'] = [
+                [
+                    'taxonomy' => 'product_cat',
+                    'field' => 'term_id',
+                    'terms' => $category_ids,
+                    'operator' => 'IN',
+                ]
+            ];
+        }
+
+        $product_posts = get_posts($args);
+
+        // Build full preview array
+        $full_preview = [];
+        foreach ($product_posts as $prod_id) {
+            $product = wc_get_product($prod_id);
+            if (!$product) continue;
+
+            if ($product->is_type('variable')) {
+                $children = $product->get_children();
+                foreach ($children as $child_id) {
+                    $variation = wc_get_product($child_id);
+                    if (!$variation) continue;
+                    $current_price = floatval($variation->get_regular_price());
+                    $new_price = b2b_calculate_price($current_price, $type, $value, $action, $rounding);
+                    $full_preview[] = [
+                        'id' => $variation->get_id(),
+                        'old' => $current_price,
+                        'new' => $new_price,
+                        'name' => $variation->get_name(),
+                    ];
+                }
+            } else {
+                $current_price = floatval($product->get_regular_price());
+                $new_price = b2b_calculate_price($current_price, $type, $value, $action, $rounding);
+                $full_preview[] = [
+                    'id' => $product->get_id(),
+                    'old' => $current_price,
+                    'new' => $new_price,
+                    'name' => $product->get_name(),
+                ];
+            }
+        }
+
+        // Save preview in transient
+        $user_id = get_current_user_id();
+        $preview_key = 'cpa_preview_' . $user_id . '_' . uniqid();
+        set_transient($preview_key, $full_preview, 30 * MINUTE_IN_SECONDS);
+
+        // Pagination calculation
+        $total_items = count($full_preview);
+        $total_pages = $total_items ? ceil($total_items / $per_page) : 1;
+
+        // Slice to display current page
+        $display_items = array_slice($full_preview, $offset, $per_page);
+
+        // Display preview table
+        echo '<div class="card" style="margin-top:20px;">';
+        echo '<h2 style="margin-top:0;">Preview of Price Changes</h2>';
+        echo '<p style="color:#6b7280;margin-bottom:20px;">Showing '.count($display_items).' of '.$total_items.' items</p>';
+        echo '<table style="width:100%;"><thead><tr><th style="text-align:left;">Product</th><th style="text-align:right;">Current Price</th><th style="text-align:right;">New Price</th></tr></thead><tbody>';
+        foreach ($display_items as $row) {
+            echo '<tr>';
+            echo '<td>'.esc_html($row['name']).'</td>';
+            echo '<td style="text-align:right;">$'.number_format($row['old'], 2).'</td>';
+            echo '<td style="text-align:right;font-weight:600;color:#10b981;">$'.number_format($row['new'], 2).'</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+
+        // Pagination links
+        if ($total_pages > 1) {
+            echo '<div style="margin-top:20px;display:flex;gap:10px;align-items:center;">';
+            echo '<span style="color:#6b7280;">Page:</span>';
+            for ($i = 1; $i <= min($total_pages, 10); $i++) {
+                $params = $_GET;
+                $params['paged'] = $i;
+                $link = add_query_arg($params, home_url('/b2b-panel/products/price-adjuster'));
+                if ($i == $paged) {
+                    echo "<span style='padding:8px 12px;background:#3b82f6;color:white;border-radius:6px;font-weight:600;'>{$i}</span> ";
+                } else {
+                    echo '<a href="'.esc_url($link).'" style="padding:8px 12px;background:#f3f4f6;color:#374151;border-radius:6px;text-decoration:none;">'.esc_html($i).'</a> ';
+                }
+            }
+            if ($total_pages > 10) echo '<span style="color:#6b7280;">... '.$total_pages.' total</span>';
+            echo '</div>';
+        }
+
+        // Show Apply form
+        echo '<form method="post" style="margin-top:20px;">';
+        wp_nonce_field('cpa_apply_action', 'cpa_apply_nonce');
+        echo '<input type="hidden" name="cpa_preview_key" value="'.esc_attr($preview_key).'">';
+        echo '<button type="submit" name="cpa_apply" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;"><i class="fa-solid fa-check"></i> Apply Changes</button>';
+        echo '</form>';
+        echo '</div>';
+    }
+
+    // APPLY handler
+    if (isset($_POST['cpa_apply'])) {
+        check_admin_referer('cpa_apply_action', 'cpa_apply_nonce');
+        $preview_key = isset($_POST['cpa_preview_key']) ? sanitize_text_field($_POST['cpa_preview_key']) : '';
+        $data_to_apply = $preview_key ? get_transient($preview_key) : false;
+        if ($data_to_apply && is_array($data_to_apply)) {
+            // Save old prices for undo
+            $user_key = 'cpa_last_prices_' . get_current_user_id();
+            update_option($user_key, array_column($data_to_apply, 'old', 'id'));
+
+            foreach ($data_to_apply as $d) {
+                $p = wc_get_product($d['id']);
+                if ($p) {
+                    $p->set_regular_price($d['new']);
+                    $p->save();
+                }
+            }
+            delete_transient($preview_key);
+            echo '<div class="card" style="margin-top:20px;background:#d1fae5;border:2px solid #10b981;"><p style="color:#065f46;margin:0;"><strong><i class="fa-solid fa-check-circle"></i> Success!</strong> Prices applied successfully for '.count($data_to_apply).' items.</p></div>';
+        } else {
+            echo '<div class="card" style="margin-top:20px;background:#fee2e2;border:2px solid#ef4444;"><p style="color:#991b1b;margin:0;"><strong><i class="fa-solid fa-exclamation-circle"></i> Error!</strong> No preview data found or it expired. Please preview again before applying.</p></div>';
+        }
+    }
+
+    // UNDO form
+    $user_key = 'cpa_last_prices_' . get_current_user_id();
+    $last_prices = get_option($user_key, []);
+    if (!empty($last_prices)) {
+        echo '<div class="card" style="margin-top:20px;">';
+        echo '<h3 style="margin-top:0;"><i class="fa-solid fa-undo"></i> Undo Last Change</h3>';
+        echo '<p style="color:#6b7280;">You can undo the last price adjustment you applied.</p>';
+        echo '<form method="post">';
+        wp_nonce_field('cpa_undo_action', 'cpa_undo_nonce');
+        echo '<button type="submit" name="cpa_undo" style="background:#ef4444;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;"><i class="fa-solid fa-undo"></i> Undo Last Change</button>';
+        echo '</form>';
+        echo '</div>';
+    }
+
+    // UNDO handler
+    if (isset($_POST['cpa_undo'])) {
+        check_admin_referer('cpa_undo_action', 'cpa_undo_nonce');
+        $user_key = 'cpa_last_prices_' . get_current_user_id();
+        $last_prices = get_option($user_key, []);
+        if (!empty($last_prices)) {
+            foreach ($last_prices as $id => $price) {
+                $p = wc_get_product($id);
+                if ($p) {
+                    $p->set_regular_price($price);
+                    $p->save();
+                }
+            }
+            delete_option($user_key);
+            echo '<div class="card" style="margin-top:20px;background:#d1fae5;border:2px solid #10b981;"><p style="color:#065f46;margin:0;"><strong><i class="fa-solid fa-check-circle"></i> Success!</strong> Changes undone successfully.</p></div>';
+        } else {
+            echo '<div class="card" style="margin-top:20px;background:#fef3c7;border:2px solid #f59e0b;"><p style="color:#92400e;margin:0;"><strong><i class="fa-solid fa-info-circle"></i> Notice:</strong> No saved changes to undo.</p></div>';
+        }
+    }
+    
+    echo '<div style="margin-top:20px;">';
+    echo '<a href="'.home_url('/b2b-panel/products').'" style="text-decoration:none;"><button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button></a>';
+    echo '</div>';
+    
+    b2b_adm_footer(); exit;
 });
 
 /* =====================================================

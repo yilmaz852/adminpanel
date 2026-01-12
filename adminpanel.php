@@ -6738,3 +6738,445 @@ add_action('template_redirect', function () {
     
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   BULK ACTIONS, DASHBOARD WIDGETS, ACTIVITY LOG
+===================================================== */
+
+// Create Activity Log Table on Activation
+register_activation_hook(__FILE__, 'b2b_create_activity_log_table');
+function b2b_create_activity_log_table() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        user_id bigint(20) NOT NULL,
+        user_name varchar(255) NOT NULL,
+        action varchar(100) NOT NULL,
+        entity_type varchar(50) NOT NULL,
+        entity_id bigint(20) DEFAULT NULL,
+        entity_name varchar(255) DEFAULT NULL,
+        details text DEFAULT NULL,
+        ip_address varchar(50) DEFAULT NULL,
+        created_at datetime NOT NULL,
+        PRIMARY KEY  (id),
+        KEY user_id (user_id),
+        KEY action (action),
+        KEY entity_type (entity_type),
+        KEY created_at (created_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+// Trigger table creation
+b2b_create_activity_log_table();
+
+// Helper Function: Log Activity
+function b2b_log_activity($action, $entity_type, $entity_id = null, $entity_name = null, $details = null) {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    
+    $current_user = wp_get_current_user();
+    if(!$current_user->ID) return false;
+    
+    $wpdb->insert($table_name, [
+        'user_id' => $current_user->ID,
+        'user_name' => $current_user->display_name,
+        'action' => $action,
+        'entity_type' => $entity_type,
+        'entity_id' => $entity_id,
+        'entity_name' => $entity_name,
+        'details' => $details,
+        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
+        'created_at' => current_time('mysql')
+    ]);
+    
+    return true;
+}
+
+// Daily Cleanup of Old Logs (90 days)
+add_action('init', function() {
+    if(!wp_next_scheduled('b2b_cleanup_old_logs')) {
+        wp_schedule_event(time(), 'daily', 'b2b_cleanup_old_logs');
+    }
+});
+
+add_action('b2b_cleanup_old_logs', function() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    $days_to_keep = apply_filters('b2b_activity_log_retention_days', 90);
+    
+    $wpdb->query($wpdb->prepare(
+        "DELETE FROM $table_name WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+        $days_to_keep
+    ));
+});
+
+// Activity Log Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'activity_log') return;
+    b2b_adm_guard();
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    
+    // Filters
+    $user_filter = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+    $action_filter = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+    $entity_filter = isset($_GET['entity_type']) ? sanitize_text_field($_GET['entity_type']) : '';
+    $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
+    $paged = max(1, isset($_GET['paged']) ? intval($_GET['paged']) : 1);
+    $per_page = 50;
+    $offset = ($paged - 1) * $per_page;
+    
+    // Build query
+    $where = ['1=1'];
+    if($user_filter) $where[] = $wpdb->prepare('user_id = %d', $user_filter);
+    if($action_filter) $where[] = $wpdb->prepare('action = %s', $action_filter);
+    if($entity_filter) $where[] = $wpdb->prepare('entity_type = %s', $entity_filter);
+    if($search) $where[] = $wpdb->prepare('(entity_name LIKE %s OR details LIKE %s)', '%'.$search.'%', '%'.$search.'%');
+    
+    $where_sql = implode(' AND ', $where);
+    
+    $total = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE $where_sql");
+    $logs = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_name WHERE $where_sql ORDER BY created_at DESC LIMIT %d OFFSET %d",
+        $per_page, $offset
+    ));
+    
+    $total_pages = ceil($total / $per_page);
+    
+    // Get unique values for filters
+    $all_users = $wpdb->get_results("SELECT DISTINCT user_id, user_name FROM $table_name ORDER BY user_name");
+    $all_actions = $wpdb->get_col("SELECT DISTINCT action FROM $table_name ORDER BY action");
+    $all_entities = $wpdb->get_col("SELECT DISTINCT entity_type FROM $table_name ORDER BY entity_type");
+    
+    b2b_adm_header('Activity Log');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title">Activity Log</h1>
+    </div>
+    
+    <div class="card">
+        <!-- Filters -->
+        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/activity-log') ?>?user_id='+this.value+'<?= $action_filter ? '&action='.$action_filter : '' ?><?= $entity_filter ? '&entity_type='.$entity_filter : '' ?><?= $search ? '&s='.urlencode($search) : '' ?>'" style="margin:0;">
+                <option value="0">All Users</option>
+                <?php foreach($all_users as $u): ?>
+                    <option value="<?= $u->user_id ?>" <?= selected($user_filter, $u->user_id) ?>><?= esc_html($u->user_name) ?></option>
+                <?php endforeach; ?>
+            </select>
+            
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/activity-log') ?>?action='+this.value+'<?= $user_filter ? '&user_id='.$user_filter : '' ?><?= $entity_filter ? '&entity_type='.$entity_filter : '' ?><?= $search ? '&s='.urlencode($search) : '' ?>'" style="margin:0;">
+                <option value="">All Actions</option>
+                <?php foreach($all_actions as $a): ?>
+                    <option value="<?= esc_attr($a) ?>" <?= selected($action_filter, $a) ?>><?= esc_html($a) ?></option>
+                <?php endforeach; ?>
+            </select>
+            
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/activity-log') ?>?entity_type='+this.value+'<?= $user_filter ? '&user_id='.$user_filter : '' ?><?= $action_filter ? '&action='.$action_filter : '' ?><?= $search ? '&s='.urlencode($search) : '' ?>'" style="margin:0;">
+                <option value="">All Entity Types</option>
+                <?php foreach($all_entities as $e): ?>
+                    <option value="<?= esc_attr($e) ?>" <?= selected($entity_filter, $e) ?>><?= esc_html($e) ?></option>
+                <?php endforeach; ?>
+            </select>
+            
+            <form method="get" action="<?= home_url('/b2b-panel/activity-log') ?>" style="display:flex;gap:10px;flex:1;">
+                <?php if($user_filter): ?><input type="hidden" name="user_id" value="<?= $user_filter ?>"><?php endif; ?>
+                <?php if($action_filter): ?><input type="hidden" name="action" value="<?= esc_attr($action_filter) ?>"><?php endif; ?>
+                <?php if($entity_filter): ?><input type="hidden" name="entity_type" value="<?= esc_attr($entity_filter) ?>"><?php endif; ?>
+                <input name="s" value="<?= esc_attr($search) ?>" placeholder="Search entity or details..." style="margin:0;flex:1;min-width:200px;">
+                <button>Search</button>
+                <?php if($user_filter || $action_filter || $entity_filter || $search): ?>
+                    <a href="<?= home_url('/b2b-panel/activity-log') ?>" style="padding:10px;color:#ef4444;text-decoration:none;font-weight:600;">Reset</a>
+                <?php endif; ?>
+            </form>
+        </div>
+        
+        <!-- Activity Log Table -->
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>Details</th>
+                    <th>IP</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if(empty($logs)): ?>
+                <tr><td colspan="6" style="text-align:center;padding:30px;color:#999">No activity logs found.</td></tr>
+            <?php else: foreach ($logs as $log): 
+                $action_colors = [
+                    'created' => '#10b981',
+                    'updated' => '#3b82f6',
+                    'deleted' => '#ef4444',
+                    'bulk_action' => '#f59e0b',
+                ];
+                $color = $action_colors[strtolower($log->action)] ?? '#6b7280';
+            ?>
+            <tr>
+                <td><small style="color:#6b7280;"><?= human_time_diff(strtotime($log->created_at), current_time('timestamp')) ?> ago</small><br><small style="color:#9ca3af;"><?= date('M d, Y H:i', strtotime($log->created_at)) ?></small></td>
+                <td><?= get_avatar($log->user_id, 32) ?> <strong><?= esc_html($log->user_name) ?></strong></td>
+                <td><span style="background:<?= $color ?>;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;"><?= esc_html($log->action) ?></span></td>
+                <td><strong><?= esc_html($log->entity_type) ?></strong><?php if($log->entity_name): ?><br><small style="color:#6b7280;"><?= esc_html($log->entity_name) ?></small><?php endif; ?></td>
+                <td><small style="color:#6b7280;"><?= esc_html($log->details ?: '-') ?></small></td>
+                <td><code style="font-size:11px;color:#6b7280;"><?= esc_html($log->ip_address) ?></code></td>
+            </tr>
+            <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+        
+        <!-- Pagination -->
+        <?php if($total_pages > 1): ?>
+        <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+            <span style="color:#6b7280;font-size:14px;">Page:</span>
+            <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                <?php 
+                for($i = 1; $i <= $total_pages; $i++) {
+                    $params = [];
+                    if($user_filter) $params[] = 'user_id=' . $user_filter;
+                    if($action_filter) $params[] = 'action=' . urlencode($action_filter);
+                    if($entity_filter) $params[] = 'entity_type=' . urlencode($entity_filter);
+                    if($search) $params[] = 's=' . urlencode($search);
+                    if($i > 1) $params[] = 'paged=' . $i;
+                    $url = home_url('/b2b-panel/activity-log') . (!empty($params) ? '?' . implode('&', $params) : '');
+                    echo '<option value="' . esc_attr($url) . '" ' . ($i == $paged ? 'selected' : '') . '>Page ' . $i . ' of ' . $total_pages . '</option>';
+                }
+                ?>
+            </select>
+            <span style="color:#6b7280;font-size:14px;">(<?= $total ?> total entries)</span>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+// Add Activity Log route
+add_action('init', function() {
+    add_rewrite_rule('^b2b-panel/activity-log/?$', 'index.php?b2b_adm_page=activity_log', 'top');
+    
+    if (!get_option('b2b_rewrite_v18_activitylog')) {
+        flush_rewrite_rules();
+        update_option('b2b_rewrite_v18_activitylog', true);
+    }
+});
+
+// AJAX: Bulk Actions for Products
+add_action('wp_ajax_b2b_bulk_action_products', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error('Insufficient permissions');
+    }
+    
+    $action = sanitize_text_field($_POST['bulk_action'] ?? '');
+    $product_ids = array_map('intval', $_POST['product_ids'] ?? []);
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk_size = 10;
+    
+    // Process chunk
+    $chunk_ids = array_slice($product_ids, $chunk * $chunk_size, $chunk_size);
+    $results = ['success' => [], 'errors' => []];
+    
+    foreach($chunk_ids as $product_id) {
+        $product = wc_get_product($product_id);
+        if(!$product) {
+            $results['errors'][] = "Product ID $product_id not found";
+            continue;
+        }
+        
+        try {
+            switch($action) {
+                case 'delete':
+                    wp_delete_post($product_id, true);
+                    b2b_log_activity('deleted', 'product', $product_id, $product->get_name(), 'Bulk delete');
+                    $results['success'][] = $product->get_name();
+                    break;
+                    
+                case 'price_update':
+                    $price_action = sanitize_text_field($_POST['price_action'] ?? 'increase');
+                    $price_value = floatval($_POST['price_value'] ?? 0);
+                    $price_type = sanitize_text_field($_POST['price_type'] ?? 'percentage');
+                    
+                    $current_price = $product->get_regular_price();
+                    if($current_price > 0) {
+                        if($price_type == 'percentage') {
+                            $new_price = $price_action == 'increase' 
+                                ? $current_price * (1 + $price_value / 100)
+                                : $current_price * (1 - $price_value / 100);
+                        } else {
+                            $new_price = $price_action == 'increase'
+                                ? $current_price + $price_value
+                                : $current_price - $price_value;
+                        }
+                        $product->set_regular_price(max(0, $new_price));
+                        $product->save();
+                        b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk price update: $price_action $price_value");
+                        $results['success'][] = $product->get_name();
+                    }
+                    break;
+                    
+                case 'category_add':
+                    $category_id = intval($_POST['category_id'] ?? 0);
+                    if($category_id) {
+                        $current_cats = $product->get_category_ids();
+                        if(!in_array($category_id, $current_cats)) {
+                            $current_cats[] = $category_id;
+                            $product->set_category_ids($current_cats);
+                            $product->save();
+                            b2b_log_activity('updated', 'product', $product_id, $product->get_name(), 'Bulk category added');
+                            $results['success'][] = $product->get_name();
+                        }
+                    }
+                    break;
+                    
+                case 'stock_update':
+                    $stock_qty = intval($_POST['stock_qty'] ?? 0);
+                    $product->set_manage_stock(true);
+                    $product->set_stock_quantity($stock_qty);
+                    $product->set_stock_status($stock_qty > 0 ? 'instock' : 'outofstock');
+                    $product->save();
+                    b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk stock update: $stock_qty");
+                    $results['success'][] = $product->get_name();
+                    break;
+            }
+        } catch(Exception $e) {
+            $results['errors'][] = $product->get_name() . ': ' . $e->getMessage();
+        }
+    }
+    
+    wp_send_json_success([
+        'results' => $results,
+        'has_more' => ($chunk + 1) * $chunk_size < count($product_ids),
+        'next_chunk' => $chunk + 1,
+        'progress' => min(100, round((($chunk + 1) * $chunk_size / count($product_ids)) * 100))
+    ]);
+});
+
+// AJAX: Bulk Actions for Customers
+add_action('wp_ajax_b2b_bulk_action_customers', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error('Insufficient permissions');
+    }
+    
+    $action = sanitize_text_field($_POST['bulk_action'] ?? '');
+    $customer_ids = array_map('intval', $_POST['customer_ids'] ?? []);
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk_size = 10;
+    
+    $chunk_ids = array_slice($customer_ids, $chunk * $chunk_size, $chunk_size);
+    $results = ['success' => [], 'errors' => []];
+    
+    foreach($chunk_ids as $customer_id) {
+        $customer = get_user_by('ID', $customer_id);
+        if(!$customer) {
+            $results['errors'][] = "Customer ID $customer_id not found";
+            continue;
+        }
+        
+        try {
+            switch($action) {
+                case 'assign_group':
+                    $group_slug = sanitize_text_field($_POST['group_slug'] ?? '');
+                    if($group_slug) {
+                        update_user_meta($customer_id, 'b2b_group_slug', $group_slug);
+                        b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, "Bulk group assignment: $group_slug");
+                        $results['success'][] = $customer->display_name;
+                    }
+                    break;
+                    
+                case 'assign_role':
+                    $b2b_role = sanitize_text_field($_POST['b2b_role'] ?? '');
+                    if($b2b_role) {
+                        update_user_meta($customer_id, 'b2b_role', $b2b_role);
+                        b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, "Bulk role assignment: $b2b_role");
+                        $results['success'][] = $customer->display_name;
+                    }
+                    break;
+                    
+                case 'approve':
+                    update_user_meta($customer_id, 'b2b_status', 'approved');
+                    b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, 'Bulk approval');
+                    $results['success'][] = $customer->display_name;
+                    break;
+                    
+                case 'reject':
+                    update_user_meta($customer_id, 'b2b_status', 'rejected');
+                    b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, 'Bulk rejection');
+                    $results['success'][] = $customer->display_name;
+                    break;
+            }
+        } catch(Exception $e) {
+            $results['errors'][] = $customer->display_name . ': ' . $e->getMessage();
+        }
+    }
+    
+    wp_send_json_success([
+        'results' => $results,
+        'has_more' => ($chunk + 1) * $chunk_size < count($customer_ids),
+        'next_chunk' => $chunk + 1,
+        'progress' => min(100, round((($chunk + 1) * $chunk_size / count($customer_ids)) * 100))
+    ]);
+});
+
+// AJAX: Bulk Actions for Orders
+add_action('wp_ajax_b2b_bulk_action_orders', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error('Insufficient permissions');
+    }
+    
+    $action = sanitize_text_field($_POST['bulk_action'] ?? '');
+    $order_ids = array_map('intval', $_POST['order_ids'] ?? []);
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk_size = 10;
+    
+    $chunk_ids = array_slice($order_ids, $chunk * $chunk_size, $chunk_size);
+    $results = ['success' => [], 'errors' => []];
+    
+    foreach($chunk_ids as $order_id) {
+        $order = wc_get_order($order_id);
+        if(!$order) {
+            $results['errors'][] = "Order #$order_id not found";
+            continue;
+        }
+        
+        try {
+            switch($action) {
+                case 'update_status':
+                    $new_status = sanitize_text_field($_POST['order_status'] ?? '');
+                    if($new_status) {
+                        $order->update_status($new_status);
+                        b2b_log_activity('updated', 'order', $order_id, "Order #$order_id", "Bulk status update: $new_status");
+                        $results['success'][] = "Order #$order_id";
+                    }
+                    break;
+                    
+                case 'delete':
+                    wp_delete_post($order_id, true);
+                    b2b_log_activity('deleted', 'order', $order_id, "Order #$order_id", 'Bulk delete');
+                    $results['success'][] = "Order #$order_id";
+                    break;
+            }
+        } catch(Exception $e) {
+            $results['errors'][] = "Order #$order_id: " . $e->getMessage();
+        }
+    }
+    
+    wp_send_json_success([
+        'results' => $results,
+        'has_more' => ($chunk + 1) * $chunk_size < count($order_ids),
+        'next_chunk' => $chunk + 1,
+        'progress' => min(100, round((($chunk + 1) * $chunk_size / count($order_ids)) * 100))
+    ]);
+});

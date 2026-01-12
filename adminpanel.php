@@ -30,6 +30,17 @@ add_action('init', function () {
     
     // Ürün Detay (Edit) - Bu satır en kritik olanı
     add_rewrite_rule('^b2b-panel/products/edit/?$', 'index.php?b2b_adm_page=product_edit', 'top');
+    
+    // Products Import/Export
+    add_rewrite_rule('^b2b-panel/products/import/?$', 'index.php?b2b_adm_page=products_import', 'top');
+    add_rewrite_rule('^b2b-panel/products/export/?$', 'index.php?b2b_adm_page=products_export', 'top');
+    
+    // Products Categories
+    add_rewrite_rule('^b2b-panel/products/categories/?$', 'index.php?b2b_adm_page=products_categories', 'top');
+    add_rewrite_rule('^b2b-panel/products/categories/edit/?$', 'index.php?b2b_adm_page=category_edit', 'top');
+    
+    // Products Price Adjuster
+    add_rewrite_rule('^b2b-panel/products/price-adjuster/?$', 'index.php?b2b_adm_page=price_adjuster', 'top');
 
     // B2B Module (V10 - New)
     add_rewrite_rule('^b2b-panel/b2b-module/?$', 'index.php?b2b_adm_page=b2b_approvals', 'top');
@@ -38,18 +49,203 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/b2b-module/settings/?$', 'index.php?b2b_adm_page=b2b_settings', 'top');
     add_rewrite_rule('^b2b-panel/b2b-module/form-editor/?$', 'index.php?b2b_adm_page=b2b_form_editor', 'top');
     add_rewrite_rule('^b2b-panel/sales-agent/?$', 'index.php?b2b_adm_page=sales_agent', 'top');
+    
+    // Settings Module (V11 - New)
+    add_rewrite_rule('^b2b-panel/settings/?$', 'index.php?b2b_adm_page=settings_general', 'top');
+    add_rewrite_rule('^b2b-panel/settings/tax-exemption/?$', 'index.php?b2b_adm_page=settings_tax', 'top');
+    add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
+    add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v13_sales_agent')) {
+    if (!get_option('b2b_rewrite_v17_shipping')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v13_sales_agent', true);
+        update_option('b2b_rewrite_v17_shipping', true);
     }
 });
 
 add_filter('query_vars', function ($vars) {
     $vars[] = 'b2b_adm_page';
+    $vars[] = 'paged';
     return $vars;
 });
+
+/* =====================================================
+   1B. WOOCOMMERCE TAX EXEMPTION INTEGRATION
+===================================================== */
+// Hook into WooCommerce to check if customer is tax exempt
+add_filter('woocommerce_customer_is_vat_exempt', function($is_vat_exempt) {
+    if(!is_user_logged_in()) return $is_vat_exempt;
+    
+    $user_id = get_current_user_id();
+    $tax_exempt = get_user_meta($user_id, 'b2b_tax_exempt', true);
+    
+    // If user is marked as tax exempt, remove all taxes
+    if($tax_exempt == 1) {
+        return true;
+    }
+    
+    return $is_vat_exempt;
+}, 10, 1);
+
+// Alternative: Remove tax rates for exempt customers
+add_filter('woocommerce_product_get_tax_class', function($tax_class, $product) {
+    if(is_user_logged_in()) {
+        $user_id = get_current_user_id();
+        $tax_exempt = get_user_meta($user_id, 'b2b_tax_exempt', true);
+        
+        if($tax_exempt == 1) {
+            return 'Zero rate'; // Return zero tax class
+        }
+    }
+    return $tax_class;
+}, 10, 2);
+
+// Set customer as VAT exempt in cart/checkout
+add_action('woocommerce_before_calculate_totals', function($cart) {
+    if(is_user_logged_in()) {
+        $user_id = get_current_user_id();
+        $tax_exempt = get_user_meta($user_id, 'b2b_tax_exempt', true);
+        
+        if($tax_exempt == 1) {
+            WC()->customer->set_is_vat_exempt(true);
+        }
+    }
+}, 10, 1);
+
+/* =====================================================
+   WOOCOMMERCE SHIPPING INTEGRATION (B2B Shipping Module)
+===================================================== */
+
+// Add B2B shipping methods to WooCommerce checkout
+add_filter('woocommerce_package_rates', function($rates, $package) {
+    if(!is_user_logged_in()) {
+        return $rates;
+    }
+    
+    $user_id = get_current_user_id();
+    $customer = WC()->customer;
+    $country = $customer->get_shipping_country();
+    
+    // Get all shipping zones
+    $zones = get_option('b2b_shipping_zones', []);
+    
+    // Find matching zones for customer's country
+    $matched_zones = [];
+    foreach($zones as $zone_id => $zone) {
+        if(!($zone['active'] ?? 0)) continue;
+        
+        $regions = $zone['regions'] ?? [];
+        if(empty($regions) || in_array($country, $regions)) {
+            $matched_zones[] = ['id' => $zone_id, 'data' => $zone];
+        }
+    }
+    
+    if(empty($matched_zones)) {
+        return $rates;
+    }
+    
+    // Sort by priority
+    usort($matched_zones, function($a, $b) {
+        return ($a['data']['priority'] ?? 999) - ($b['data']['priority'] ?? 999);
+    });
+    
+    // Get customer's groups
+    $customer_groups = get_user_meta($user_id, 'b2b_groups', true) ?: [];
+    
+    // Get customer shipping overrides
+    $customer_overrides = get_user_meta($user_id, 'b2b_shipping_overrides', true) ?: [];
+    
+    // Build B2B shipping methods
+    $b2b_rates = [];
+    $cart_total = WC()->cart->get_subtotal();
+    
+    foreach($matched_zones as $zone_info) {
+        $zone_id = $zone_info['id'];
+        $zone = $zone_info['data'];
+        
+        // Check group permissions
+        $group_override = null;
+        if(!empty($customer_groups)) {
+            foreach($customer_groups as $group_id) {
+                if(isset($zone['group_permissions'][$group_id]) && $zone['group_permissions'][$group_id]['allowed']) {
+                    $group_override = $zone['group_permissions'][$group_id];
+                    break;
+                }
+            }
+        }
+        
+        // Check customer override
+        $customer_override = $customer_overrides[$zone_id] ?? null;
+        
+        // Flat Rate Method
+        if($zone['methods']['flat_rate']['enabled'] ?? 0) {
+            // Check if method is hidden for group
+            if($group_override && in_array('flat_rate', $group_override['hidden_methods'] ?? [])) {
+                // Skip this method
+            } else {
+                // Determine cost (priority: customer > group > default)
+                $cost = $zone['methods']['flat_rate']['cost'] ?? 0;
+                
+                if($customer_override && isset($customer_override['flat_rate_cost'])) {
+                    $cost = $customer_override['flat_rate_cost'];
+                } elseif($group_override && isset($group_override['flat_rate_cost'])) {
+                    $cost = $group_override['flat_rate_cost'];
+                }
+                
+                $title = $zone['methods']['flat_rate']['title'] ?? 'Flat Rate';
+                
+                $b2b_rates['b2b_flat_'.$zone_id] = new WC_Shipping_Rate(
+                    'b2b_flat_'.$zone_id,
+                    $title,
+                    $cost,
+                    [],
+                    'b2b_shipping'
+                );
+            }
+        }
+        
+        // Free Shipping Method
+        if($zone['methods']['free_shipping']['enabled'] ?? 0) {
+            // Check if method is hidden for group
+            if($group_override && in_array('free_shipping', $group_override['hidden_methods'] ?? [])) {
+                // Skip this method
+            } else {
+                // Determine minimum amount (priority: customer > group > default)
+                $min_amount = $zone['methods']['free_shipping']['min_amount'] ?? 0;
+                
+                if($customer_override && isset($customer_override['free_shipping'])) {
+                    if($customer_override['free_shipping'] === 'always') {
+                        $min_amount = 0;
+                    } elseif(is_numeric($customer_override['free_shipping'])) {
+                        $min_amount = $customer_override['free_shipping'];
+                    }
+                } elseif($group_override && isset($group_override['free_shipping_min'])) {
+                    $min_amount = $group_override['free_shipping_min'];
+                }
+                
+                // Check if cart meets minimum
+                if($cart_total >= $min_amount) {
+                    $title = $zone['methods']['free_shipping']['title'] ?? 'Free Shipping';
+                    
+                    $b2b_rates['b2b_free_'.$zone_id] = new WC_Shipping_Rate(
+                        'b2b_free_'.$zone_id,
+                        $title,
+                        0,
+                        [],
+                        'b2b_shipping'
+                    );
+                }
+            }
+        }
+    }
+    
+    // If we have B2B rates, replace WooCommerce default rates
+    if(!empty($b2b_rates)) {
+        return $b2b_rates;
+    }
+    
+    return $rates;
+}, 10, 2);
 
 /* =====================================================
    2. SECURITY GUARD (ADMIN ONLY)
@@ -82,6 +278,86 @@ function b2b_adm_add_log($pid, $type, $old, $new, $msg) {
     ]);
     update_post_meta($pid, '_b2b_stock_log', array_slice($logs, 0, 50));
 }
+
+/* =====================================================
+   3A. AJAX: QUICK EDIT STOCK
+===================================================== */
+add_action('wp_ajax_b2b_quick_edit_stock', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    $updates = isset($_POST['updates']) ? json_decode(stripslashes($_POST['updates']), true) : [];
+    
+    if(empty($updates)) {
+        wp_send_json_error('No updates provided');
+        return;
+    }
+    
+    $success_count = 0;
+    $user = wp_get_current_user();
+    
+    foreach($updates as $update) {
+        $product_id = intval($update['id']);
+        $new_qty = intval($update['qty']);
+        
+        $product = wc_get_product($product_id);
+        if(!$product) continue;
+        
+        $old_qty = $product->get_stock_quantity();
+        
+        // Update stock
+        $product->set_manage_stock(true);
+        $product->set_stock_quantity($new_qty);
+        $product->save();
+        
+        // Log the change
+        b2b_adm_add_log($product_id, 'stock', $old_qty, $new_qty, 'Quick Edit Stock Update');
+        
+        $success_count++;
+    }
+    
+    wp_send_json_success(['updated' => $success_count]);
+});
+
+/* =====================================================
+   3A2. AJAX: DELETE PRODUCT
+===================================================== */
+add_action('wp_ajax_b2b_delete_product', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'b2b_delete_product')) {
+        wp_send_json_error('Security check failed');
+        return;
+    }
+    
+    $product_id = intval($_POST['product_id']);
+    
+    if (!$product_id) {
+        wp_send_json_error('Invalid product ID');
+        return;
+    }
+    
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error('Product not found');
+        return;
+    }
+    
+    // Delete the product using WooCommerce function (proper cleanup)
+    $result = $product->delete(true); // true = force delete (skip trash)
+    
+    if ($result) {
+        wp_send_json_success(['message' => 'Product deleted successfully']);
+    } else {
+        wp_send_json_error('Failed to delete product');
+    }
+});
 
 /* =====================================================
    3B. B2B PRO SYSTEM v7.0 (Gelişmiş Ödeme İzinleri Matrisi)
@@ -683,7 +959,19 @@ function b2b_adm_header($title) {
         <div class="sidebar-nav">
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
-            <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-tags"></i> Products</a>
+            
+            <!-- Products Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-tags"></i> Products <i class="fa-solid fa-chevron-down"></i>
+            </div>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
+                <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="<?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>"><i class="fa-solid fa-folder-tree"></i> Categories</a>
+                <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="<?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</a>
+                <a href="<?= home_url('/b2b-panel/products/import') ?>" class="<?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>"><i class="fa-solid fa-file-import"></i> Import</a>
+                <a href="<?= home_url('/b2b-panel/products/export') ?>" class="<?= get_query_var('b2b_adm_page')=='products_export'?'active':'' ?>"><i class="fa-solid fa-file-export"></i> Export</a>
+            </div>
+            
             <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
             
             <!-- B2B Module with Submenu -->
@@ -700,6 +988,16 @@ function b2b_adm_header($title) {
             
             <!-- Sales Agent -->
             <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
+            
+            <!-- Settings Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
+            </div>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
+                <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
+                <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
+            </div>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -961,6 +1259,40 @@ add_action('template_redirect', function () {
                     update_user_meta($user_id, 'b2b_requested_group', $b2b_group);
                     update_user_meta($user_id, 'b2b_group_slug', ''); // Admin atayacak
                     
+                    // Tax Exemption (from registration form)
+                    $tax_exempt_requested = isset($_POST['tax_exempt']) ? 1 : 0;
+                    $tax_id = sanitize_text_field($_POST['tax_id'] ?? '');
+                    $tax_notes = sanitize_textarea_field($_POST['tax_notes'] ?? '');
+                    
+                    update_user_meta($user_id, 'b2b_tax_exempt_requested', $tax_exempt_requested);
+                    update_user_meta($user_id, 'b2b_tax_id', $tax_id);
+                    update_user_meta($user_id, 'b2b_tax_notes', $tax_notes);
+                    
+                    // Auto-approve if setting enabled, otherwise pending
+                    $tax_auto = get_option('b2b_tax_auto_remove', 0);
+                    if($tax_exempt_requested && $tax_auto) {
+                        update_user_meta($user_id, 'b2b_tax_exempt', 1);
+                        update_user_meta($user_id, 'b2b_tax_request', 0);
+                    } elseif($tax_exempt_requested) {
+                        update_user_meta($user_id, 'b2b_tax_exempt', 0);
+                        update_user_meta($user_id, 'b2b_tax_request', 1);
+                        update_user_meta($user_id, 'b2b_tax_request_date', current_time('mysql'));
+                    }
+                    
+                    // Handle file upload for tax certificate
+                    if($tax_exempt_requested && isset($_FILES['tax_certificate']) && $_FILES['tax_certificate']['error'] === 0) {
+                        $allowed_types = explode(',', get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png'));
+                        $file_ext = strtolower(pathinfo($_FILES['tax_certificate']['name'], PATHINFO_EXTENSION));
+                        
+                        if(in_array($file_ext, $allowed_types)) {
+                            require_once(ABSPATH . 'wp-admin/includes/file.php');
+                            $upload = wp_handle_upload($_FILES['tax_certificate'], ['test_form' => false]);
+                            if(isset($upload['url'])) {
+                                update_user_meta($user_id, 'b2b_tax_certificate', $upload['url']);
+                            }
+                        }
+                    }
+                    
                     // Custom fields (form editor'den)
                     $custom_fields = b2b_get_custom_fields();
                     foreach ($custom_fields as $key => $field) {
@@ -1166,7 +1498,7 @@ add_action('template_redirect', function () {
         <div class="bg-shape shape-1"></div>
         <div class="bg-shape shape-2"></div>
 
-        <form method="post" class="register-card">
+        <form method="post" class="register-card" enctype="multipart/form-data">
             <div class="icon-box">
                 <i class="fa-solid fa-user-plus"></i>
             </div>
@@ -1258,6 +1590,46 @@ add_action('template_redirect', function () {
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
+
+                <!-- Tax Exemption Section -->
+                <?php 
+                $tax_enable_text = get_option('b2b_tax_enable_text', 1);
+                $tax_text_label = get_option('b2b_tax_text_label', 'Tax ID');
+                $tax_enable_textarea = get_option('b2b_tax_enable_textarea', 0);
+                $tax_textarea_label = get_option('b2b_tax_textarea_label', 'Additional Information');
+                $tax_enable_file = get_option('b2b_tax_enable_file', 1);
+                $tax_file_label = get_option('b2b_tax_file_label', 'Tax Certificate');
+                ?>
+                <div class="input-group" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:20px;margin-top:20px;">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:15px;">
+                        <input type="checkbox" name="tax_exempt" id="tax_exempt" value="1" onchange="document.getElementById('tax_fields').style.display=this.checked?'block':'none'" style="width:auto;">
+                        <span style="font-weight:600;color:#fff;">Request Tax Exemption</span>
+                    </label>
+                    
+                    <div id="tax_fields" style="display:none;margin-left:30px;padding-left:15px;border-left:2px solid rgba(16,185,129,0.3);">
+                        <?php if($tax_enable_text): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($tax_text_label) ?></label>
+                            <input type="text" name="tax_id" placeholder="Enter your tax ID number">
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if($tax_enable_textarea): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($tax_textarea_label) ?></label>
+                            <textarea name="tax_notes" placeholder="Additional information or notes"></textarea>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if($tax_enable_file): ?>
+                        <div class="input-group">
+                            <label><?= esc_html($tax_file_label) ?></label>
+                            <input type="file" name="tax_certificate" accept=".<?= str_replace(',', ',.', get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png')) ?>" style="padding:8px;">
+                            <small style="color:rgba(255,255,255,0.5);font-size:0.75rem;display:block;margin-top:5px;">Allowed: <?= get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png') ?></small>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
 
                 <button type="submit">Register <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
 
@@ -1548,10 +1920,19 @@ add_action('template_redirect', function () {
     $s = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
     $cat = isset($_GET['category']) ? intval($_GET['category']) : 0;
     $stock_status = isset($_GET['stock_status']) ? sanitize_text_field($_GET['stock_status']) : '';
+    $paged = max(1, get_query_var('paged') ?: (isset($_GET['paged']) ? intval($_GET['paged']) : 1));
+    $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
+    $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
     
-    $args = ['limit' => 20, 'paginate' => true];
+    $args = ['limit' => $per_page, 'paginate' => true, 'page' => $paged];
     if ($s) $args['s'] = $s;
-    if ($cat) $args['category'] = [$cat];
+    if ($cat) {
+        // Get category slug from term ID for WooCommerce query
+        $cat_term = get_term($cat, 'product_cat');
+        if ($cat_term && !is_wp_error($cat_term)) {
+            $args['category'] = [$cat_term->slug];
+        }
+    }
     if ($stock_status) $args['stock_status'] = $stock_status;
     
     $products = wc_get_products($args);
@@ -1559,13 +1940,18 @@ add_action('template_redirect', function () {
     
     b2b_adm_header('Product Management');
     ?>
-    <div class="page-header"><h1 class="page-title">Products</h1></div>
+    <div class="page-header">
+        <h1 class="page-title">Products</h1>
+        <button id="quickEditToggle" onclick="toggleQuickEdit()" class="secondary" style="display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-bolt"></i> Quick Edit Stock
+        </button>
+    </div>
     <div class="card">
         <!-- Enhanced Filter Bar -->
         <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;">
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <!-- Category Filter -->
-                <select onchange="location.href='?b2b_adm_page=products&category='+this.value+'&s=<?= esc_js($s) ?>&stock_status=<?= esc_js($stock_status) ?>'" style="margin:0;max-width:200px;">
+                <select onchange="if(this.value != '0') { window.location.href='<?= home_url('/b2b-panel/products') ?>?category='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?><?= $per_page != 20 ? '&per_page='.$per_page : '' ?>'; } else { window.location.href='<?= home_url('/b2b-panel/products') ?>?<?= $s ? 's='.urlencode($s).'&' : '' ?><?= $stock_status ? 'stock_status='.$stock_status.'&' : '' ?><?= $per_page != 20 ? 'per_page='.$per_page : '' ?>'.replace(/&$/, '').replace(/\?$/, ''); }" style="margin:0;max-width:200px;">
                     <option value="0">All Categories</option>
                     <?php foreach($categories as $c): ?>
                         <option value="<?= $c->term_id ?>" <?= selected($cat, $c->term_id) ?>><?= esc_html($c->name) ?> (<?= $c->count ?>)</option>
@@ -1573,11 +1959,19 @@ add_action('template_redirect', function () {
                 </select>
                 
                 <!-- Stock Status Filter -->
-                <select onchange="location.href='?b2b_adm_page=products&stock_status='+this.value+'&category=<?= $cat ?>&s=<?= esc_js($s) ?>'" style="margin:0;max-width:180px;">
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?stock_status='+this.value+'<?= $cat ? '&category='.$cat : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $per_page != 20 ? '&per_page='.$per_page : '' ?>'" style="margin:0;max-width:180px;">
                     <option value="">All Stock Status</option>
                     <option value="instock" <?= selected($stock_status, 'instock') ?>>In Stock</option>
                     <option value="outofstock" <?= selected($stock_status, 'outofstock') ?>>Out of Stock</option>
                     <option value="onbackorder" <?= selected($stock_status, 'onbackorder') ?>>On Backorder</option>
+                </select>
+                
+                <!-- Per Page Selector -->
+                <select onchange="window.location.href='<?= home_url('/b2b-panel/products') ?>?per_page='+this.value+'<?= $cat ? '&category='.$cat : '' ?><?= $stock_status ? '&stock_status='.$stock_status : '' ?><?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
+                    <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
+                    <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
+                    <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
+                    <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
                 </select>
                 
                 <!-- Column Toggler -->
@@ -1597,14 +1991,23 @@ add_action('template_redirect', function () {
             </div>
             
             <!-- Search Form -->
-            <form style="display:flex;gap:10px" method="get" action="<?= home_url('/') ?>">
-                <input type="hidden" name="b2b_adm_page" value="products">
+            <form style="display:flex;gap:10px" method="get" action="<?= home_url('/b2b-panel/products') ?>">
                 <?php if($cat): ?><input type="hidden" name="category" value="<?= $cat ?>"><?php endif; ?>
                 <?php if($stock_status): ?><input type="hidden" name="stock_status" value="<?= $stock_status ?>"><?php endif; ?>
+                <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
                 <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search by name or SKU..." style="margin:0;min-width:250px;">
                 <button>Search</button>
                 <?php if($s || $cat || $stock_status): ?><a href="<?= home_url('/b2b-panel/products') ?>" style="padding:10px;color:#ef4444;text-decoration:none;font-weight:600;">Reset All</a><?php endif; ?>
             </form>
+        </div>
+        
+        <!-- Quick Edit Save Button (Hidden by default) -->
+        <div id="quickEditBar" style="display:none;margin-bottom:15px;padding:12px;background:#f0f9ff;border:2px solid #3b82f6;border-radius:8px;text-align:center;">
+            <strong style="color:#1e40af;margin-right:15px;">Quick Edit Mode Active</strong>
+            <button onclick="saveQuickEdit()" style="background:#10b981;color:white;padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                <i class="fa-solid fa-save"></i> Save All Changes
+            </button>
+            <button onclick="toggleQuickEdit()" class="secondary" style="margin-left:10px;">Cancel</button>
         </div>
         
         <!-- Enhanced Product Table -->
@@ -1628,20 +2031,22 @@ add_action('template_redirect', function () {
                 $img = wp_get_attachment_image_src($p->get_image_id(),'thumbnail');
                 $cats = wp_get_post_terms($p->get_id(), 'product_cat', ['fields' => 'names']);
             ?>
-            <tr>
+            <tr data-product-id="<?= $p->get_id() ?>">
                 <td data-col="0"><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
                 <td data-col="1"><strong><?= esc_html($p->get_name()) ?></strong></td>
                 <td data-col="2"><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
                 <td data-col="3"><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
                 <td data-col="4"><strong><?= $p->get_price_html() ?></strong></td>
-                <td data-col="5">
+                <td data-col="5" class="stock-cell">
                     <?php if($p->managing_stock()): 
                         $qty = $p->get_stock_quantity();
                         $color = $qty > 10 ? '#10b981' : ($qty > 0 ? '#f59e0b' : '#ef4444');
                     ?>
-                        <span style="color:<?= $color ?>;font-weight:600;"><?= $qty ?></span>
+                        <span class="stock-display" style="color:<?= $color ?>;font-weight:600;"><?= $qty ?></span>
+                        <input type="number" class="stock-input" data-product-id="<?= $p->get_id() ?>" value="<?= $qty ?>" style="display:none;width:80px;padding:4px;border:2px solid #3b82f6;border-radius:4px;" min="0">
                     <?php else: ?>
-                        <?= $p->is_in_stock() ? '<span style="color:#10b981;">In Stock</span>' : '<span style="color:#ef4444;">Out</span>' ?>
+                        <span class="stock-display"><?= $p->is_in_stock() ? '<span style="color:#10b981;">In Stock</span>' : '<span style="color:#ef4444;">Out</span>' ?></span>
+                        <span class="stock-input" style="display:none;color:#6b7280;font-size:11px;">N/A</span>
                     <?php endif; ?>
                 </td>
                 <td data-col="6">
@@ -1656,6 +2061,7 @@ add_action('template_redirect', function () {
                     <a href="<?= home_url('/b2b-panel/products/edit?id=' . $p->get_id()) ?>">
                         <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
                     </a>
+                    <button class="delete-product-btn" data-product-id="<?= $p->get_id() ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;margin-left:5px;"><i class="fa-solid fa-trash"></i></button>
                 </td>
             </tr>
             <?php endforeach; endif; ?>
@@ -1664,42 +2070,847 @@ add_action('template_redirect', function () {
         
         <!-- Pagination -->
         <?php if($products->max_num_pages > 1): ?>
-        <div style="margin-top:20px;text-align:center;display:flex;justify-content:center;gap:5px">
-            <?php 
-            $current = max(1, get_query_var('paged'));
-            $base_url = home_url('/b2b-panel/products');
-            $params = [];
-            if($s) $params[] = 's=' . urlencode($s);
-            if($cat) $params[] = 'category=' . $cat;
-            if($stock_status) $params[] = 'stock_status=' . $stock_status;
-            $param_str = !empty($params) ? '&' . implode('&', $params) : '';
-            
-            echo paginate_links([
-                'base' => $base_url . '%_%',
-                'format' => '&paged=%#%' . $param_str,
-                'current' => $current,
-                'total' => $products->max_num_pages,
-                'prev_text' => '&laquo;',
-                'next_text' => '&raquo;',
-                'type' => 'plain'
-            ]); 
-            ?>
+        <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+            <span style="color:#6b7280;font-size:14px;">Page:</span>
+            <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                <?php 
+                for($i = 1; $i <= $products->max_num_pages; $i++) {
+                    $page_params = [];
+                    if($s) $page_params[] = 's=' . urlencode($s);
+                    if($cat) $page_params[] = 'category=' . $cat;
+                    if($stock_status) $page_params[] = 'stock_status=' . $stock_status;
+                    if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
+                    if($i > 1) $page_params[] = 'paged=' . $i;
+                    $page_url = home_url('/b2b-panel/products') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                    $selected = ($i == $paged) ? 'selected' : '';
+                    echo '<option value="' . esc_attr($page_url) . '" ' . $selected . '>Page ' . $i . ' of ' . $products->max_num_pages . '</option>';
+                }
+                ?>
+            </select>
+            <span style="color:#6b7280;font-size:14px;">
+                (Showing <?= min($per_page, $products->total) ?> of <?= $products->total ?> products)
+            </span>
         </div>
         <?php endif; ?>
     </div>
     <script>
+    // Products Column Toggle with localStorage
     function toggleColP(idx, show) { 
         var rows = document.getElementById('prodTable').rows; 
         for(var i=0; i<rows.length; i++) { 
             if(rows[i].cells.length > idx) rows[i].cells[idx].style.display = show ? '' : 'none'; 
-        } 
+        }
+        // Save state to localStorage
+        var colStates = JSON.parse(localStorage.getItem('b2b_products_columns') || '{}');
+        colStates[idx] = show;
+        localStorage.setItem('b2b_products_columns', JSON.stringify(colStates));
     }
+    
+    // Restore column visibility from localStorage
+    var savedColStates = JSON.parse(localStorage.getItem('b2b_products_columns') || '{}');
     document.querySelectorAll('#pColDrop input').forEach(function(cb, i){ 
+        // Restore saved state if exists
+        if(savedColStates.hasOwnProperty(i)) {
+            cb.checked = savedColStates[i];
+            toggleColP(i, savedColStates[i]);
+        }
         cb.addEventListener('change', function(){ toggleColP(i, this.checked); }); 
+    });
+    
+    // Quick Edit Functionality
+    let quickEditMode = false;
+    
+    function toggleQuickEdit() {
+        quickEditMode = !quickEditMode;
+        const displays = document.querySelectorAll('.stock-display');
+        const inputs = document.querySelectorAll('.stock-input');
+        const bar = document.getElementById('quickEditBar');
+        const btn = document.getElementById('quickEditToggle');
+        
+        displays.forEach(el => el.style.display = quickEditMode ? 'none' : '');
+        inputs.forEach(el => el.style.display = quickEditMode ? 'inline-block' : 'none');
+        bar.style.display = quickEditMode ? 'block' : 'none';
+        btn.style.background = quickEditMode ? '#10b981' : '';
+        btn.style.color = quickEditMode ? 'white' : '';
+        
+        if(!quickEditMode) {
+            // Reset inputs to original values when canceling
+            inputs.forEach(input => {
+                if(input.tagName === 'INPUT') {
+                    const row = input.closest('tr');
+                    const display = row.querySelector('.stock-display');
+                    if(display) {
+                        const originalValue = display.textContent.trim();
+                        if(!isNaN(originalValue)) {
+                            input.value = originalValue;
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    function saveQuickEdit() {
+        const inputs = document.querySelectorAll('.stock-input[type="number"]');
+        const updates = [];
+        
+        inputs.forEach(input => {
+            const productId = input.getAttribute('data-product-id');
+            const newQty = parseInt(input.value);
+            if(productId && !isNaN(newQty)) {
+                updates.push({id: productId, qty: newQty});
+            }
+        });
+        
+        if(updates.length === 0) {
+            alert('No changes to save.');
+            return;
+        }
+        
+        // Show loading state
+        const saveBtn = event.target;
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+        saveBtn.disabled = true;
+        
+        // AJAX call to save
+        fetch('<?= admin_url('admin-ajax.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=b2b_quick_edit_stock&updates=' + encodeURIComponent(JSON.stringify(updates))
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert('Stock quantities updated successfully!');
+                location.reload();
+            } else {
+                alert('Error: ' + (data.data || 'Unknown error'));
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+            }
+        })
+        .catch(error => {
+            alert('Error saving changes: ' + error);
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+        });
+    }
+    
+    // Delete Product Functionality
+    document.querySelectorAll('.delete-product-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const productId = this.getAttribute('data-product-id');
+            const productName = this.getAttribute('data-product-name');
+            
+            if(!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+                return;
+            }
+            
+            // Disable button during request
+            this.disabled = true;
+            this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'action=b2b_delete_product&product_id=' + productId + '&nonce=<?= wp_create_nonce("b2b_delete_product") ?>'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    alert('Product deleted successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + (data.data || 'Unknown error'));
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fa-solid fa-trash"></i>';
+                }
+            })
+            .catch(error => {
+                alert('Error deleting product: ' + error);
+                this.disabled = false;
+                this.innerHTML = '<i class="fa-solid fa-trash"></i>';
+            });
+        });
     });
     </script>
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   9B. PAGE: PRODUCTS IMPORT
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'products_import') return;
+    b2b_adm_guard();
+    
+    // Handle CSV import
+    $import_message = '';
+    if(isset($_POST['import_products']) && isset($_FILES['csv_file'])) {
+        $file = $_FILES['csv_file'];
+        if($file['error'] === 0 && pathinfo($file['name'], PATHINFO_EXTENSION) === 'csv') {
+            $handle = fopen($file['tmp_name'], 'r');
+            $row = 0;
+            $imported = 0;
+            $updated = 0;
+            
+            while (($data = fgetcsv($handle, 1000, ',')) !== FALSE) {
+                $row++;
+                if($row === 1) continue; // Skip header
+                
+                // Expected format: SKU, Name, Price, Stock, Category
+                $sku = isset($data[0]) ? sanitize_text_field($data[0]) : '';
+                $name = isset($data[1]) ? sanitize_text_field($data[1]) : '';
+                $price = isset($data[2]) ? floatval($data[2]) : 0;
+                $stock = isset($data[3]) ? intval($data[3]) : 0;
+                $category = isset($data[4]) ? sanitize_text_field($data[4]) : '';
+                
+                if(empty($sku)) continue;
+                
+                // Check if product exists by SKU
+                $product_id = wc_get_product_id_by_sku($sku);
+                
+                if($product_id) {
+                    // Update existing product
+                    $product = wc_get_product($product_id);
+                    $product->set_regular_price($price);
+                    $product->set_price($price);
+                    $product->set_manage_stock(true);
+                    $product->set_stock_quantity($stock);
+                    $product->save();
+                    $updated++;
+                } else {
+                    // Create new product
+                    $product = new WC_Product_Simple();
+                    $product->set_name($name);
+                    $product->set_sku($sku);
+                    $product->set_regular_price($price);
+                    $product->set_price($price);
+                    $product->set_manage_stock(true);
+                    $product->set_stock_quantity($stock);
+                    $product->set_status('publish');
+                    
+                    if(!empty($category)) {
+                        $term = get_term_by('name', $category, 'product_cat');
+                        if($term) {
+                            $product->set_category_ids([$term->term_id]);
+                        }
+                    }
+                    
+                    $product->save();
+                    $imported++;
+                }
+            }
+            fclose($handle);
+            $import_message = "<div style='padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;'><strong>Success!</strong> Imported {$imported} new products, updated {$updated} existing products.</div>";
+        } else {
+            $import_message = "<div style='padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;'><strong>Error!</strong> Invalid file. Please upload a CSV file.</div>";
+        }
+    }
+    
+    b2b_adm_header('Import Products');
+    ?>
+    <div class="page-header"><h1 class="page-title">Import Products</h1></div>
+    <div class="card">
+        <?= $import_message ?>
+        
+        <div style="max-width:600px;">
+            <h3 style="margin-top:0;">Upload CSV File</h3>
+            <p style="color:#6b7280;">Import products from a CSV file. The file should have the following columns: <code>SKU, Name, Price, Stock, Category</code></p>
+            
+            <form method="post" enctype="multipart/form-data" style="margin-top:20px;">
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:8px;font-weight:600;">Select CSV File</label>
+                    <input type="file" name="csv_file" accept=".csv" required style="display:block;width:100%;padding:10px;border:2px dashed #e5e7eb;border-radius:8px;">
+                </div>
+                
+                <button type="submit" name="import_products" style="background:#3b82f6;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+                    <i class="fa-solid fa-file-import"></i> Import Products
+                </button>
+            </form>
+            
+            <div style="margin-top:30px;padding:15px;background:#f3f4f6;border-radius:8px;">
+                <h4 style="margin-top:0;">CSV Format Example:</h4>
+                <pre style="background:white;padding:10px;border-radius:4px;overflow-x:auto;">SKU,Name,Price,Stock,Category
+PROD001,Sample Product 1,29.99,100,Electronics
+PROD002,Sample Product 2,49.99,50,Clothing</pre>
+            </div>
+            
+            <div style="margin-top:20px;">
+                <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;">
+                    <button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button>
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   9C. PAGE: PRODUCTS EXPORT
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'products_export') return;
+    b2b_adm_guard();
+    
+    // Handle export
+    if(isset($_POST['export_products'])) {
+        $args = ['limit' => -1, 'status' => 'publish'];
+        $products = wc_get_products($args);
+        
+        // Set headers for CSV download
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="products-export-' . date('Y-m-d') . '.csv"');
+        
+        $output = fopen('php://output', 'w');
+        
+        // CSV Header
+        fputcsv($output, ['SKU', 'Name', 'Price', 'Stock', 'Category', 'Status']);
+        
+        // Product rows
+        foreach($products as $product) {
+            $cats = wp_get_post_terms($product->get_id(), 'product_cat', ['fields' => 'names']);
+            fputcsv($output, [
+                $product->get_sku(),
+                $product->get_name(),
+                $product->get_regular_price(),
+                $product->get_stock_quantity() ?: 0,
+                !empty($cats) ? implode(', ', $cats) : '',
+                $product->get_status()
+            ]);
+        }
+        
+        fclose($output);
+        exit;
+    }
+    
+    b2b_adm_header('Export Products');
+    ?>
+    <div class="page-header"><h1 class="page-title">Export Products</h1></div>
+    <div class="card">
+        <div style="max-width:600px;">
+            <h3 style="margin-top:0;">Export to CSV</h3>
+            <p style="color:#6b7280;">Export all products to a CSV file with SKU, Name, Price, Stock, Category, and Status columns.</p>
+            
+            <form method="post" style="margin-top:20px;">
+                <button type="submit" name="export_products" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+                    <i class="fa-solid fa-file-export"></i> Export All Products
+                </button>
+            </form>
+            
+            <div style="margin-top:30px;padding:15px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;">
+                <h4 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> Export Information</h4>
+                <ul style="color:#1e40af;margin:0;">
+                    <li>All published products will be exported</li>
+                    <li>CSV format: SKU, Name, Price, Stock, Category, Status</li>
+                    <li>File name: products-export-YYYY-MM-DD.csv</li>
+                    <li>You can edit the CSV and re-import it</li>
+                </ul>
+            </div>
+            
+            <div style="margin-top:20px;">
+                <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;">
+                    <button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button>
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   9D. PAGE: PRODUCTS CATEGORIES
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'products_categories') return;
+    b2b_adm_guard();
+    
+    // Handle category add/edit
+    $message = '';
+    if(isset($_POST['save_category'])) {
+        $cat_name = sanitize_text_field($_POST['category_name']);
+        $cat_slug = sanitize_title($_POST['category_slug']);
+        $cat_desc = sanitize_textarea_field($_POST['category_description']);
+        $cat_parent = intval($_POST['category_parent']);
+        $cat_id = isset($_POST['category_id']) ? intval($_POST['category_id']) : 0;
+        
+        $args = [
+            'name' => $cat_name,
+            'slug' => $cat_slug,
+            'description' => $cat_desc,
+            'parent' => $cat_parent
+        ];
+        
+        if($cat_id) {
+            // Update existing
+            $result = wp_update_term($cat_id, 'product_cat', $args);
+        } else {
+            // Create new
+            $result = wp_insert_term($cat_name, 'product_cat', $args);
+        }
+        
+        if(!is_wp_error($result)) {
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Category saved.</div>';
+        } else {
+            $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;"><strong>Error!</strong> ' . $result->get_error_message() . '</div>';
+        }
+    }
+    
+    // Handle delete
+    if(isset($_GET['delete']) && $_GET['delete']) {
+        $del_id = intval($_GET['delete']);
+        wp_delete_term($del_id, 'product_cat');
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;">Category deleted.</div>';
+    }
+    
+    // Get all categories
+    $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'orderby' => 'name']);
+    
+    b2b_adm_header('Product Categories');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title">Product Categories</h1>
+        <button onclick="document.getElementById('addCatForm').style.display='block'" style="background:#3b82f6;color:white;padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+            <i class="fa-solid fa-plus"></i> Add New Category
+        </button>
+    </div>
+    
+    <?= $message ?>
+    
+    <!-- Add/Edit Form (Hidden by default) -->
+    <div id="addCatForm" style="display:none;margin-bottom:20px;">
+        <div class="card">
+            <h3 style="margin-top:0;">Add New Category</h3>
+            <form method="post" style="max-width:600px;">
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:600;">Category Name *</label>
+                    <input type="text" name="category_name" required style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                </div>
+                
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:600;">Slug (URL)</label>
+                    <input type="text" name="category_slug" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <small style="color:#6b7280;">Leave empty to auto-generate from name</small>
+                </div>
+                
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:600;">Parent Category</label>
+                    <select name="category_parent" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <option value="0">None (Top Level)</option>
+                        <?php foreach($categories as $cat): ?>
+                            <option value="<?= $cat->term_id ?>"><?= esc_html($cat->name) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <div style="margin-bottom:15px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:600;">Description</label>
+                    <textarea name="category_description" rows="3" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;"></textarea>
+                </div>
+                
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" name="save_category" style="background:#10b981;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-save"></i> Save Category
+                    </button>
+                    <button type="button" onclick="document.getElementById('addCatForm').style.display='none'" class="secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Categories List -->
+    <div class="card">
+        <table style="width:100%;">
+            <thead>
+                <tr>
+                    <th style="text-align:left;">Name</th>
+                    <th style="text-align:left;">Slug</th>
+                    <th style="text-align:left;">Description</th>
+                    <th style="text-align:center;">Count</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if(empty($categories)): ?>
+                <tr><td colspan="5" style="text-align:center;padding:30px;color:#999;">No categories found.</td></tr>
+            <?php else: foreach($categories as $cat): ?>
+                <tr>
+                    <td><strong><?= esc_html($cat->name) ?></strong></td>
+                    <td><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($cat->slug) ?></code></td>
+                    <td><small style="color:#6b7280;"><?= esc_html($cat->description ?: '-') ?></small></td>
+                    <td style="text-align:center;"><span style="background:#f3f4f6;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;"><?= $cat->count ?></span></td>
+                    <td style="text-align:right;">
+                        <a href="<?= home_url('/b2b-panel/products/categories/edit?id=' . $cat->term_id) ?>" style="margin-right:10px;">
+                            <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
+                        </a>
+                        <a href="?delete=<?= $cat->term_id ?>" onclick="return confirm('Delete this category?')" style="color:#ef4444;">
+                            <button style="background:#ef4444;color:white;padding:6px 12px;font-size:12px;border:none;border-radius:6px;cursor:pointer;"><i class="fa-solid fa-trash"></i></button>
+                        </a>
+                    </td>
+                </tr>
+            <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <div style="margin-top:20px;">
+        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;">
+            <button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button>
+        </a>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   9E. PAGE: CATEGORY EDIT
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'category_edit') return;
+    b2b_adm_guard();
+    
+    $cat_id = intval($_GET['id']);
+    $category = get_term($cat_id, 'product_cat');
+    
+    if(!$category || is_wp_error($category)) wp_die('Category not found');
+    
+    // Handle update
+    $message = '';
+    if(isset($_POST['update_category'])) {
+        $cat_name = sanitize_text_field($_POST['category_name']);
+        $cat_slug = sanitize_title($_POST['category_slug']);
+        $cat_desc = sanitize_textarea_field($_POST['category_description']);
+        $cat_parent = intval($_POST['category_parent']);
+        
+        $result = wp_update_term($cat_id, 'product_cat', [
+            'name' => $cat_name,
+            'slug' => $cat_slug,
+            'description' => $cat_desc,
+            'parent' => $cat_parent
+        ]);
+        
+        if(!is_wp_error($result)) {
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Category updated.</div>';
+            $category = get_term($cat_id, 'product_cat'); // Refresh
+        } else {
+            $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;"><strong>Error!</strong> ' . $result->get_error_message() . '</div>';
+        }
+    }
+    
+    $all_categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false, 'exclude' => [$cat_id]]);
+    
+    b2b_adm_header('Edit Category');
+    ?>
+    <div class="page-header"><h1 class="page-title">Edit Category: <?= esc_html($category->name) ?></h1></div>
+    
+    <?= $message ?>
+    
+    <div class="card">
+        <form method="post" style="max-width:600px;">
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Category Name *</label>
+                <input type="text" name="category_name" value="<?= esc_attr($category->name) ?>" required style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Slug (URL)</label>
+                <input type="text" name="category_slug" value="<?= esc_attr($category->slug) ?>" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Parent Category</label>
+                <select name="category_parent" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <option value="0">None (Top Level)</option>
+                    <?php foreach($all_categories as $cat): ?>
+                        <option value="<?= $cat->term_id ?>" <?= selected($category->parent, $cat->term_id) ?>><?= esc_html($cat->name) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Description</label>
+                <textarea name="category_description" rows="3" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($category->description) ?></textarea>
+            </div>
+            
+            <div style="margin-bottom:15px;padding:15px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;">
+                <strong style="color:#1e40af;">Product Count:</strong> <?= $category->count ?> products in this category
+            </div>
+            
+            <div style="display:flex;gap:10px;">
+                <button type="submit" name="update_category" style="background:#10b981;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                    <i class="fa-solid fa-save"></i> Update Category
+                </button>
+                <a href="<?= home_url('/b2b-panel/products/categories') ?>" style="text-decoration:none;">
+                    <button type="button" class="secondary">Cancel</button>
+                </a>
+            </div>
+        </form>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   9F. PAGE: PRICE ADJUSTER
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'price_adjuster') return;
+    b2b_adm_guard();
+    
+    // Price calculation function
+    function b2b_calculate_price($price, $type, $value, $action, $rounding = false) {
+        if ($type === 'percent') {
+            $delta = $price * ($value / 100);
+        } else {
+            $delta = $value;
+        }
+        $new_price = ($action === 'increase') ? $price + $delta : max(0, $price - $delta);
+
+        if ($rounding) {
+            $fraction = $new_price - floor($new_price);
+            $new_price = ($fraction >= 0.5) ? ceil($new_price) : floor($new_price);
+        }
+        return $new_price;
+    }
+    
+    $per_page = 20;
+    $paged = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+    $offset = ($paged - 1) * $per_page;
+
+    // Read filter inputs from GET
+    $category_ids = isset($_GET['cpa_categories']) ? array_map('intval', (array) $_GET['cpa_categories']) : [];
+    $type = isset($_GET['cpa_type']) ? sanitize_text_field($_GET['cpa_type']) : 'percent';
+    $value = isset($_GET['cpa_value']) ? floatval($_GET['cpa_value']) : 0;
+    $action = isset($_GET['cpa_action']) ? sanitize_text_field($_GET['cpa_action']) : 'increase';
+    $rounding = isset($_GET['cpa_rounding']) ? true : false;
+    $search = isset($_GET['cpa_search']) ? sanitize_text_field($_GET['cpa_search']) : '';
+
+    b2b_adm_header('Price Adjuster');
+    
+    echo '<div class="page-header"><h1 class="page-title"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</h1></div>';
+    
+    // Filter form
+    echo '<div class="card">';
+    echo '<form method="get" action="'.esc_url(home_url('/b2b-panel/products/price-adjuster')).'">';
+    echo '<table style="width:100%;max-width:800px;"><tbody>';
+    
+    // Categories select
+    echo '<tr><th style="width:200px;text-align:left;padding:10px;"><label for="cpa_categories">Categories</label></th><td style="padding:10px;">';
+    echo '<select name="cpa_categories[]" id="cpa_categories" multiple="multiple" style="width:100%;max-width:400px;height:100px;">';
+    $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
+    foreach ($categories as $cat) {
+        $sel = in_array($cat->term_id, $category_ids) ? 'selected' : '';
+        echo '<option value="'.esc_attr($cat->term_id).'" '.$sel.'>'.esc_html($cat->name).'</option>';
+    }
+    echo '</select>';
+    echo '<p style="color:#6b7280;font-size:13px;margin:5px 0 0 0;">Hold Ctrl/Cmd to select multiple categories</p>';
+    echo '</td></tr>';
+
+    // Adjustment type / value / action / rounding / search
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_type">Adjustment Type</label></th><td style="padding:10px;">';
+    echo '<select name="cpa_type" id="cpa_type" style="max-width:200px;">';
+    echo '<option value="percent"'.($type==='percent' ? ' selected':'').'>Percentage (%)</option>';
+    echo '<option value="fixed"'.($type==='fixed' ? ' selected':'').'>Fixed Amount</option>';
+    echo '</select>';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_value">Value</label></th><td style="padding:10px;">';
+    echo '<input type="number" step="0.01" name="cpa_value" id="cpa_value" value="'.esc_attr($value).'" required style="max-width:200px;" />';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_action">Action</label></th><td style="padding:10px;">';
+    echo '<select name="cpa_action" id="cpa_action" style="max-width:200px;">';
+    echo '<option value="increase"'.($action==='increase' ? ' selected':'').'>Increase</option>';
+    echo '<option value="decrease"'.($action==='decrease' ? ' selected':'').'>Decrease</option>';
+    echo '</select>';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_rounding">Rounding</label></th><td style="padding:10px;">';
+    echo '<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="cpa_rounding" id="cpa_rounding" value="1"'.($rounding ? ' checked':'').'> Round to nearest whole number (>= .5 rounds up)</label>';
+    echo '</td></tr>';
+
+    echo '<tr><th style="text-align:left;padding:10px;"><label for="cpa_search">Search</label></th><td style="padding:10px;">';
+    echo '<input type="search" name="cpa_search" id="cpa_search" value="'.esc_attr($search).'" placeholder="Product name or SKU" style="width:100%;max-width:400px;" />';
+    echo '</td></tr>';
+
+    echo '</tbody></table>';
+
+    // Preview button
+    echo '<p style="margin-top:20px;"><input type="submit" name="cpa_preview" class="button" style="background:#3b82f6;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;" value="Preview Changes"></p>';
+    echo '</form>';
+    echo '</div>';
+
+    // If preview requested
+    if (isset($_GET['cpa_preview'])) {
+        // Build WP_Query args
+        $args = [
+            'post_type' => 'product',
+            'posts_per_page' => -1,
+            's' => $search,
+            'fields' => 'ids'
+        ];
+        if (!empty($category_ids)) {
+            $args['tax_query'] = [
+                [
+                    'taxonomy' => 'product_cat',
+                    'field' => 'term_id',
+                    'terms' => $category_ids,
+                    'operator' => 'IN',
+                ]
+            ];
+        }
+
+        $product_posts = get_posts($args);
+
+        // Build full preview array
+        $full_preview = [];
+        foreach ($product_posts as $prod_id) {
+            $product = wc_get_product($prod_id);
+            if (!$product) continue;
+
+            if ($product->is_type('variable')) {
+                $children = $product->get_children();
+                foreach ($children as $child_id) {
+                    $variation = wc_get_product($child_id);
+                    if (!$variation) continue;
+                    $current_price = floatval($variation->get_regular_price());
+                    $new_price = b2b_calculate_price($current_price, $type, $value, $action, $rounding);
+                    $full_preview[] = [
+                        'id' => $variation->get_id(),
+                        'old' => $current_price,
+                        'new' => $new_price,
+                        'name' => $variation->get_name(),
+                    ];
+                }
+            } else {
+                $current_price = floatval($product->get_regular_price());
+                $new_price = b2b_calculate_price($current_price, $type, $value, $action, $rounding);
+                $full_preview[] = [
+                    'id' => $product->get_id(),
+                    'old' => $current_price,
+                    'new' => $new_price,
+                    'name' => $product->get_name(),
+                ];
+            }
+        }
+
+        // Save preview in transient
+        $user_id = get_current_user_id();
+        $preview_key = 'cpa_preview_' . $user_id . '_' . uniqid();
+        set_transient($preview_key, $full_preview, 30 * MINUTE_IN_SECONDS);
+
+        // Pagination calculation
+        $total_items = count($full_preview);
+        $total_pages = $total_items ? ceil($total_items / $per_page) : 1;
+
+        // Slice to display current page
+        $display_items = array_slice($full_preview, $offset, $per_page);
+
+        // Display preview table
+        echo '<div class="card" style="margin-top:20px;">';
+        echo '<h2 style="margin-top:0;">Preview of Price Changes</h2>';
+        echo '<p style="color:#6b7280;margin-bottom:20px;">Showing '.count($display_items).' of '.$total_items.' items</p>';
+        echo '<table style="width:100%;"><thead><tr><th style="text-align:left;">Product</th><th style="text-align:right;">Current Price</th><th style="text-align:right;">New Price</th></tr></thead><tbody>';
+        foreach ($display_items as $row) {
+            echo '<tr>';
+            echo '<td>'.esc_html($row['name']).'</td>';
+            echo '<td style="text-align:right;">$'.number_format($row['old'], 2).'</td>';
+            echo '<td style="text-align:right;font-weight:600;color:#10b981;">$'.number_format($row['new'], 2).'</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+
+        // Pagination links
+        if ($total_pages > 1) {
+            echo '<div style="margin-top:20px;display:flex;gap:10px;align-items:center;">';
+            echo '<span style="color:#6b7280;">Page:</span>';
+            for ($i = 1; $i <= min($total_pages, 10); $i++) {
+                $params = $_GET;
+                $params['paged'] = $i;
+                $link = add_query_arg($params, home_url('/b2b-panel/products/price-adjuster'));
+                if ($i == $paged) {
+                    echo "<span style='padding:8px 12px;background:#3b82f6;color:white;border-radius:6px;font-weight:600;'>{$i}</span> ";
+                } else {
+                    echo '<a href="'.esc_url($link).'" style="padding:8px 12px;background:#f3f4f6;color:#374151;border-radius:6px;text-decoration:none;">'.esc_html($i).'</a> ';
+                }
+            }
+            if ($total_pages > 10) echo '<span style="color:#6b7280;">... '.$total_pages.' total</span>';
+            echo '</div>';
+        }
+
+        // Show Apply form
+        echo '<form method="post" style="margin-top:20px;">';
+        wp_nonce_field('cpa_apply_action', 'cpa_apply_nonce');
+        echo '<input type="hidden" name="cpa_preview_key" value="'.esc_attr($preview_key).'">';
+        echo '<button type="submit" name="cpa_apply" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;"><i class="fa-solid fa-check"></i> Apply Changes</button>';
+        echo '</form>';
+        echo '</div>';
+    }
+
+    // APPLY handler
+    if (isset($_POST['cpa_apply'])) {
+        check_admin_referer('cpa_apply_action', 'cpa_apply_nonce');
+        $preview_key = isset($_POST['cpa_preview_key']) ? sanitize_text_field($_POST['cpa_preview_key']) : '';
+        $data_to_apply = $preview_key ? get_transient($preview_key) : false;
+        if ($data_to_apply && is_array($data_to_apply)) {
+            // Save old prices for undo
+            $user_key = 'cpa_last_prices_' . get_current_user_id();
+            update_option($user_key, array_column($data_to_apply, 'old', 'id'));
+
+            foreach ($data_to_apply as $d) {
+                $p = wc_get_product($d['id']);
+                if ($p) {
+                    $p->set_regular_price($d['new']);
+                    $p->save();
+                }
+            }
+            delete_transient($preview_key);
+            echo '<div class="card" style="margin-top:20px;background:#d1fae5;border:2px solid #10b981;"><p style="color:#065f46;margin:0;"><strong><i class="fa-solid fa-check-circle"></i> Success!</strong> Prices applied successfully for '.count($data_to_apply).' items.</p></div>';
+        } else {
+            echo '<div class="card" style="margin-top:20px;background:#fee2e2;border:2px solid#ef4444;"><p style="color:#991b1b;margin:0;"><strong><i class="fa-solid fa-exclamation-circle"></i> Error!</strong> No preview data found or it expired. Please preview again before applying.</p></div>';
+        }
+    }
+
+    // UNDO form
+    $user_key = 'cpa_last_prices_' . get_current_user_id();
+    $last_prices = get_option($user_key, []);
+    if (!empty($last_prices)) {
+        echo '<div class="card" style="margin-top:20px;">';
+        echo '<h3 style="margin-top:0;"><i class="fa-solid fa-undo"></i> Undo Last Change</h3>';
+        echo '<p style="color:#6b7280;">You can undo the last price adjustment you applied.</p>';
+        echo '<form method="post">';
+        wp_nonce_field('cpa_undo_action', 'cpa_undo_nonce');
+        echo '<button type="submit" name="cpa_undo" style="background:#ef4444;color:white;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600;"><i class="fa-solid fa-undo"></i> Undo Last Change</button>';
+        echo '</form>';
+        echo '</div>';
+    }
+
+    // UNDO handler
+    if (isset($_POST['cpa_undo'])) {
+        check_admin_referer('cpa_undo_action', 'cpa_undo_nonce');
+        $user_key = 'cpa_last_prices_' . get_current_user_id();
+        $last_prices = get_option($user_key, []);
+        if (!empty($last_prices)) {
+            foreach ($last_prices as $id => $price) {
+                $p = wc_get_product($id);
+                if ($p) {
+                    $p->set_regular_price($price);
+                    $p->save();
+                }
+            }
+            delete_option($user_key);
+            echo '<div class="card" style="margin-top:20px;background:#d1fae5;border:2px solid #10b981;"><p style="color:#065f46;margin:0;"><strong><i class="fa-solid fa-check-circle"></i> Success!</strong> Changes undone successfully.</p></div>';
+        } else {
+            echo '<div class="card" style="margin-top:20px;background:#fef3c7;border:2px solid #f59e0b;"><p style="color:#92400e;margin:0;"><strong><i class="fa-solid fa-info-circle"></i> Notice:</strong> No saved changes to undo.</p></div>';
+        }
+    }
+    
+    echo '<div style="margin-top:20px;">';
+    echo '<a href="'.home_url('/b2b-panel/products').'" style="text-decoration:none;"><button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button></a>';
+    echo '</div>';
+    
+    b2b_adm_footer(); exit;
+});
+
 /* =====================================================
    10. PAGE: PRODUCT EDIT (FULL STOCK LOGIC FIXED)
 ===================================================== */
@@ -1808,6 +3019,8 @@ add_action('template_redirect', function () {
 
     <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
         <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none"><button class="secondary"><i class="fa-solid fa-arrow-left"></i> Back to Products</button></a>
+        <button id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:8px 16px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;"><i class="fa-solid fa-trash"></i> Delete Product</button>
+    </div>
         <span style="background:<?= $is_variable?'#fef3c7':'#d1fae5' ?>;color:<?= $is_variable?'#92400e':'#065f46' ?>;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700">
             <?= $is_variable ? 'VARIABLE PRODUCT' : 'SIMPLE PRODUCT' ?>
         </span>
@@ -1920,6 +3133,45 @@ add_action('template_redirect', function () {
             </div>
         </div>
     </form>
+    
+    <script>
+    // Delete Product from Detail Page
+    document.getElementById('delete-product-detail-btn').addEventListener('click', function() {
+        const productId = this.getAttribute('data-product-id');
+        const productName = this.getAttribute('data-product-name');
+        
+        if(!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+            return;
+        }
+        
+        // Disable button during request
+        this.disabled = true;
+        this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...';
+        
+        fetch('<?= admin_url('admin-ajax.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'action=b2b_delete_product&product_id=' + productId + '&nonce=<?= wp_create_nonce("b2b_delete_product") ?>'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                alert('Product deleted successfully!');
+                window.location.href = '<?= home_url('/b2b-panel/products') ?>';
+            } else {
+                alert('Error: ' + (data.data || 'Unknown error'));
+                this.disabled = false;
+                this.innerHTML = '<i class="fa-solid fa-trash"></i> Delete Product';
+            }
+        })
+        .catch(error => {
+            alert('Error deleting product: ' + error);
+            this.disabled = false;
+            this.innerHTML = '<i class="fa-solid fa-trash"></i> Delete Product';
+        });
+    });
+    </script>
+    
     <?php b2b_adm_footer(); exit;
 });
   
@@ -1935,12 +3187,13 @@ add_action('template_redirect', function () {
     if ($page === 'customers') {
         $paged = max(1, $_GET['paged'] ?? 1);
         $s = isset($_GET['s']) ? trim($_GET['s']) : '';
-        $number = 20;
+        $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
+        $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
         
         $args = [
             'role__in' => ['customer', 'subscriber', 'sales_agent'], 
-            'number'   => $number,
-            'offset'   => ($paged - 1) * $number,
+            'number'   => $per_page,
+            'offset'   => ($paged - 1) * $per_page,
             'search'   => $s ? "*{$s}*" : '',
             'orderby'  => 'registered',
             'order'    => 'DESC'
@@ -1949,7 +3202,7 @@ add_action('template_redirect', function () {
         $user_query = new WP_User_Query($args);
         $users = $user_query->get_results();
         $total_users = $user_query->get_total();
-        $total_pages = ceil($total_users / $number);
+        $total_pages = ceil($total_users / $per_page);
 
         b2b_adm_header('Customer Management');
         ?>
@@ -1958,22 +3211,33 @@ add_action('template_redirect', function () {
         <div class="card">
             <!-- Toolbar -->
             <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;align-items:center">
-                <div class="col-toggler">
-                    <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
-                    <div id="cColDrop" class="col-dropdown">
-                        <label><input type="checkbox" checked data-col="0"> ID</label>
-                        <label><input type="checkbox" checked data-col="1"> Customer Info</label>
-                        <label><input type="checkbox" checked data-col="2"> Contact</label>
-                        <label><input type="checkbox" checked data-col="3"> B2B Group</label>
-                        <label><input type="checkbox" checked data-col="4"> Location</label>
-                        <label><input type="checkbox" checked data-col="5"> Role</label>
-                        <label><input type="checkbox" checked data-col="6"> Actions</label>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <div class="col-toggler">
+                        <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
+                        <div id="cColDrop" class="col-dropdown">
+                            <label><input type="checkbox" checked data-col="0"> ID</label>
+                            <label><input type="checkbox" checked data-col="1"> Customer Info</label>
+                            <label><input type="checkbox" checked data-col="2"> Contact</label>
+                            <label><input type="checkbox" checked data-col="3"> B2B Group</label>
+                            <label><input type="checkbox" checked data-col="4"> Location</label>
+                            <label><input type="checkbox" checked data-col="5"> Role</label>
+                            <label><input type="checkbox" checked data-col="6"> Actions</label>
+                        </div>
                     </div>
+                    
+                    <!-- Per Page Selector -->
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
+                        <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
+                        <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
+                        <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
+                        <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
+                    </select>
                 </div>
 
                 <div style="flex:1;display:flex;justify-content:flex-end;gap:10px">
                     <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">Total: <strong><?= $total_users ?></strong></span>
                     <form style="display:flex;gap:5px">
+                        <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
                         <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search customers..." style="margin:0;max-width:250px">
                         <button>Search</button>
                         <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
@@ -2061,15 +3325,51 @@ add_action('template_redirect', function () {
             </table>
 
             <?php if($total_pages > 1): ?>
-            <div style="margin-top:20px;text-align:center;display:flex;justify-content:center;gap:5px">
-                <?php echo paginate_links(['base'=>add_query_arg('paged','%#%'),'format'=>'','current'=>$paged,'total'=>$total_pages,'prev_text'=>'&laquo;','next_text'=>'&raquo;','type'=>'plain']); ?>
+            <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+                <span style="color:#6b7280;font-size:14px;">Page:</span>
+                <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                    <?php 
+                    for($i = 1; $i <= $total_pages; $i++) {
+                        $page_params = [];
+                        if($s) $page_params[] = 's=' . urlencode($s);
+                        if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
+                        if($i > 1) $page_params[] = 'paged=' . $i;
+                        $page_url = home_url('/b2b-panel/customers') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                        $selected = ($i == $paged) ? 'selected' : '';
+                        echo '<option value="' . esc_attr($page_url) . '" ' . $selected . '>Page ' . $i . ' of ' . $total_pages . '</option>';
+                    }
+                    ?>
+                </select>
+                <span style="color:#6b7280;font-size:14px;">
+                    (Showing <?= min($per_page * $paged, $total_users) ?> of <?= $total_users ?> customers)
+                </span>
             </div>
             <?php endif; ?>
         </div>
         
         <script>
-        function toggleColC(idx, show) { var rows = document.getElementById('custTable').rows; for(var i=0;i<rows.length;i++) { if(rows[i].cells.length>idx) rows[i].cells[idx].style.display=show?'':'none'; } }
-        document.querySelectorAll('#cColDrop input').forEach(function(cb, i){ cb.addEventListener('change', function(){ toggleColC(i, this.checked); }); });
+        // Customers Column Toggle with localStorage
+        function toggleColC(idx, show) { 
+            var rows = document.getElementById('custTable').rows; 
+            for(var i=0;i<rows.length;i++) { 
+                if(rows[i].cells.length>idx) rows[i].cells[idx].style.display=show?'':'none'; 
+            }
+            // Save state to localStorage
+            var colStates = JSON.parse(localStorage.getItem('b2b_customers_columns') || '{}');
+            colStates[idx] = show;
+            localStorage.setItem('b2b_customers_columns', JSON.stringify(colStates));
+        }
+        
+        // Restore column visibility from localStorage
+        var savedColStates = JSON.parse(localStorage.getItem('b2b_customers_columns') || '{}');
+        document.querySelectorAll('#cColDrop input').forEach(function(cb, i){ 
+            // Restore saved state if exists
+            if(savedColStates.hasOwnProperty(i)) {
+                cb.checked = savedColStates[i];
+                toggleColC(i, savedColStates[i]);
+            }
+            cb.addEventListener('change', function(){ toggleColC(i, this.checked); }); 
+        });
         </script>
         <?php
         b2b_adm_footer(); exit;
@@ -2116,6 +3416,25 @@ add_action('template_redirect', function () {
             if(isset($_POST['assigned_agent'])) $b2b_data['bagli_agent_id'] = intval($_POST['assigned_agent']);
             if(isset($_POST['b2b_group'])) $b2b_data['b2b_group_slug'] = sanitize_text_field($_POST['b2b_group']);
             if(isset($_POST['b2b_role'])) $b2b_data['b2b_role'] = sanitize_text_field($_POST['b2b_role']);
+            
+            // Tax Exemption
+            $b2b_data['b2b_tax_exempt'] = isset($_POST['tax_exempt']) ? 1 : 0;
+            $b2b_data['b2b_tax_id'] = sanitize_text_field($_POST['tax_id'] ?? '');
+            $b2b_data['b2b_tax_notes'] = sanitize_textarea_field($_POST['tax_notes'] ?? '');
+            
+            // Shipping Overrides
+            $shipping_overrides = [];
+            if(isset($_POST['shipping_overrides']) && is_array($_POST['shipping_overrides'])) {
+                foreach($_POST['shipping_overrides'] as $zone_id => $override_data) {
+                    if(!empty($override_data['enabled'])) {
+                        $shipping_overrides[$zone_id] = [
+                            'flat_rate_cost' => isset($override_data['flat_rate_cost']) && $override_data['flat_rate_cost'] !== '' ? floatval($override_data['flat_rate_cost']) : null,
+                            'free_shipping' => isset($override_data['free_shipping']) ? $override_data['free_shipping'] : null
+                        ];
+                    }
+                }
+            }
+            $b2b_data['b2b_shipping_overrides'] = $shipping_overrides;
             
             // User-Specific Payment Permissions
             if(isset($_POST['b2b_allowed_payments']) && is_array($_POST['b2b_allowed_payments'])) {
@@ -2282,6 +3601,93 @@ add_action('template_redirect', function () {
                     <p class="hint">Change customer password (optional)</p>
                 </div>
             </div>
+            
+            <!-- Tax Exemption Section -->
+            <?php 
+            $tax_exempt = get_user_meta($id, 'b2b_tax_exempt', true);
+            $tax_id = get_user_meta($id, 'b2b_tax_id', true);
+            $tax_notes = get_user_meta($id, 'b2b_tax_notes', true);
+            $tax_certificate = get_user_meta($id, 'b2b_tax_certificate', true);
+            $tax_approved_date = get_user_meta($id, 'b2b_tax_approved_date', true);
+            ?>
+            <div class="customer-section" style="border-left:4px solid #10b981;">
+                <h3><i class="fa-solid fa-receipt"></i> Tax Exemption Status</h3>
+                <div class="form-grid">
+                    <div>
+                        <label style="display:flex;align-items:center;gap:10px;font-size:14px;">
+                            <input type="checkbox" name="tax_exempt" value="1" <?= checked($tax_exempt, 1) ?> style="width:20px;height:20px;">
+                            <span style="font-weight:600;color:#111827;">Tax Exempt</span>
+                        </label>
+                        <?php if($tax_exempt == 1 && $tax_approved_date): ?>
+                        <p style="color:#10b981;font-size:12px;margin-top:5px;">
+                            <i class="fa-solid fa-check-circle"></i> Approved on <?= date('Y-m-d', strtotime($tax_approved_date)) ?>
+                        </p>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <label>Tax ID / VAT Number</label>
+                        <input type="text" name="tax_id" value="<?= esc_attr($tax_id) ?>" placeholder="e.g., VAT-123456789">
+                    </div>
+                </div>
+                <div>
+                    <label>Tax Notes / Additional Information</label>
+                    <textarea name="tax_notes" rows="2" placeholder="Any notes about tax exemption"><?= esc_textarea($tax_notes) ?></textarea>
+                </div>
+                <?php if($tax_certificate): ?>
+                <div style="margin-top:10px;padding:10px;background:#f0f9ff;border-radius:6px;">
+                    <small style="color:#0369a1;font-weight:600;"><i class="fa-solid fa-file-pdf"></i> Tax Certificate:</small>
+                    <a href="<?= esc_url($tax_certificate) ?>" target="_blank" style="margin-left:10px;color:#3b82f6;font-size:12px;">View Document</a>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <!-- Shipping Overrides Section -->
+            <?php 
+            $shipping_zones = get_option('b2b_shipping_zones', []);
+            $shipping_overrides = get_user_meta($id, 'b2b_shipping_overrides', true) ?: [];
+            ?>
+            <?php if(!empty($shipping_zones)): ?>
+            <div class="customer-section" style="border-left:4px solid #3b82f6;">
+                <h3><i class="fa-solid fa-truck"></i> Shipping Overrides (Optional)</h3>
+                <p style="color:#6b7280;font-size:13px;margin-bottom:15px;">Configure custom shipping rates for this customer. Leave unchecked to use group/default rates.</p>
+                
+                <?php foreach($shipping_zones as $zone_id => $zone): ?>
+                <?php 
+                $override = $shipping_overrides[$zone_id] ?? [];
+                $is_enabled = !empty($override);
+                ?>
+                <div style="margin-bottom:15px;padding:15px;background:#f9fafb;border-radius:8px;border:2px solid <?= $is_enabled ? '#3b82f6' : '#e5e7eb' ?>;">
+                    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;">
+                        <input type="checkbox" name="shipping_overrides[<?= esc_attr($zone_id) ?>][enabled]" value="1" <?= checked($is_enabled, true) ?> onchange="this.closest('div').style.borderColor = this.checked ? '#3b82f6' : '#e5e7eb'">
+                        <span style="font-weight:600;font-size:14px;"><?= esc_html($zone['name']) ?></span>
+                        <span style="font-size:12px;color:#6b7280;">(<?= esc_html(implode(', ', $zone['regions'] ?? [])) ?>)</span>
+                    </label>
+                    
+                    <div style="margin-left:30px;display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                        <div>
+                            <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:5px;">Flat Rate Cost ($)</label>
+                            <input type="number" name="shipping_overrides[<?= esc_attr($zone_id) ?>][flat_rate_cost]" value="<?= esc_attr($override['flat_rate_cost'] ?? '') ?>" step="0.01" min="0" placeholder="Default: $<?= esc_attr($zone['methods']['flat_rate']['cost'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+                            <small style="color:#6b7280;font-size:11px;">Leave empty for default</small>
+                        </div>
+                        
+                        <div>
+                            <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:5px;">Free Shipping</label>
+                            <select name="shipping_overrides[<?= esc_attr($zone_id) ?>][free_shipping]" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+                                <option value="">Use Default</option>
+                                <option value="always" <?= selected($override['free_shipping'] ?? '', 'always') ?>>Always Free</option>
+                                <option value="0" <?= selected($override['free_shipping'] ?? '', '0') ?>>Minimum $0</option>
+                                <option value="25" <?= selected($override['free_shipping'] ?? '', '25') ?>>Minimum $25</option>
+                                <option value="50" <?= selected($override['free_shipping'] ?? '', '50') ?>>Minimum $50</option>
+                                <option value="75" <?= selected($override['free_shipping'] ?? '', '75') ?>>Minimum $75</option>
+                                <option value="100" <?= selected($override['free_shipping'] ?? '', '100') ?>>Minimum $100</option>
+                            </select>
+                            <small style="color:#6b7280;font-size:11px;">Customer-specific free shipping</small>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </form>
         <?php
         b2b_adm_footer(); exit;
@@ -3713,3 +5119,542 @@ function b2b_page_sales_agent_settings() {
     <?php
     exit;
 }
+
+/* =====================================================
+   PAGE: SETTINGS - GENERAL
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_general') return;
+    b2b_adm_guard();
+    
+    // Handle settings save
+    $message = '';
+    if(isset($_POST['save_settings'])) {
+        update_option('b2b_panel_name', sanitize_text_field($_POST['panel_name']));
+        update_option('b2b_items_per_page', intval($_POST['items_per_page']));
+        update_option('b2b_enable_caching', isset($_POST['enable_caching']) ? 1 : 0);
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Settings saved.</div>';
+    }
+    
+    $panel_name = get_option('b2b_panel_name', 'B2B Admin Panel');
+    $items_per_page = get_option('b2b_items_per_page', 20);
+    $enable_caching = get_option('b2b_enable_caching', 0);
+    
+    b2b_adm_header('General Settings');
+    ?>
+    <div class="page-header"><h1 class="page-title">General Settings</h1></div>
+    
+    <?= $message ?>
+    
+    <div class="card">
+        <form method="post" style="max-width:600px;">
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Panel Name</label>
+                <input type="text" name="panel_name" value="<?= esc_attr($panel_name) ?>" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Default Items Per Page</label>
+                <select name="items_per_page" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <option value="10" <?= selected($items_per_page, 10) ?>>10</option>
+                    <option value="20" <?= selected($items_per_page, 20) ?>>20</option>
+                    <option value="50" <?= selected($items_per_page, 50) ?>>50</option>
+                    <option value="100" <?= selected($items_per_page, 100) ?>>100</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="enable_caching" value="1" <?= checked($enable_caching, 1) ?>>
+                    <span style="font-weight:600;">Enable Query Caching</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Cache database queries for better performance (recommended)</small>
+            </div>
+            
+            <div style="padding:15px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;">
+                <h4 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-lightbulb"></i> Performance Tips</h4>
+                <ul style="color:#1e40af;margin:0;">
+                    <li>Enable caching for faster page loads</li>
+                    <li>Reduce items per page if you have many products</li>
+                    <li>Use filters to narrow down results</li>
+                    <li>Regularly clean up old data</li>
+                </ul>
+            </div>
+            
+            <button type="submit" name="save_settings" style="background:#10b981;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   PAGE: SETTINGS - TAX EXEMPTION
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_tax') return;
+    b2b_adm_guard();
+    
+    // Handle settings save
+    $message = '';
+    if(isset($_POST['save_tax_settings'])) {
+        update_option('b2b_tax_auto_remove', isset($_POST['tax_auto_remove']) ? 1 : 0);
+        update_option('b2b_tax_enable_text', isset($_POST['enable_text_field']) ? 1 : 0);
+        update_option('b2b_tax_text_required', isset($_POST['text_required']) ? 1 : 0);
+        update_option('b2b_tax_text_label', sanitize_text_field($_POST['text_label']));
+        update_option('b2b_tax_enable_textarea', isset($_POST['enable_textarea']) ? 1 : 0);
+        update_option('b2b_tax_textarea_required', isset($_POST['textarea_required']) ? 1 : 0);
+        update_option('b2b_tax_textarea_label', sanitize_text_field($_POST['textarea_label']));
+        update_option('b2b_tax_enable_file', isset($_POST['enable_file']) ? 1 : 0);
+        update_option('b2b_tax_file_required', isset($_POST['file_required']) ? 1 : 0);
+        update_option('b2b_tax_file_label', sanitize_text_field($_POST['file_label']));
+        update_option('b2b_tax_allowed_types', sanitize_text_field($_POST['allowed_types']));
+        
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Tax exemption settings saved.</div>';
+    }
+    
+    // Handle exemption requests
+    if(isset($_POST['approve_request'])) {
+        $user_id = intval($_POST['user_id']);
+        update_user_meta($user_id, 'b2b_tax_exempt', 1);
+        update_user_meta($user_id, 'b2b_tax_approved_date', current_time('mysql'));
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;">Tax exemption approved for user.</div>';
+    }
+    
+    if(isset($_POST['reject_request'])) {
+        $user_id = intval($_POST['user_id']);
+        update_user_meta($user_id, 'b2b_tax_exempt', 0);
+        $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;">Tax exemption rejected for user.</div>';
+    }
+    
+    // Get settings
+    $tax_auto = get_option('b2b_tax_auto_remove', 0);
+    $enable_text = get_option('b2b_tax_enable_text', 1);
+    $text_required = get_option('b2b_tax_text_required', 0);
+    $text_label = get_option('b2b_tax_text_label', 'Tax ID');
+    $enable_textarea = get_option('b2b_tax_enable_textarea', 0);
+    $textarea_required = get_option('b2b_tax_textarea_required', 0);
+    $textarea_label = get_option('b2b_tax_textarea_label', 'Additional Information');
+    $enable_file = get_option('b2b_tax_enable_file', 1);
+    $file_required = get_option('b2b_tax_file_required', 0);
+    $file_label = get_option('b2b_tax_file_label', 'Tax Certificate');
+    $allowed_types = get_option('b2b_tax_allowed_types', 'pdf,jpg,jpeg,png');
+    
+    // Get pending requests
+    $pending_users = get_users([
+        'meta_key' => 'b2b_tax_request',
+        'meta_value' => '1',
+        'meta_compare' => '='
+    ]);
+    
+    b2b_adm_header('Tax Exemption Settings');
+    ?>
+    <div class="page-header"><h1 class="page-title">Tax Exemption</h1></div>
+    
+    <?= $message ?>
+    
+    <!-- Settings Form -->
+    <div class="card" style="margin-bottom:20px;">
+        <h3 style="margin-top:0;">General Settings</h3>
+        <form method="post">
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="tax_auto_remove" value="1" <?= checked($tax_auto, 1) ?>>
+                    <span style="font-weight:600;">Remove Tax Automatically</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Disable tax for approved users automatically</small>
+            </div>
+            
+            <hr style="margin:20px 0;border:none;border-top:1px solid #e5e7eb;">
+            
+            <h4>Tax Exemption Form Fields</h4>
+            <p style="color:#6b7280;margin-bottom:20px;">Configure which fields appear in the customer tax exemption request form.</p>
+            
+            <!-- Text Field -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+                    <input type="checkbox" name="enable_text_field" value="1" <?= checked($enable_text, 1) ?>>
+                    <span style="font-weight:600;">Enable Text Field</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+                        <input type="checkbox" name="text_required" value="1" <?= checked($text_required, 1) ?>>
+                        <span>Required</span>
+                    </label>
+                    <label style="display:block;margin-bottom:5px;font-size:13px;">Field Label</label>
+                    <input type="text" name="text_label" value="<?= esc_attr($text_label) ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                </div>
+            </div>
+            
+            <!-- Textarea Field -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+                    <input type="checkbox" name="enable_textarea" value="1" <?= checked($enable_textarea, 1) ?>>
+                    <span style="font-weight:600;">Enable Textarea Field</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+                        <input type="checkbox" name="textarea_required" value="1" <?= checked($textarea_required, 1) ?>>
+                        <span>Required</span>
+                    </label>
+                    <label style="display:block;margin-bottom:5px;font-size:13px;">Field Label</label>
+                    <input type="text" name="textarea_label" value="<?= esc_attr($textarea_label) ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                </div>
+            </div>
+            
+            <!-- File Upload Field -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+                    <input type="checkbox" name="enable_file" value="1" <?= checked($enable_file, 1) ?>>
+                    <span style="font-weight:600;">Enable File Upload Field</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+                        <input type="checkbox" name="file_required" value="1" <?= checked($file_required, 1) ?>>
+                        <span>Required</span>
+                    </label>
+                    <label style="display:block;margin-bottom:5px;font-size:13px;">Field Label</label>
+                    <input type="text" name="file_label" value="<?= esc_attr($file_label) ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:10px;">
+                    <label style="display:block;margin-bottom:5px;font-size:13px;">Allowed File Types</label>
+                    <input type="text" name="allowed_types" value="<?= esc_attr($allowed_types) ?>" placeholder="pdf,jpg,jpeg,png" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <small style="display:block;color:#6b7280;margin-top:5px;">Comma-separated file extensions</small>
+                </div>
+            </div>
+            
+            <button type="submit" name="save_tax_settings" style="background:#10b981;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    
+    <!-- Pending Requests -->
+    <?php if(!empty($pending_users)): ?>
+    <div class="card">
+        <h3 style="margin-top:0;">Pending Tax Exemption Requests</h3>
+        <table style="width:100%;">
+            <thead>
+                <tr>
+                    <th style="text-align:left;">Customer</th>
+                    <th style="text-align:left;">Email</th>
+                    <th style="text-align:left;">Request Date</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach($pending_users as $user): 
+                $request_date = get_user_meta($user->ID, 'b2b_tax_request_date', true);
+            ?>
+                <tr>
+                    <td><strong><?= esc_html($user->display_name) ?></strong></td>
+                    <td><?= esc_html($user->user_email) ?></td>
+                    <td><?= $request_date ? date('Y-m-d', strtotime($request_date)) : '-' ?></td>
+                    <td style="text-align:right;">
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="user_id" value="<?= $user->ID ?>">
+                            <button type="submit" name="approve_request" style="background:#10b981;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-right:5px;font-size:12px;">
+                                <i class="fa-solid fa-check"></i> Approve
+                            </button>
+                            <button type="submit" name="reject_request" style="background:#ef4444;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;">
+                                <i class="fa-solid fa-times"></i> Reject
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   SHIPPING MODULE - PHASE 1
+===================================================== */
+// Shipping Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_shipping') return;
+    b2b_adm_guard();
+    
+    // Handle zone save/delete
+    $message = '';
+    if(isset($_POST['save_zone'])) {
+        $zones = get_option('b2b_shipping_zones', []);
+        $zone_id = isset($_POST['zone_id']) && !empty($_POST['zone_id']) && $_POST['zone_id'] != 'new' ? sanitize_text_field($_POST['zone_id']) : uniqid('zone_');
+        
+        $regions_input = isset($_POST['zone_regions'][0]) ? $_POST['zone_regions'][0] : '';
+        $regions = array_map('trim', explode(',', $regions_input));
+        
+        // Process group permissions
+        $group_permissions = [];
+        if(isset($_POST['group_permissions']) && is_array($_POST['group_permissions'])) {
+            foreach($_POST['group_permissions'] as $group_id => $group_data) {
+                if(isset($group_data['allowed'])) {
+                    $group_permissions[$group_id] = [
+                        'allowed' => 1,
+                        'flat_rate_cost' => isset($group_data['flat_rate_cost']) ? floatval($group_data['flat_rate_cost']) : null,
+                        'free_shipping_min' => isset($group_data['free_shipping_min']) ? floatval($group_data['free_shipping_min']) : null,
+                        'hidden_methods' => $group_data['hidden_methods'] ?? []
+                    ];
+                }
+            }
+        }
+        
+        $zones[$zone_id] = [
+            'name' => sanitize_text_field($_POST['zone_name']),
+            'description' => sanitize_textarea_field($_POST['zone_description']),
+            'regions' => array_filter($regions),
+            'active' => isset($_POST['zone_active']) ? 1 : 0,
+            'priority' => intval($_POST['zone_priority'] ?? 1),
+            'methods' => [
+                'flat_rate' => [
+                    'enabled' => isset($_POST['flat_rate_enabled']) ? 1 : 0,
+                    'cost' => floatval($_POST['flat_rate_cost'] ?? 0),
+                    'title' => sanitize_text_field($_POST['flat_rate_title'] ?? 'Flat Rate')
+                ],
+                'free_shipping' => [
+                    'enabled' => isset($_POST['free_shipping_enabled']) ? 1 : 0,
+                    'min_amount' => floatval($_POST['free_shipping_min'] ?? 0),
+                    'title' => sanitize_text_field($_POST['free_shipping_title'] ?? 'Free Shipping')
+                ]
+            ],
+            'group_permissions' => $group_permissions
+        ];
+        
+        update_option('b2b_shipping_zones', $zones);
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Shipping zone saved.</div>';
+        
+        // Redirect to list after save
+        if($_GET['edit'] ?? '' === 'new') {
+            wp_redirect(home_url('/b2b-panel/settings/shipping'));
+            exit;
+        }
+    }
+    
+    if(isset($_GET['delete'])) {
+        $zones = get_option('b2b_shipping_zones', []);
+        unset($zones[sanitize_text_field($_GET['delete'])]);
+        update_option('b2b_shipping_zones', $zones);
+        wp_redirect(home_url('/b2b-panel/settings/shipping'));
+        exit;
+    }
+    
+    $zones = get_option('b2b_shipping_zones', []);
+    $edit_zone = null;
+    $edit_id = '';
+    if(isset($_GET['edit'])) {
+        $edit_id = sanitize_text_field($_GET['edit']);
+        if($edit_id == 'new') {
+            $edit_zone = [
+                'name' => '', 
+                'description' => '', 
+                'regions' => [], 
+                'active' => 1, 
+                'priority' => 1, 
+                'methods' => [
+                    'flat_rate' => ['enabled' => 1, 'cost' => 0, 'title' => 'Flat Rate'], 
+                    'free_shipping' => ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping']
+                ],
+                'group_permissions' => []
+            ];
+        } else {
+            $edit_zone = $zones[$edit_id] ?? null;
+        }
+    }
+    
+    b2b_adm_header('Shipping Settings');
+    
+    echo $message;
+    ?>
+    <div class="page-header"><h1 class="page-title">Shipping Zones</h1></div>
+    
+    <?php if($edit_zone): ?>
+    <!-- Edit Zone Form -->
+    <div class="card" style="margin-bottom:20px;">
+        <h3 style="margin-top:0;"><?= $edit_id == 'new' ? 'Add New Shipping Zone' : 'Edit Shipping Zone' ?></h3>
+        <form method="POST">
+            <input type="hidden" name="zone_id" value="<?= esc_attr($edit_id) ?>">
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Zone Name *</label>
+                <input type="text" name="zone_name" value="<?= esc_attr($edit_zone['name']) ?>" required style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Description</label>
+                <textarea name="zone_description" rows="3" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($edit_zone['description']) ?></textarea>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Regions (Countries)</label>
+                <input type="text" name="zone_regions[]" value="<?= esc_attr(implode(', ', $edit_zone['regions'] ?? [])) ?>" placeholder="TR, US, GB" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small>Comma-separated country codes</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;">
+                    <input type="checkbox" name="zone_active" value="1" <?= checked($edit_zone['active'] ?? 0, 1) ?>>
+                    <span>Active</span>
+                </label>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Priority</label>
+                <input type="number" name="zone_priority" value="<?= esc_attr($edit_zone['priority'] ?? 1) ?>" min="1" style="width:100px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <h4>Shipping Methods</h4>
+            
+            <!-- Flat Rate -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <input type="checkbox" name="flat_rate_enabled" value="1" <?= checked($edit_zone['methods']['flat_rate']['enabled'] ?? 0, 1) ?>>
+                    <span style="font-weight:600;">Flat Rate Shipping</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <div style="margin-bottom:10px;">
+                        <label>Title</label>
+                        <input type="text" name="flat_rate_title" value="<?= esc_attr($edit_zone['methods']['flat_rate']['title'] ?? 'Flat Rate') ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                    <div>
+                        <label>Cost ($)</label>
+                        <input type="number" name="flat_rate_cost" value="<?= esc_attr($edit_zone['methods']['flat_rate']['cost'] ?? 0) ?>" step="0.01" min="0" style="width:150px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Free Shipping -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <input type="checkbox" name="free_shipping_enabled" value="1" <?= checked($edit_zone['methods']['free_shipping']['enabled'] ?? 0, 1) ?>>
+                    <span style="font-weight:600;">Free Shipping</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <div style="margin-bottom:10px;">
+                        <label>Title</label>
+                        <input type="text" name="free_shipping_title" value="<?= esc_attr($edit_zone['methods']['free_shipping']['title'] ?? 'Free Shipping') ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                    <div>
+                        <label>Minimum Order Amount ($)</label>
+                        <input type="number" name="free_shipping_min" value="<?= esc_attr($edit_zone['methods']['free_shipping']['min_amount'] ?? 0) ?>" step="0.01" min="0" style="width:150px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small>Set to 0 for always free</small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Group Permissions -->
+            <h4 style="margin-top:30px;">Group-Based Permissions (Optional)</h4>
+            <p style="color:#6b7280;margin-bottom:20px;">Configure special rates for specific B2B groups. Leave unchecked to use default rates.</p>
+            
+            <?php
+            // Get all B2B groups
+            $b2b_groups = get_option('b2b_groups', []);
+            if(!empty($b2b_groups)):
+                foreach($b2b_groups as $group_id => $group_data):
+                    $group_perms = $edit_zone['group_permissions'][$group_id] ?? [];
+                    $is_allowed = isset($group_perms['allowed']) && $group_perms['allowed'];
+            ?>
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;border:2px solid <?= $is_allowed ? '#10b981' : '#e5e7eb' ?>;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:15px;cursor:pointer;">
+                    <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][allowed]" value="1" <?= checked($is_allowed, true) ?> onchange="this.closest('div').style.borderColor = this.checked ? '#10b981' : '#e5e7eb'">
+                    <span style="font-weight:600;font-size:15px;"><?= esc_html($group_data['name'] ?? $group_id) ?></span>
+                </label>
+                
+                <div style="margin-left:30px;display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;">Flat Rate Cost ($)</label>
+                        <input type="number" name="group_permissions[<?= esc_attr($group_id) ?>][flat_rate_cost]" value="<?= esc_attr($group_perms['flat_rate_cost'] ?? '') ?>" step="0.01" min="0" placeholder="Default: <?= esc_attr($edit_zone['methods']['flat_rate']['cost'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small style="color:#6b7280;">Leave empty to use default</small>
+                    </div>
+                    
+                    <div>
+                        <label style="display:block;margin-bottom:5px;font-size:13px;">Free Shipping Min ($)</label>
+                        <input type="number" name="group_permissions[<?= esc_attr($group_id) ?>][free_shipping_min]" value="<?= esc_attr($group_perms['free_shipping_min'] ?? '') ?>" step="0.01" min="0" placeholder="Default: <?= esc_attr($edit_zone['methods']['free_shipping']['min_amount'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small style="color:#6b7280;">Set 0 for always free</small>
+                    </div>
+                </div>
+                
+                <div style="margin-left:30px;margin-top:10px;">
+                    <label style="display:block;margin-bottom:5px;font-size:13px;">Hide Methods (Optional)</label>
+                    <label style="display:inline-flex;align-items:center;gap:5px;margin-right:15px;">
+                        <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][hidden_methods][]" value="flat_rate" <?= checked(in_array('flat_rate', $group_perms['hidden_methods'] ?? []), true) ?>>
+                        <span style="font-size:13px;">Hide Flat Rate</span>
+                    </label>
+                    <label style="display:inline-flex;align-items:center;gap:5px;">
+                        <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][hidden_methods][]" value="free_shipping" <?= checked(in_array('free_shipping', $group_perms['hidden_methods'] ?? []), true) ?>>
+                        <span style="font-size:13px;">Hide Free Shipping</span>
+                    </label>
+                </div>
+            </div>
+            <?php 
+                endforeach;
+            else:
+            ?>
+            <p style="color:#6b7280;font-style:italic;">No B2B groups configured. Create groups in B2B Module → Groups.</p>
+            <?php endif; ?>
+            
+            <button type="submit" name="save_zone" class="primary">Save Zone</button>
+            <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" style="margin-left:10px;"><button type="button" class="secondary">Cancel</button></a>
+        </form>
+    </div>
+    <?php else: ?>
+    <!-- Add New Zone Button -->
+    <div style="margin-bottom:20px;">
+        <a href="<?= home_url('/b2b-panel/settings/shipping?edit=new') ?>"><button class="primary"><i class="fa-solid fa-plus"></i> Add Shipping Zone</button></a>
+    </div>
+    <?php endif; ?>
+    
+    <?php if(!$edit_zone): ?>
+    <!-- Zones List -->
+    <div class="card">
+        <h3 style="margin-top:0;">Configured Zones</h3>
+        <?php if(empty($zones)): ?>
+            <p style="color:#6b7280;">No shipping zones configured yet. Click "Add Shipping Zone" to create one.</p>
+        <?php else: ?>
+            <table class="wp-list-table widefat fixed striped" style="width:100%;">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Regions</th>
+                        <th>Methods</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($zones as $zone_id => $zone): ?>
+                    <tr>
+                        <td><strong><?= esc_html($zone['name']) ?></strong><br><small><?= esc_html($zone['description']) ?></small></td>
+                        <td><?= esc_html(implode(', ', $zone['regions'] ?? [])) ?></td>
+                        <td>
+                            <?php 
+                            $methods = [];
+                            if($zone['methods']['flat_rate']['enabled'] ?? 0) $methods[] = 'Flat Rate ($'.number_format($zone['methods']['flat_rate']['cost'], 2).')';
+                            if($zone['methods']['free_shipping']['enabled'] ?? 0) {
+                                $min = $zone['methods']['free_shipping']['min_amount'] ?? 0;
+                                $methods[] = 'Free Shipping' . ($min > 0 ? ' (min $'.number_format($min, 2).')' : '');
+                            }
+                            echo $methods ? implode('<br>', $methods) : 'No methods';
+                            ?>
+                        </td>
+                        <td>
+                            <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:<?= ($zone['active'] ?? 0) ? '#d1fae5' : '#fee2e2' ?>;color:<?= ($zone['active'] ?? 0) ? '#065f46' : '#991b1b' ?>">
+                                <?= ($zone['active'] ?? 0) ? 'ACTIVE' : 'INACTIVE' ?>
+                            </span>
+                        </td>
+                        <td>
+                            <a href="<?= home_url('/b2b-panel/settings/shipping?edit='.urlencode($zone_id)) ?>"><button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button></a>
+                            <a href="<?= home_url('/b2b-panel/settings/shipping?delete='.urlencode($zone_id)) ?>" onclick="return confirm('Are you sure you want to delete this zone?')"><button class="secondary" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;margin-left:5px;"><i class="fa-solid fa-trash"></i></button></a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    
+    <?php b2b_adm_footer(); exit;
+});

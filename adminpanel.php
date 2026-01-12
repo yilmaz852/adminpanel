@@ -116,88 +116,6 @@ add_action('woocommerce_before_calculate_totals', function($cart) {
    WOOCOMMERCE SHIPPING INTEGRATION (B2B Shipping Module)
 ===================================================== */
 
-/**
- * Get B2B shipping zone extensions for WooCommerce zones
- * Stores B2B-specific settings (group permissions, etc.) linked to WC zones
- */
-function b2b_get_zone_extensions() {
-    return get_option('b2b_zone_extensions', []);
-}
-
-/**
- * Update B2B zone extension
- */
-function b2b_update_zone_extension($zone_id, $extension_data) {
-    $extensions = b2b_get_zone_extensions();
-    $extensions[$zone_id] = $extension_data;
-    update_option('b2b_zone_extensions', $extensions);
-}
-
-/**
- * Get all shipping zones (from WooCommerce)
- */
-function b2b_get_all_shipping_zones() {
-    if(!class_exists('WC_Shipping_Zones')) {
-        return [];
-    }
-    
-    $wc_zones = WC_Shipping_Zones::get_zones();
-    $zones = [];
-    $extensions = b2b_get_zone_extensions();
-    
-    foreach($wc_zones as $wc_zone_data) {
-        $zone_id = $wc_zone_data['id'];
-        $wc_zone = new WC_Shipping_Zone($zone_id);
-        $shipping_methods = $wc_zone->get_shipping_methods();
-        
-        // Get regions
-        $regions = [];
-        foreach($wc_zone_data['zone_locations'] as $location) {
-            if($location->type == 'country') {
-                $regions[] = $location->code;
-            }
-        }
-        
-        // Get shipping methods
-        $flat_rate_data = ['enabled' => 0, 'cost' => 0, 'title' => 'Flat Rate'];
-        $free_ship_data = ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping'];
-        
-        foreach($shipping_methods as $method) {
-            if($method->id == 'flat_rate' && $method->enabled == 'yes') {
-                $flat_rate_data = [
-                    'enabled' => 1,
-                    'cost' => floatval($method->get_option('cost', 0)),
-                    'title' => $method->get_title()
-                ];
-            }
-            if($method->id == 'free_shipping' && $method->enabled == 'yes') {
-                $free_ship_data = [
-                    'enabled' => 1,
-                    'min_amount' => floatval($method->get_option('min_amount', 0)),
-                    'title' => $method->get_title()
-                ];
-            }
-        }
-        
-        // Get B2B extension data
-        $extension = $extensions[$zone_id] ?? [];
-        
-        $zones[$zone_id] = [
-            'name' => $wc_zone_data['zone_name'],
-            'regions' => $regions,
-            'active' => 1, // WC zones are always active if they exist
-            'priority' => $wc_zone_data['zone_order'],
-            'methods' => [
-                'flat_rate' => $flat_rate_data,
-                'free_shipping' => $free_ship_data
-            ],
-            'group_permissions' => $extension['group_permissions'] ?? []
-        ];
-    }
-    
-    return $zones;
-}
-
 // Add B2B shipping methods to WooCommerce checkout
 add_filter('woocommerce_package_rates', function($rates, $package) {
     if(!is_user_logged_in()) {
@@ -208,8 +126,8 @@ add_filter('woocommerce_package_rates', function($rates, $package) {
     $customer = WC()->customer;
     $country = $customer->get_shipping_country();
     
-    // Get all shipping zones from WooCommerce
-    $zones = b2b_get_all_shipping_zones();
+    // Get all shipping zones
+    $zones = get_option('b2b_shipping_zones', []);
     
     // Find matching zones for customer's country
     $matched_zones = [];
@@ -3256,7 +3174,7 @@ add_action('template_redirect', function () {
 });
   
 /* =====================================================
-   11. PAGE: CUSTOMERS (B2BKING FIXED + FILTERS)
+   11. PAGE: CUSTOMERS (B2BKING FIXED)
 ===================================================== */
 add_action('template_redirect', function () {
     $page = get_query_var('b2b_adm_page');
@@ -3270,10 +3188,6 @@ add_action('template_redirect', function () {
         $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
         $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
         
-        // Get filter parameters
-        $filter_group = isset($_GET['filter_group']) ? sanitize_text_field($_GET['filter_group']) : '';
-        $filter_role = isset($_GET['filter_role']) ? sanitize_text_field($_GET['filter_role']) : '';
-        
         $args = [
             'role__in' => ['customer', 'subscriber', 'sales_agent'], 
             'number'   => $per_page,
@@ -3283,41 +3197,10 @@ add_action('template_redirect', function () {
             'order'    => 'DESC'
         ];
         
-        // Add meta query for filters
-        $meta_query = [];
-        if($filter_group) {
-            $meta_query[] = [
-                'key' => 'b2b_group_slug',
-                'value' => $filter_group,
-                'compare' => '='
-            ];
-        }
-        if($filter_role) {
-            $meta_query[] = [
-                'key' => 'b2b_role',
-                'value' => $filter_role,
-                'compare' => '='
-            ];
-        }
-        if(!empty($meta_query)) {
-            $args['meta_query'] = $meta_query;
-            if(count($meta_query) > 1) {
-                $args['meta_query']['relation'] = 'AND';
-            }
-        }
-        
         $user_query = new WP_User_Query($args);
         $users = $user_query->get_results();
         $total_users = $user_query->get_total();
         $total_pages = ceil($total_users / $per_page);
-        
-        // Get all groups and roles for filter dropdowns
-        $all_groups = b2b_get_groups();
-        $all_roles = get_option('b2b_roles', [
-            ['slug' => 'customer', 'name' => 'Customer'],
-            ['slug' => 'wholesaler', 'name' => 'Wholesaler'],
-            ['slug' => 'retailer', 'name' => 'Retailer']
-        ]);
 
         b2b_adm_header('Customer Management');
         ?>
@@ -3326,7 +3209,7 @@ add_action('template_redirect', function () {
         <div class="card">
             <!-- Toolbar -->
             <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;align-items:center">
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <div style="display:flex;gap:10px;align-items:center;">
                     <div class="col-toggler">
                         <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
                         <div id="cColDrop" class="col-dropdown">
@@ -3341,49 +3224,21 @@ add_action('template_redirect', function () {
                     </div>
                     
                     <!-- Per Page Selector -->
-                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_group ? '&filter_group='.urlencode($filter_group) : '' ?><?= $filter_role ? '&filter_role='.urlencode($filter_role) : '' ?>'" style="margin:0;max-width:120px;">
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
                         <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
                         <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
                         <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
                         <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
                     </select>
-                    
-                    <!-- B2B Group Filter -->
-                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?filter_group='+this.value+'<?= $per_page != 20 ? '&per_page='.$per_page : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_role ? '&filter_role='.urlencode($filter_role) : '' ?>'" style="margin:0;max-width:150px;">
-                        <option value="">All Groups</option>
-                        <?php foreach($all_groups as $slug => $group): ?>
-                            <option value="<?= esc_attr($slug) ?>" <?= selected($filter_group, $slug) ?>><?= esc_html($group['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    
-                    <!-- B2B Role Filter -->
-                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?filter_role='+this.value+'<?= $per_page != 20 ? '&per_page='.$per_page : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_group ? '&filter_group='.urlencode($filter_group) : '' ?>'" style="margin:0;max-width:150px;">
-                        <option value="">All Roles</option>
-                        <?php foreach($all_roles as $role): ?>
-                            <option value="<?= esc_attr($role['slug']) ?>" <?= selected($filter_role, $role['slug']) ?>><?= esc_html($role['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    
-                    <?php if($filter_group || $filter_role): ?>
-                        <a href="<?= home_url('/b2b-panel/customers') ?>?<?= $per_page != 20 ? 'per_page='.$per_page : '' ?><?= $s ? ($per_page != 20 ? '&' : '').'s='.urlencode($s) : '' ?>" style="padding:10px;color:#ef4444;text-decoration:none;white-space:nowrap;"><i class="fa-solid fa-times"></i> Clear Filters</a>
-                    <?php endif; ?>
                 </div>
 
                 <div style="flex:1;display:flex;justify-content:flex-end;gap:10px">
-                    <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">
-                        <?php if($filter_group || $filter_role): ?>
-                            Filtered: <strong><?= $total_users ?></strong>
-                        <?php else: ?>
-                            Total: <strong><?= $total_users ?></strong>
-                        <?php endif; ?>
-                    </span>
+                    <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">Total: <strong><?= $total_users ?></strong></span>
                     <form style="display:flex;gap:5px">
                         <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
-                        <?php if($filter_group): ?><input type="hidden" name="filter_group" value="<?= esc_attr($filter_group) ?>"><?php endif; ?>
-                        <?php if($filter_role): ?><input type="hidden" name="filter_role" value="<?= esc_attr($filter_role) ?>"><?php endif; ?>
                         <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search customers..." style="margin:0;max-width:250px">
                         <button>Search</button>
-                        <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>?<?= $per_page != 20 ? 'per_page='.$per_page : '' ?><?= $filter_group ? ($per_page != 20 ? '&' : '').'filter_group='.urlencode($filter_group) : '' ?><?= $filter_role ? ($per_page != 20 || $filter_group ? '&' : '').'filter_role='.urlencode($filter_role) : '' ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
+                        <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
                     </form>
                 </div>
             </div>
@@ -3419,26 +3274,9 @@ add_action('template_redirect', function () {
                         }
                     }
                     // -------------------
-                    
-                    // Get B2B role
-                    $b2b_role_slug = get_user_meta($u->ID, 'b2b_role', true);
-                    $b2b_role_name = '-';
-                    if($b2b_role_slug) {
-                        $b2b_roles = get_option('b2b_roles', [
-                            ['slug' => 'customer', 'name' => 'Customer'],
-                            ['slug' => 'wholesaler', 'name' => 'Wholesaler'],
-                            ['slug' => 'retailer', 'name' => 'Retailer']
-                        ]);
-                        foreach($b2b_roles as $role) {
-                            if($role['slug'] == $b2b_role_slug) {
-                                $b2b_role_name = $role['name'];
-                                break;
-                            }
-                        }
-                    }
 
-                    $role_bg = $b2b_role_slug ? '#dbeafe' : '#f3f4f6';
-                    $role_col = $b2b_role_slug ? '#1e40af' : '#6b7280';
+                    $role_bg = in_array('sales_agent', $u->roles) ? '#dbeafe' : '#f3f4f6';
+                    $role_col = in_array('sales_agent', $u->roles) ? '#1e40af' : '#374151';
                 ?>
                 <tr>
                     <td data-col="0">#<?= $u->ID ?></td>
@@ -3471,7 +3309,7 @@ add_action('template_redirect', function () {
                     </td>
                     <td data-col="5">
                         <span style="background:<?= $role_bg ?>;color:<?= $role_col ?>;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase">
-                            <?= esc_html($b2b_role_name) ?>
+                            <?= !empty($u->roles) ? $u->roles[0] : 'Guest' ?>
                         </span>
                     </td>
                     <td data-col="6" style="text-align:right">
@@ -3493,8 +3331,6 @@ add_action('template_redirect', function () {
                         $page_params = [];
                         if($s) $page_params[] = 's=' . urlencode($s);
                         if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
-                        if($filter_group) $page_params[] = 'filter_group=' . urlencode($filter_group);
-                        if($filter_role) $page_params[] = 'filter_role=' . urlencode($filter_role);
                         if($i > 1) $page_params[] = 'paged=' . $i;
                         $page_url = home_url('/b2b-panel/customers') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
                         $selected = ($i == $paged) ? 'selected' : '';
@@ -3805,7 +3641,7 @@ add_action('template_redirect', function () {
             
             <!-- Shipping Overrides Section -->
             <?php 
-            $shipping_zones = b2b_get_all_shipping_zones();
+            $shipping_zones = get_option('b2b_shipping_zones', []);
             $shipping_overrides = get_user_meta($id, 'b2b_shipping_overrides', true) ?: [];
             ?>
             <?php if(!empty($shipping_zones)): ?>
@@ -5582,31 +5418,21 @@ add_action('template_redirect', function () {
 });
 
 /* =====================================================
-   SHIPPING MODULE - PHASE 1 (WooCommerce Integration)
+   SHIPPING MODULE - PHASE 1
 ===================================================== */
 // Shipping Page
 add_action('template_redirect', function () {
     if (get_query_var('b2b_adm_page') !== 'settings_shipping') return;
     b2b_adm_guard();
     
-    // Check if WooCommerce is available
-    if(!class_exists('WC_Shipping_Zones')) {
-        b2b_adm_header('Shipping Settings');
-        ?>
-        <div class="page-header"><h1 class="page-title">Shipping Zones</h1></div>
-        <div class="card">
-            <p style="color:#dc2626;"><i class="fa-solid fa-exclamation-triangle"></i> WooCommerce is not active. Shipping zones are managed through WooCommerce.</p>
-            <p>Please activate WooCommerce to manage shipping zones.</p>
-        </div>
-        <?php
-        b2b_adm_footer();
-        exit;
-    }
-    
-    // Handle B2B extension save (group permissions only)
+    // Handle zone save/delete
     $message = '';
-    if(isset($_POST['save_b2b_settings'])) {
-        $zone_id = intval($_POST['zone_id']);
+    if(isset($_POST['save_zone'])) {
+        $zones = get_option('b2b_shipping_zones', []);
+        $zone_id = isset($_POST['zone_id']) && !empty($_POST['zone_id']) && $_POST['zone_id'] != 'new' ? sanitize_text_field($_POST['zone_id']) : uniqid('zone_');
+        
+        $regions_input = isset($_POST['zone_regions'][0]) ? $_POST['zone_regions'][0] : '';
+        $regions = array_map('trim', explode(',', $regions_input));
         
         // Process group permissions
         $group_permissions = [];
@@ -5615,92 +5441,232 @@ add_action('template_redirect', function () {
                 if(isset($group_data['allowed'])) {
                     $group_permissions[$group_id] = [
                         'allowed' => 1,
-                        'flat_rate_cost' => isset($group_data['flat_rate_cost']) && $group_data['flat_rate_cost'] !== '' ? floatval($group_data['flat_rate_cost']) : null,
-                        'free_shipping_min' => isset($group_data['free_shipping_min']) && $group_data['free_shipping_min'] !== '' ? floatval($group_data['free_shipping_min']) : null,
+                        'flat_rate_cost' => isset($group_data['flat_rate_cost']) ? floatval($group_data['flat_rate_cost']) : null,
+                        'free_shipping_min' => isset($group_data['free_shipping_min']) ? floatval($group_data['free_shipping_min']) : null,
                         'hidden_methods' => $group_data['hidden_methods'] ?? []
                     ];
                 }
             }
         }
         
-        // Save B2B extension
-        b2b_update_zone_extension($zone_id, [
+        $zones[$zone_id] = [
+            'name' => sanitize_text_field($_POST['zone_name']),
+            'description' => sanitize_textarea_field($_POST['zone_description']),
+            'regions' => array_filter($regions),
+            'active' => isset($_POST['zone_active']) ? 1 : 0,
+            'priority' => intval($_POST['zone_priority'] ?? 1),
+            'methods' => [
+                'flat_rate' => [
+                    'enabled' => isset($_POST['flat_rate_enabled']) ? 1 : 0,
+                    'cost' => floatval($_POST['flat_rate_cost'] ?? 0),
+                    'title' => sanitize_text_field($_POST['flat_rate_title'] ?? 'Flat Rate')
+                ],
+                'free_shipping' => [
+                    'enabled' => isset($_POST['free_shipping_enabled']) ? 1 : 0,
+                    'min_amount' => floatval($_POST['free_shipping_min'] ?? 0),
+                    'title' => sanitize_text_field($_POST['free_shipping_title'] ?? 'Free Shipping')
+                ]
+            ],
             'group_permissions' => $group_permissions
-        ]);
+        ];
         
-        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> B2B settings saved for this zone.</div>';
+        update_option('b2b_shipping_zones', $zones);
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Shipping zone saved.</div>';
+        
+        // Redirect to list after save
+        if($_GET['edit'] ?? '' === 'new') {
+            wp_redirect(home_url('/b2b-panel/settings/shipping'));
+            exit;
+        }
     }
     
-    // Get all zones from WooCommerce
-    $zones = b2b_get_all_shipping_zones();
+    if(isset($_GET['delete'])) {
+        $zones = get_option('b2b_shipping_zones', []);
+        unset($zones[sanitize_text_field($_GET['delete'])]);
+        update_option('b2b_shipping_zones', $zones);
+        wp_redirect(home_url('/b2b-panel/settings/shipping'));
+        exit;
+    }
+    
+    $zones = get_option('b2b_shipping_zones', []);
     $edit_zone = null;
     $edit_id = '';
     if(isset($_GET['edit'])) {
-        $edit_id = intval($_GET['edit']);
-        $edit_zone = $zones[$edit_id] ?? null;
+        $edit_id = sanitize_text_field($_GET['edit']);
+        if($edit_id == 'new') {
+            $edit_zone = [
+                'name' => '', 
+                'description' => '', 
+                'regions' => [], 
+                'active' => 1, 
+                'priority' => 1, 
+                'methods' => [
+                    'flat_rate' => ['enabled' => 1, 'cost' => 0, 'title' => 'Flat Rate'], 
+                    'free_shipping' => ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping']
+                ],
+                'group_permissions' => []
+            ];
+        } else {
+            $edit_zone = $zones[$edit_id] ?? null;
+        }
     }
     
     b2b_adm_header('Shipping Settings');
     
     echo $message;
     ?>
-    <div class="page-header">
-        <h1 class="page-title">Shipping Zones</h1>
-    </div>
+    <div class="page-header"><h1 class="page-title">Shipping Zones</h1></div>
     
-    <div style="background:#eff6ff;border:1px solid#bfdbfe;border-radius:8px;padding:15px;margin-bottom:20px;">
-        <p style="margin:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> <strong>Note:</strong> Shipping zones are managed through WooCommerce. Here you can configure B2B-specific settings like group permissions and custom rates.</p>
-        <p style="margin:5px 0 0 0;color:#1e40af;"><a href="<?= admin_url('admin.php?page=wc-settings&tab=shipping') ?>" target="_blank" style="color:#3b82f6;font-weight:600;">Manage WooCommerce Shipping Zones →</a></p>
-    </div>
+    <?php 
+    // Handle WooCommerce Import
+    if(isset($_GET['wc_import']) && $_GET['wc_import'] == '1') {
+        if(class_exists('WC_Shipping_Zones')) {
+            $wc_zones = WC_Shipping_Zones::get_zones();
+            $b2b_zones = get_option('b2b_shipping_zones', []);
+            $imported_count = 0;
+            
+            foreach($wc_zones as $wc_zone_data) {
+                $zone_id = 'wc_' . $wc_zone_data['id'];
+                
+                // Get zone object for methods
+                $wc_zone = new WC_Shipping_Zone($wc_zone_data['id']);
+                $shipping_methods = $wc_zone->get_shipping_methods();
+                
+                $flat_rate_data = ['enabled' => 0, 'cost' => 0, 'title' => 'Flat Rate'];
+                $free_ship_data = ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping'];
+                
+                foreach($shipping_methods as $method) {
+                    if($method->id == 'flat_rate' && $method->enabled == 'yes') {
+                        $flat_rate_data = [
+                            'enabled' => 1,
+                            'cost' => floatval($method->get_option('cost', 0)),
+                            'title' => $method->get_title()
+                        ];
+                    }
+                    if($method->id == 'free_shipping' && $method->enabled == 'yes') {
+                        $free_ship_data = [
+                            'enabled' => 1,
+                            'min_amount' => floatval($method->get_option('min_amount', 0)),
+                            'title' => $method->get_title()
+                        ];
+                    }
+                }
+                
+                // Get regions
+                $regions = [];
+                foreach($wc_zone_data['zone_locations'] as $location) {
+                    if($location->type == 'country') {
+                        $regions[] = $location->code;
+                    }
+                }
+                
+                $b2b_zones[$zone_id] = [
+                    'name' => $wc_zone_data['zone_name'],
+                    'description' => 'Imported from WooCommerce',
+                    'regions' => $regions,
+                    'active' => 1,
+                    'priority' => $wc_zone_data['zone_order'],
+                    'methods' => [
+                        'flat_rate' => $flat_rate_data,
+                        'free_shipping' => $free_ship_data
+                    ],
+                    'group_permissions' => []
+                ];
+                $imported_count++;
+            }
+            
+            update_option('b2b_shipping_zones', $b2b_zones);
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Imported ' . $imported_count . ' shipping zone(s) from WooCommerce.</div>';
+            echo $message;
+            wp_redirect(home_url('/b2b-panel/settings/shipping'));
+            exit;
+        } else {
+            $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;"><strong>Error!</strong> WooCommerce is not active or shipping zones are not available.</div>';
+            echo $message;
+        }
+    }
     
-    <?php if($edit_zone): ?>
-    <!-- Edit Zone B2B Settings -->
+    if($edit_zone): ?>
+    <!-- Edit Zone Form -->
     <div class="card" style="margin-bottom:20px;">
-        <h3 style="margin-top:0;">B2B Settings for: <?= esc_html($edit_zone['name']) ?></h3>
-        
-        <div style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:15px;margin-bottom:20px;">
-            <h4 style="margin:0 0 10px 0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> Zone Information (From WooCommerce)</h4>
-            <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:15px;color:#1e40af;">
-                <div>
-                    <strong>Regions:</strong> <?= esc_html(implode(', ', $edit_zone['regions'] ?? [])) ?: 'All regions' ?>
-                </div>
-                <div>
-                    <strong>Priority:</strong> <?= esc_html($edit_zone['priority'] ?? 1) ?>
-                </div>
-                <div>
-                    <strong>Flat Rate:</strong> 
-                    <?php if($edit_zone['methods']['flat_rate']['enabled'] ?? 0): ?>
-                        <?= esc_html($edit_zone['methods']['flat_rate']['title']) ?> - $<?= number_format($edit_zone['methods']['flat_rate']['cost'], 2) ?>
-                    <?php else: ?>
-                        <span style="color:#6b7280;">Not enabled</span>
-                    <?php endif; ?>
-                </div>
-                <div>
-                    <strong>Free Shipping:</strong>
-                    <?php if($edit_zone['methods']['free_shipping']['enabled'] ?? 0): ?>
-                        <?= esc_html($edit_zone['methods']['free_shipping']['title']) ?> 
-                        <?php 
-                        $min = $edit_zone['methods']['free_shipping']['min_amount'] ?? 0;
-                        echo $min > 0 ? '(min $'.number_format($min, 2).')' : '(Always free)';
-                        ?>
-                    <?php else: ?>
-                        <span style="color:#6b7280;">Not enabled</span>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <p style="margin:10px 0 0 0;color:#1e40af;"><a href="<?= admin_url('admin.php?page=wc-settings&tab=shipping&zone_id='.$edit_id) ?>" target="_blank" style="color:#3b82f6;font-weight:600;">Edit in WooCommerce →</a></p>
-        </div>
-        
+        <h3 style="margin-top:0;"><?= $edit_id == 'new' ? 'Add New Shipping Zone' : 'Edit Shipping Zone' ?></h3>
         <form method="POST">
             <input type="hidden" name="zone_id" value="<?= esc_attr($edit_id) ?>">
             
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Zone Name *</label>
+                <input type="text" name="zone_name" value="<?= esc_attr($edit_zone['name']) ?>" required style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Description</label>
+                <textarea name="zone_description" rows="3" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($edit_zone['description']) ?></textarea>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Regions (Countries)</label>
+                <input type="text" name="zone_regions[]" value="<?= esc_attr(implode(', ', $edit_zone['regions'] ?? [])) ?>" placeholder="TR, US, GB" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small>Comma-separated country codes</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;">
+                    <input type="checkbox" name="zone_active" value="1" <?= checked($edit_zone['active'] ?? 0, 1) ?>>
+                    <span>Active</span>
+                </label>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Priority</label>
+                <input type="number" name="zone_priority" value="<?= esc_attr($edit_zone['priority'] ?? 1) ?>" min="1" style="width:100px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+            </div>
+            
+            <h4>Shipping Methods</h4>
+            
+            <!-- Flat Rate -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <input type="checkbox" name="flat_rate_enabled" value="1" <?= checked($edit_zone['methods']['flat_rate']['enabled'] ?? 0, 1) ?>>
+                    <span style="font-weight:600;">Flat Rate Shipping</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <div style="margin-bottom:10px;">
+                        <label>Title</label>
+                        <input type="text" name="flat_rate_title" value="<?= esc_attr($edit_zone['methods']['flat_rate']['title'] ?? 'Flat Rate') ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                    <div>
+                        <label>Cost ($)</label>
+                        <input type="number" name="flat_rate_cost" value="<?= esc_attr($edit_zone['methods']['flat_rate']['cost'] ?? 0) ?>" step="0.01" min="0" style="width:150px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Free Shipping -->
+            <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;">
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <input type="checkbox" name="free_shipping_enabled" value="1" <?= checked($edit_zone['methods']['free_shipping']['enabled'] ?? 0, 1) ?>>
+                    <span style="font-weight:600;">Free Shipping</span>
+                </label>
+                <div style="margin-left:30px;">
+                    <div style="margin-bottom:10px;">
+                        <label>Title</label>
+                        <input type="text" name="free_shipping_title" value="<?= esc_attr($edit_zone['methods']['free_shipping']['title'] ?? 'Free Shipping') ?>" style="width:100%;max-width:300px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                    </div>
+                    <div>
+                        <label>Minimum Order Amount ($)</label>
+                        <input type="number" name="free_shipping_min" value="<?= esc_attr($edit_zone['methods']['free_shipping']['min_amount'] ?? 0) ?>" step="0.01" min="0" style="width:150px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
+                        <small>Set to 0 for always free</small>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Group Permissions -->
-            <h4 style="margin-top:0;">Group-Based Permissions</h4>
-            <p style="color:#6b7280;margin-bottom:20px;">Configure special rates for specific B2B groups. Leave unchecked to use WooCommerce default rates.</p>
+            <h4 style="margin-top:30px;">Group-Based Permissions (Optional)</h4>
+            <p style="color:#6b7280;margin-bottom:20px;">Configure special rates for specific B2B groups. Leave unchecked to use default rates.</p>
             
             <?php
             // Get all B2B groups
-            $b2b_groups = b2b_get_groups();
+            $b2b_groups = get_option('b2b_groups', []);
             if(!empty($b2b_groups)):
                 foreach($b2b_groups as $group_id => $group_data):
                     $group_perms = $edit_zone['group_permissions'][$group_id] ?? [];
@@ -5713,37 +5679,29 @@ add_action('template_redirect', function () {
                 </label>
                 
                 <div style="margin-left:30px;display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-                    <?php if($edit_zone['methods']['flat_rate']['enabled'] ?? 0): ?>
                     <div>
                         <label style="display:block;margin-bottom:5px;font-size:13px;">Flat Rate Cost ($)</label>
                         <input type="number" name="group_permissions[<?= esc_attr($group_id) ?>][flat_rate_cost]" value="<?= esc_attr($group_perms['flat_rate_cost'] ?? '') ?>" step="0.01" min="0" placeholder="Default: <?= esc_attr($edit_zone['methods']['flat_rate']['cost'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
-                        <small style="color:#6b7280;">Leave empty to use default ($<?= number_format($edit_zone['methods']['flat_rate']['cost'], 2) ?>)</small>
+                        <small style="color:#6b7280;">Leave empty to use default</small>
                     </div>
-                    <?php endif; ?>
                     
-                    <?php if($edit_zone['methods']['free_shipping']['enabled'] ?? 0): ?>
                     <div>
                         <label style="display:block;margin-bottom:5px;font-size:13px;">Free Shipping Min ($)</label>
                         <input type="number" name="group_permissions[<?= esc_attr($group_id) ?>][free_shipping_min]" value="<?= esc_attr($group_perms['free_shipping_min'] ?? '') ?>" step="0.01" min="0" placeholder="Default: <?= esc_attr($edit_zone['methods']['free_shipping']['min_amount'] ?? 0) ?>" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
-                        <small style="color:#6b7280;">Leave empty to use default ($<?= number_format($edit_zone['methods']['free_shipping']['min_amount'], 2) ?>)</small>
+                        <small style="color:#6b7280;">Set 0 for always free</small>
                     </div>
-                    <?php endif; ?>
                 </div>
                 
                 <div style="margin-left:30px;margin-top:10px;">
                     <label style="display:block;margin-bottom:5px;font-size:13px;">Hide Methods (Optional)</label>
-                    <?php if($edit_zone['methods']['flat_rate']['enabled'] ?? 0): ?>
                     <label style="display:inline-flex;align-items:center;gap:5px;margin-right:15px;">
                         <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][hidden_methods][]" value="flat_rate" <?= checked(in_array('flat_rate', $group_perms['hidden_methods'] ?? []), true) ?>>
                         <span style="font-size:13px;">Hide Flat Rate</span>
                     </label>
-                    <?php endif; ?>
-                    <?php if($edit_zone['methods']['free_shipping']['enabled'] ?? 0): ?>
                     <label style="display:inline-flex;align-items:center;gap:5px;">
                         <input type="checkbox" name="group_permissions[<?= esc_attr($group_id) ?>][hidden_methods][]" value="free_shipping" <?= checked(in_array('free_shipping', $group_perms['hidden_methods'] ?? []), true) ?>>
                         <span style="font-size:13px;">Hide Free Shipping</span>
                     </label>
-                    <?php endif; ?>
                 </div>
             </div>
             <?php 
@@ -5753,17 +5711,26 @@ add_action('template_redirect', function () {
             <p style="color:#6b7280;font-style:italic;">No B2B groups configured. Create groups in B2B Module → Groups.</p>
             <?php endif; ?>
             
-            <button type="submit" name="save_b2b_settings" class="primary">Save B2B Settings</button>
-            <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" style="margin-left:10px;"><button type="button" class="secondary">Back to List</button></a>
+            <button type="submit" name="save_zone" class="primary">Save Zone</button>
+            <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" style="margin-left:10px;"><button type="button" class="secondary">Cancel</button></a>
         </form>
     </div>
     <?php else: ?>
+    <!-- Add New Zone Button -->
+    <div style="margin-bottom:20px;display:flex;gap:10px;">
+        <a href="<?= home_url('/b2b-panel/settings/shipping?edit=new') ?>"><button class="primary"><i class="fa-solid fa-plus"></i> Add Shipping Zone</button></a>
+        <?php if(class_exists('WC_Shipping_Zones')): ?>
+        <a href="<?= home_url('/b2b-panel/settings/shipping?wc_import=1') ?>"><button class="secondary" style="background:#3b82f6;color:white;border:none;"><i class="fa-solid fa-download"></i> Import from WooCommerce</button></a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    
+    <?php if(!$edit_zone): ?>
     <!-- Zones List -->
     <div class="card">
-        <h3 style="margin-top:0;">Shipping Zones</h3>
+        <h3 style="margin-top:0;">Configured Zones</h3>
         <?php if(empty($zones)): ?>
-            <p style="color:#6b7280;">No shipping zones configured yet.</p>
-            <p><a href="<?= admin_url('admin.php?page=wc-settings&tab=shipping') ?>" target="_blank" style="color:#3b82f6;font-weight:600;">Create shipping zones in WooCommerce →</a></p>
+            <p style="color:#6b7280;">No shipping zones configured yet. Click "Add Shipping Zone" to create one.</p>
         <?php else: ?>
             <table class="wp-list-table widefat fixed striped" style="width:100%;">
                 <thead>
@@ -5771,17 +5738,15 @@ add_action('template_redirect', function () {
                         <th>Name</th>
                         <th>Regions</th>
                         <th>Methods</th>
-                        <th>B2B Groups</th>
+                        <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach($zones as $zone_id => $zone): 
-                        $b2b_groups_count = count($zone['group_permissions'] ?? []);
-                    ?>
+                    <?php foreach($zones as $zone_id => $zone): ?>
                     <tr>
-                        <td><strong><?= esc_html($zone['name']) ?></strong></td>
-                        <td><?= esc_html(implode(', ', $zone['regions'] ?? [])) ?: 'All regions' ?></td>
+                        <td><strong><?= esc_html($zone['name']) ?></strong><br><small><?= esc_html($zone['description']) ?></small></td>
+                        <td><?= esc_html(implode(', ', $zone['regions'] ?? [])) ?></td>
                         <td>
                             <?php 
                             $methods = [];
@@ -5790,21 +5755,17 @@ add_action('template_redirect', function () {
                                 $min = $zone['methods']['free_shipping']['min_amount'] ?? 0;
                                 $methods[] = 'Free Shipping' . ($min > 0 ? ' (min $'.number_format($min, 2).')' : '');
                             }
-                            echo $methods ? implode('<br>', $methods) : '<span style="color:#6b7280;">No methods</span>';
+                            echo $methods ? implode('<br>', $methods) : 'No methods';
                             ?>
                         </td>
                         <td>
-                            <?php if($b2b_groups_count > 0): ?>
-                                <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:#dbeafe;color:#1e40af;">
-                                    <?= $b2b_groups_count ?> group<?= $b2b_groups_count > 1 ? 's' : '' ?>
-                                </span>
-                            <?php else: ?>
-                                <span style="color:#6b7280;">-</span>
-                            <?php endif; ?>
+                            <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:<?= ($zone['active'] ?? 0) ? '#d1fae5' : '#fee2e2' ?>;color:<?= ($zone['active'] ?? 0) ? '#065f46' : '#991b1b' ?>">
+                                <?= ($zone['active'] ?? 0) ? 'ACTIVE' : 'INACTIVE' ?>
+                            </span>
                         </td>
                         <td>
-                            <a href="<?= home_url('/b2b-panel/settings/shipping?edit='.urlencode($zone_id)) ?>"><button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-cog"></i> B2B Settings</button></a>
-                            <a href="<?= admin_url('admin.php?page=wc-settings&tab=shipping&zone_id='.$zone_id) ?>" target="_blank"><button class="secondary" style="padding:6px 12px;font-size:12px;margin-left:5px;"><i class="fa-solid fa-external-link"></i> WC</button></a>
+                            <a href="<?= home_url('/b2b-panel/settings/shipping?edit='.urlencode($zone_id)) ?>"><button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button></a>
+                            <a href="<?= home_url('/b2b-panel/settings/shipping?delete='.urlencode($zone_id)) ?>" onclick="return confirm('Are you sure you want to delete this zone?')"><button class="secondary" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;margin-left:5px;"><i class="fa-solid fa-trash"></i></button></a>
                         </td>
                     </tr>
                     <?php endforeach; ?>

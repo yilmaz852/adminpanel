@@ -7735,6 +7735,9 @@ add_action('wp_footer', function() {
                 additionalParams.stock_qty = stockQty;
             }
             
+            // Reset bulk results accumulator for new operation
+            window.bulkResults = {success: [], errors: []};
+            
             // Start bulk action
             processBulkAction(action, productIds, 0, additionalParams);
         }; // End of applyBulkAction function
@@ -7758,7 +7761,16 @@ add_action('wp_footer', function() {
                     if(response.success) {
                         const progress = response.data.progress;
                         $('#bulkProgressBar').css('width', progress + '%').text(progress + '%');
-                        $('#bulkStatus').html(`<strong>${response.data.results.success.length}</strong> succeeded, <strong>${response.data.results.errors.length}</strong> errors`);
+                        
+                        // Accumulate results across chunks
+                        if(!window.bulkResults) {
+                            window.bulkResults = {success: [], errors: []};
+                        }
+                        window.bulkResults.success = window.bulkResults.success.concat(response.data.results.success);
+                        window.bulkResults.errors = window.bulkResults.errors.concat(response.data.results.errors);
+                        
+                        const totalProcessed = window.bulkResults.success.length + window.bulkResults.errors.length;
+                        $('#bulkStatus').html(`<strong>${totalProcessed}</strong> of <strong>${productIds.length}</strong> processed | <strong>${window.bulkResults.success.length}</strong> succeeded, <strong>${window.bulkResults.errors.length}</strong> errors`);
                         
                         if(response.data.has_more) {
                             // Process next chunk
@@ -7766,6 +7778,7 @@ add_action('wp_footer', function() {
                         } else {
                             // Completed
                             $('#bulkProgressBar').css('background', '#10b981').text('Complete!');
+                            delete window.bulkResults; // Clear for next operation
                             setTimeout(() => {
                                 window.location.reload();
                             }, 2000);

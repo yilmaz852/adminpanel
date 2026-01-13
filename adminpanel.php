@@ -1318,8 +1318,6 @@ function b2b_adm_header($title) {
             <!-- Support Tickets Module -->
             <?php if(current_user_can('manage_woocommerce')): ?>
             <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
-            <?php else: ?>
-            <a href="<?= home_url('/b2b-panel/my-support') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['my-support','create-support-ticket','view-support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
             <?php endif; ?>
         </div>
         <div style="margin-top:auto;padding:20px">
@@ -8007,6 +8005,294 @@ function b2b_create_support_tables() {
     dbDelta($sql_attachments);
 }
 add_action('init', 'b2b_create_support_tables');
+
+// ========================================
+// WooCommerce My Account Integration
+// ========================================
+
+// Register WooCommerce My Account endpoints for support
+function b2b_register_support_endpoints() {
+    add_rewrite_endpoint('support-tickets', EP_ROOT | EP_PAGES);
+    add_rewrite_endpoint('create-support-ticket', EP_ROOT | EP_PAGES);
+    add_rewrite_endpoint('view-support-ticket', EP_ROOT | EP_PAGES);
+}
+add_action('init', 'b2b_register_support_endpoints');
+
+// Add Support Tickets to WooCommerce My Account menu
+function b2b_add_support_to_my_account_menu($items) {
+    // Insert Support Tickets after Orders
+    $new_items = [];
+    foreach($items as $key => $label) {
+        $new_items[$key] = $label;
+        if($key === 'orders') {
+            $new_items['support-tickets'] = __('Support Tickets', 'woocommerce');
+        }
+    }
+    return $new_items;
+}
+add_filter('woocommerce_account_menu_items', 'b2b_add_support_to_my_account_menu');
+
+// Support Tickets List Page (My Account)
+function b2b_my_account_support_tickets_content() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    $customer_id = get_current_user_id();
+    
+    $tickets = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table WHERE customer_id = %d ORDER BY created_at DESC",
+        $customer_id
+    ));
+    
+    echo '<h2>Support Tickets</h2>';
+    echo '<p><a href="' . wc_get_endpoint_url('create-support-ticket', '', wc_get_page_permalink('myaccount')) . '" class="button">Create New Ticket</a></p>';
+    
+    if(empty($tickets)) {
+        echo '<p>You have no support tickets yet.</p>';
+    } else {
+        echo '<table class="shop_table shop_table_responsive my_account_orders">';
+        echo '<thead><tr><th>Ticket #</th><th>Subject</th><th>Status</th><th>Priority</th><th>Created</th><th>Actions</th></tr></thead>';
+        echo '<tbody>';
+        foreach($tickets as $ticket) {
+            $status_colors = [
+                'new' => '#3b82f6',
+                'open' => '#10b981',
+                'pending' => '#f59e0b',
+                'resolved' => '#6366f1',
+                'closed' => '#6b7280'
+            ];
+            $color = $status_colors[$ticket->status] ?? '#6b7280';
+            
+            echo '<tr>';
+            echo '<td data-title="Ticket #">' . esc_html($ticket->ticket_number) . '</td>';
+            echo '<td data-title="Subject">' . esc_html($ticket->subject) . '</td>';
+            echo '<td data-title="Status"><span style="background:' . $color . ';color:white;padding:4px 8px;border-radius:4px;font-size:12px">' . esc_html(ucfirst($ticket->status)) . '</span></td>';
+            echo '<td data-title="Priority">' . esc_html(ucfirst($ticket->priority)) . '</td>';
+            echo '<td data-title="Created">' . esc_html(date('M j, Y', strtotime($ticket->created_at))) . '</td>';
+            echo '<td data-title="Actions"><a href="' . wc_get_endpoint_url('view-support-ticket', $ticket->ticket_id, wc_get_page_permalink('myaccount')) . '" class="button view">View</a></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+    }
+}
+add_action('woocommerce_account_support-tickets_endpoint', 'b2b_my_account_support_tickets_content');
+
+// Create Support Ticket Page (My Account)
+function b2b_my_account_create_ticket_content() {
+    global $wpdb;
+    $customer_id = get_current_user_id();
+    
+    // Get customer's recent orders
+    $orders = wc_get_orders([
+        'customer_id' => $customer_id,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    echo '<h2>Create Support Ticket</h2>';
+    echo '<form method="post" id="createTicketForm" style="max-width:600px">';
+    echo wp_nonce_field('b2b_create_ticket_wc', 'ticket_nonce', true, false);
+    
+    echo '<p><label>Subject *</label><input type="text" name="subject" required class="input-text" style="width:100%"></p>';
+    
+    echo '<p><label>Category *</label><select name="category" required class="input-text" style="width:100%">';
+    echo '<option value="general">General</option>';
+    echo '<option value="order">Order Issue</option>';
+    echo '<option value="product">Product Question</option>';
+    echo '<option value="delivery">Delivery</option>';
+    echo '<option value="billing">Billing</option>';
+    echo '</select></p>';
+    
+    echo '<p><label>Priority</label><select name="priority" class="input-text" style="width:100%">';
+    echo '<option value="normal">Normal</option>';
+    echo '<option value="low">Low</option>';
+    echo '<option value="high">High</option>';
+    echo '<option value="urgent">Urgent</option>';
+    echo '</select></p>';
+    
+    if(!empty($orders)) {
+        echo '<p><label>Related Order (Optional)</label><select name="order_id" class="input-text" style="width:100%">';
+        echo '<option value="">No specific order</option>';
+        foreach($orders as $order) {
+            echo '<option value="' . $order->get_id() . '">Order #' . $order->get_order_number() . ' - ' . $order->get_date_created()->format('M j, Y') . '</option>';
+        }
+        echo '</select></p>';
+    }
+    
+    echo '<p><label>Message *</label><textarea name="message" required rows="6" class="input-text" style="width:100%"></textarea></p>';
+    
+    echo '<p><button type="submit" class="button">Submit Ticket</button></p>';
+    echo '</form>';
+    
+    // Handle form submission
+    if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ticket_nonce']) && wp_verify_nonce($_POST['ticket_nonce'], 'b2b_create_ticket_wc')) {
+        $table = $wpdb->prefix . 'b2b_support_tickets';
+        $table_replies = $wpdb->prefix . 'b2b_support_replies';
+        
+        $subject = sanitize_text_field($_POST['subject'] ?? '');
+        $message = sanitize_textarea_field($_POST['message'] ?? '');
+        $category = sanitize_text_field($_POST['category'] ?? 'general');
+        $priority = sanitize_text_field($_POST['priority'] ?? 'normal');
+        $order_id = intval($_POST['order_id'] ?? 0);
+        
+        if(!empty($subject) && !empty($message)) {
+            $ticket_number = b2b_generate_ticket_number();
+            $now = current_time('mysql');
+            
+            $wpdb->insert($table, [
+                'ticket_number' => $ticket_number,
+                'customer_id' => $customer_id,
+                'order_id' => $order_id > 0 ? $order_id : null,
+                'subject' => $subject,
+                'category' => $category,
+                'priority' => $priority,
+                'status' => 'new',
+                'created_at' => $now,
+                'updated_at' => $now
+            ]);
+            
+            $ticket_id = $wpdb->insert_id;
+            
+            // Add initial message
+            $wpdb->insert($table_replies, [
+                'ticket_id' => $ticket_id,
+                'user_id' => $customer_id,
+                'message' => $message,
+                'is_internal' => 0,
+                'created_at' => $now
+            ]);
+            
+            // Activity log
+            b2b_log_activity(get_current_user_id(), 'ticket_created', 'support_ticket', $ticket_id, 'Created support ticket: ' . $ticket_number);
+            
+            wc_add_notice('Ticket created successfully! Ticket #' . $ticket_number, 'success');
+            wp_redirect(wc_get_endpoint_url('support-tickets', '', wc_get_page_permalink('myaccount')));
+            exit;
+        }
+    }
+}
+add_action('woocommerce_account_create-support-ticket_endpoint', 'b2b_my_account_create_ticket_content');
+
+// View Support Ticket Page (My Account)
+function b2b_my_account_view_ticket_content($ticket_id) {
+    global $wpdb;
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    $customer_id = get_current_user_id();
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d AND customer_id = %d",
+        $ticket_id, $customer_id
+    ));
+    
+    if(!$ticket) {
+        echo '<p>Ticket not found.</p>';
+        return;
+    }
+    
+    echo '<h2>Ticket #' . esc_html($ticket->ticket_number) . '</h2>';
+    echo '<p><a href="' . wc_get_endpoint_url('support-tickets', '', wc_get_page_permalink('myaccount')) . '">&larr; Back to Tickets</a></p>';
+    
+    // Ticket info
+    echo '<div style="background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px">';
+    echo '<p><strong>Subject:</strong> ' . esc_html($ticket->subject) . '</p>';
+    echo '<p><strong>Status:</strong> ' . esc_html(ucfirst($ticket->status)) . '</p>';
+    echo '<p><strong>Priority:</strong> ' . esc_html(ucfirst($ticket->priority)) . '</p>';
+    echo '<p><strong>Created:</strong> ' . esc_html(date('M j, Y g:i A', strtotime($ticket->created_at))) . '</p>';
+    
+    // Order info if linked
+    if($ticket->order_id) {
+        $order = wc_get_order($ticket->order_id);
+        if($order) {
+            echo '<p><strong>Related Order:</strong> <a href="' . $order->get_view_order_url() . '">Order #' . $order->get_order_number() . '</a></p>';
+        }
+    }
+    echo '</div>';
+    
+    // Conversation
+    echo '<h3>Conversation</h3>';
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d AND is_internal = 0 ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    foreach($replies as $reply) {
+        $user = get_userdata($reply->user_id);
+        $is_customer = ($reply->user_id == $customer_id);
+        $bg = $is_customer ? '#eff6ff' : '#f0fdf4';
+        
+        echo '<div style="background:' . $bg . ';padding:15px;border-radius:8px;margin-bottom:15px">';
+        echo '<p style="margin:0 0 10px;font-weight:600">' . esc_html($user->display_name) . ' <span style="font-weight:normal;color:#6b7280;font-size:13px">' . date('M j, Y g:i A', strtotime($reply->created_at)) . '</span></p>';
+        echo '<p style="margin:0">' . nl2br(esc_html($reply->message)) . '</p>';
+        echo '</div>';
+    }
+    
+    // Reply form (only if not closed)
+    if($ticket->status !== 'closed') {
+        echo '<h3>Add Message</h3>';
+        echo '<form method="post">';
+        echo wp_nonce_field('b2b_reply_ticket_wc_' . $ticket_id, 'reply_nonce', true, false);
+        echo '<p><textarea name="message" required rows="5" class="input-text" style="width:100%" placeholder="Type your message..."></textarea></p>';
+        echo '<p><button type="submit" class="button">Send Message</button></p>';
+        echo '</form>';
+        
+        // Handle reply submission
+        if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_nonce']) && wp_verify_nonce($_POST['reply_nonce'], 'b2b_reply_ticket_wc_' . $ticket_id)) {
+            $message = sanitize_textarea_field($_POST['message'] ?? '');
+            if(!empty($message)) {
+                $wpdb->insert($table_replies, [
+                    'ticket_id' => $ticket_id,
+                    'user_id' => $customer_id,
+                    'message' => $message,
+                    'is_internal' => 0,
+                    'created_at' => current_time('mysql')
+                ]);
+                
+                // Update ticket
+                $wpdb->update($table_tickets, 
+                    ['updated_at' => current_time('mysql'), 'status' => 'open'],
+                    ['ticket_id' => $ticket_id]
+                );
+                
+                wp_redirect(wc_get_endpoint_url('view-support-ticket', $ticket_id, wc_get_page_permalink('myaccount')));
+                exit;
+            }
+        }
+    } else {
+        echo '<p style="color:#6b7280">This ticket is closed. No further messages can be added.</p>';
+    }
+}
+add_action('woocommerce_account_view-support-ticket_endpoint', 'b2b_my_account_view_ticket_content');
+
+// Add support form to order detail page
+function b2b_add_support_form_to_order_page($order) {
+    $customer_id = get_current_user_id();
+    $order_id = $order->get_id();
+    
+    echo '<div style="margin-top:30px;padding:20px;background:#f9fafb;border-radius:8px">';
+    echo '<h3 style="cursor:pointer" onclick="document.getElementById(\'supportForm' . $order_id . '\').style.display=document.getElementById(\'supportForm' . $order_id . '\').style.display===\'none\'?\'block\':\'none\'">Need Help with This Order? ▼</h3>';
+    echo '<div id="supportForm' . $order_id . '" style="display:none">';
+    echo '<p>Submit a support ticket for this order:</p>';
+    echo '<form method="post" action="' . wc_get_endpoint_url('create-support-ticket', '', wc_get_page_permalink('myaccount')) . '">';
+    echo wp_nonce_field('b2b_create_ticket_wc', 'ticket_nonce', true, false);
+    echo '<input type="hidden" name="order_id" value="' . $order_id . '">';
+    echo '<input type="hidden" name="category" value="order">';
+    echo '<input type="hidden" name="subject" value="Support for Order #' . $order->get_order_number() . '">';
+    echo '<p><label>Priority</label><select name="priority" class="input-text" style="width:100%">';
+    echo '<option value="normal">Normal</option>';
+    echo '<option value="high">High</option>';
+    echo '<option value="urgent">Urgent</option>';
+    echo '</select></p>';
+    echo '<p><label>Describe your issue *</label><textarea name="message" required rows="4" class="input-text" style="width:100%"></textarea></p>';
+    echo '<p><button type="submit" class="button">Submit Ticket</button></p>';
+    echo '</form>';
+    echo '</div></div>';
+}
+add_action('woocommerce_after_order_details', 'b2b_add_support_form_to_order_page', 10, 1);
+
+// ========================================
+// End WooCommerce My Account Integration
+// ========================================
 
 // Generate unique ticket number
 function b2b_generate_ticket_number() {

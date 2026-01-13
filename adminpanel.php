@@ -2902,9 +2902,17 @@ add_action('template_redirect', function () {
                     <h3 style="margin:0 0 15px 0;color:#059669;font-size:16px;">
                         <i class="fa-solid fa-box"></i> Stock Update
                     </h3>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Stock Value:</label>
+                        <input type="number" id="stockValue" placeholder="Enter quantity" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" min="0">
+                    </div>
                     <div style="margin-bottom:15px;">
-                        <label style="display:block;margin-bottom:5px;font-weight:600;">New Stock Quantity:</label>
-                        <input type="number" id="stockValue" placeholder="Enter stock quantity" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" min="0">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Action:</label>
+                        <select id="stockAction" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="set">Set to Value</option>
+                            <option value="increase">Increase by Value</option>
+                            <option value="decrease">Decrease by Value</option>
+                        </select>
                     </div>
                     <button onclick="bulkUpdateStock()" style="width:100%;background:#10b981;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
                         <i class="fa-solid fa-check"></i> Update Stock
@@ -3293,6 +3301,7 @@ add_action('template_redirect', function () {
         }
         
         const stockValue = document.getElementById('stockValue').value;
+        const stockAction = document.getElementById('stockAction').value;
         
         if(!stockValue || parseInt(stockValue) < 0) {
             alert('Please enter a valid stock quantity');
@@ -3304,7 +3313,10 @@ add_action('template_redirect', function () {
         }
         
         showProgress();
-        processBulkAction('stock_update', productIds, 0, {stockValue: stockValue});
+        processBulkAction('stock_update', productIds, 0, {
+            stockValue: stockValue,
+            stockAction: stockAction
+        });
     }
     
     // Bulk Delete
@@ -3336,7 +3348,7 @@ add_action('template_redirect', function () {
         }
         
         // Build request data
-        let data = 'action=b2b_bulk_action_products&nonce=<?= wp_create_nonce("b2b_bulk_products") ?>';
+        let data = 'action=b2b_bulk_action_products&nonce=<?= wp_create_nonce("b2b_ajax_nonce") ?>';
         data += '&bulk_action=' + action;
         data += '&product_ids=' + chunk.join(',');
         
@@ -3346,6 +3358,7 @@ add_action('template_redirect', function () {
             data += '&price_action=' + params.priceAction;
         } else if(action === 'stock_update') {
             data += '&stock_value=' + params.stockValue;
+            data += '&stock_action=' + params.stockAction;
         }
         
         fetch('<?= admin_url('admin-ajax.php') ?>', {
@@ -7569,12 +7582,26 @@ add_action('wp_ajax_b2b_bulk_action_products', function() {
                     break;
                     
                 case 'stock_update':
-                    $stock_qty = intval($_POST['stock_qty'] ?? 0);
+                    $stock_value = intval($_POST['stock_value'] ?? 0);
+                    $stock_action = sanitize_text_field($_POST['stock_action'] ?? 'set');
+                    
+                    $current_stock = $product->get_stock_quantity();
+                    if($current_stock === null) $current_stock = 0;
+                    
+                    // Calculate new stock based on action
+                    if($stock_action == 'set') {
+                        $new_stock = $stock_value;
+                    } else if($stock_action == 'increase') {
+                        $new_stock = $current_stock + $stock_value;
+                    } else { // decrease
+                        $new_stock = max(0, $current_stock - $stock_value);
+                    }
+                    
                     $product->set_manage_stock(true);
-                    $product->set_stock_quantity($stock_qty);
-                    $product->set_stock_status($stock_qty > 0 ? 'instock' : 'outofstock');
+                    $product->set_stock_quantity($new_stock);
+                    $product->set_stock_status($new_stock > 0 ? 'instock' : 'outofstock');
                     $product->save();
-                    b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk stock update: $stock_qty");
+                    b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk stock update: $stock_action $stock_value (new: $new_stock)");
                     $results['success'][] = $product->get_name();
                     break;
             }

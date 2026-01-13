@@ -1334,6 +1334,9 @@ function b2b_adm_header($title) {
 
     <div class="main">
     <script>
+    // Define ajaxurl for AJAX requests (not available in front-end by default)
+    var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+    
     function toggleSubmenu(el) {
         el.classList.toggle('active');
         el.nextElementSibling.classList.toggle('active');

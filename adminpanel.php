@@ -3193,107 +3193,7 @@ add_action('template_redirect', function () {
         updateBulkSelection();
     }
     
-    function applyBulkAction() {
-        const action = document.getElementById('bulkActionSelect').value;
-        if(!action) {
-            alert('Please select an action first.');
-            return;
-        }
-        
-        const selectedIds = Array.from(document.querySelectorAll('.product-checkbox:checked')).map(cb => cb.value);
-        if(selectedIds.length === 0) {
-            alert('Please select at least one product.');
-            return;
-        }
-        
-        // Handle different actions
-        if(action === 'delete') {
-            if(!confirm(`Are you sure you want to delete ${selectedIds.length} products? This action cannot be undone.`)) {
-                return;
-            }
-            processBulkAction(action, selectedIds, {});
-        } else if(action === 'price_update') {
-            const type = prompt('Enter "percent" for percentage change or "fixed" for fixed amount:', 'percent');
-            if(!type) return;
-            const value = prompt('Enter value (e.g., 10 for 10% increase, -5 for 5% decrease):', '0');
-            if(value === null) return;
-            processBulkAction(action, selectedIds, {type, value});
-        } else if(action === 'add_category') {
-            const categoryId = prompt('Enter category ID to add:', '');
-            if(!categoryId) return;
-            processBulkAction(action, selectedIds, {category_id: categoryId});
-        } else if(action === 'stock_update') {
-            const stock = prompt('Enter new stock quantity:', '0');
-            if(stock === null) return;
-            processBulkAction(action, selectedIds, {stock});
-        }
-    }
-    
-    function processBulkAction(action, productIds, params) {
-        const progressDiv = document.getElementById('bulkProgress');
-        const progressBar = document.getElementById('bulkProgressBar');
-        const statusText = document.getElementById('bulkStatus');
-        
-        progressDiv.style.display = 'block';
-        progressBar.style.width = '0%';
-        progressBar.textContent = '0%';
-        statusText.textContent = 'Processing...';
-        
-        const chunkSize = 10;
-        let processed = 0;
-        let succeeded = 0;
-        let failed = 0;
-        
-        function processChunk(startIndex) {
-            const chunk = productIds.slice(startIndex, startIndex + chunkSize);
-            if(chunk.length === 0) {
-                // Done
-                progressBar.textContent = '100%';
-                statusText.textContent = `Completed! ${succeeded} succeeded, ${failed} failed.`;
-                setTimeout(() => {
-                    location.reload();
-                }, 2000);
-                return;
-            }
-            
-            fetch('<?= admin_url('admin-ajax.php') ?>', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: new URLSearchParams({
-                    action: 'b2b_bulk_action_products',
-                    nonce: '<?= wp_create_nonce("b2b_bulk_action") ?>',
-                    bulk_action: action,
-                    product_ids: JSON.stringify(chunk),
-                    params: JSON.stringify(params)
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if(data.success) {
-                    succeeded += (data.data.succeeded || 0);
-                    failed += (data.data.failed || 0);
-                }
-                processed += chunk.length;
-                const percent = Math.round((processed / productIds.length) * 100);
-                progressBar.style.width = percent + '%';
-                progressBar.textContent = percent + '%';
-                statusText.textContent = `Processing... ${processed}/${productIds.length}`;
-                
-                // Process next chunk
-                processChunk(startIndex + chunkSize);
-            })
-            .catch(error => {
-                failed += chunk.length;
-                processed += chunk.length;
-                const percent = Math.round((processed / productIds.length) * 100);
-                progressBar.style.width = percent + '%';
-                progressBar.textContent = percent + '%';
-                processChunk(startIndex + chunkSize);
-            });
-        }
-        
-        processChunk(0);
-    }
+    // applyBulkAction function is now defined below in the jQuery section with proper accumulator
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -7766,8 +7666,13 @@ add_action('wp_footer', function() {
                         if(!window.bulkResults) {
                             window.bulkResults = {success: [], errors: []};
                         }
-                        window.bulkResults.success = window.bulkResults.success.concat(response.data.results.success);
-                        window.bulkResults.errors = window.bulkResults.errors.concat(response.data.results.errors);
+                        
+                        // Safely concatenate results
+                        const successItems = response.data.results && response.data.results.success ? response.data.results.success : [];
+                        const errorItems = response.data.results && response.data.results.errors ? response.data.results.errors : [];
+                        
+                        window.bulkResults.success = window.bulkResults.success.concat(successItems);
+                        window.bulkResults.errors = window.bulkResults.errors.concat(errorItems);
                         
                         const totalProcessed = window.bulkResults.success.length + window.bulkResults.errors.length;
                         $('#bulkStatus').html(`<strong>${totalProcessed}</strong> of <strong>${productIds.length}</strong> processed | <strong>${window.bulkResults.success.length}</strong> succeeded, <strong>${window.bulkResults.errors.length}</strong> errors`);
@@ -7783,7 +7688,13 @@ add_action('wp_footer', function() {
                                 window.location.reload();
                             }, 2000);
                         }
+                    } else {
+                        $('#bulkStatus').html('<strong>Error:</strong> ' + (response.data || 'Unknown error'));
                     }
+                },
+                error: function(xhr, status, error) {
+                    $('#bulkStatus').html('<strong>AJAX Error:</strong> ' + error);
+                    console.error('Bulk action error:', error, xhr.responseText);
                 }
             });
         }

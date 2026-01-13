@@ -4113,10 +4113,15 @@ add_action('template_redirect', function () {
         @media(max-width:900px) { .grid-edit { grid-template-columns: 1fr; } }
     </style>
 
-    <div style="margin-bottom:20px;display:inline-flex;gap:15px;align-items:center">
-        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;color:#6b7280;font-size:14px;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-arrow-left"></i> Back</a>
-        <button id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:5px;cursor:pointer;font-size:18px;line-height:1;" title="Delete Product"><i class="fa-solid fa-trash"></i></button>
+    <!-- Back Button at Top -->
+    <div style="margin-bottom:15px;">
+        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;color:#6b7280;font-size:14px;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;transition:all 0.2s;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Products
+        </a>
     </div>
+
+    <!-- Product Type Badge -->
+    <div style="margin-bottom:20px;">
         <span style="background:<?= $is_variable?'#fef3c7':'#d1fae5' ?>;color:<?= $is_variable?'#92400e':'#065f46' ?>;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700">
             <?= $is_variable ? 'VARIABLE PRODUCT' : 'SIMPLE PRODUCT' ?>
         </span>
@@ -4240,7 +4245,12 @@ add_action('template_redirect', function () {
                 <h3>Publish</h3>
                 <label>Status</label>
                 <select name="status" style="margin-bottom:15px"><option value="publish" <?= selected($p->get_status(),'publish') ?>>Active</option><option value="draft" <?= selected($p->get_status(),'draft') ?>>Draft</option></select>
-                <button style="width:100%;padding:12px">Save Changes</button>
+                <button type="submit" style="width:100%;padding:12px;background:#2563eb;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;margin-bottom:10px;">
+                    <i class="fa-solid fa-save"></i> Save Changes
+                </button>
+                <button type="button" id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="width:100%;padding:12px;background:#dc2626;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">
+                    <i class="fa-solid fa-trash"></i> Delete Product
+                </button>
             </div>
 
             <div class="edit-card">
@@ -7657,63 +7667,36 @@ add_action('wp_footer', function() {
     jQuery(document).ready(function($) {
         <?php if($page == 'products'): ?>
         // Products Bulk Actions
-        const prodTable = $('#prodTable tbody');
+        // Note: Checkboxes already exist in HTML, no need to prepend
         
-        // Add checkbox column
-        $('#prodTable thead tr').prepend('<th><input type="checkbox" id="selectAllProducts"></th>');
-        $('#prodTable tbody tr').each(function() {
-            const productId = $(this).data('product-id');
-            if(productId) {
-                $(this).prepend('<td><input type="checkbox" class="bulk-checkbox" value="'+productId+'"></td>');
-            }
+        // Connect existing select all checkbox to bulk checkboxes
+        $('#selectAllCheckbox').on('change', function() {
+            $('.product-checkbox').prop('checked', $(this).prop('checked'));
+            updateBulkSelection();
         });
         
-        // Select All functionality
-        $('#selectAllProducts').on('change', function() {
-            $('.bulk-checkbox').prop('checked', $(this).prop('checked'));
-            updateBulkBar();
-        });
+        $('.product-checkbox').on('change', updateBulkSelection);
         
-        $('.bulk-checkbox').on('change', updateBulkBar);
-        
-        // Add Bulk Actions Bar
-        $('.page-header').after(`
-            <div id="bulkActionsBar" style="display:none;background:#f0f9ff;border:2px solid #3b82f6;border-radius:8px;padding:15px;margin-bottom:20px;">
-                <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
-                    <strong style="color:#1e40af;"><span id="selectedCount">0</span> items selected</strong>
-                    <select id="bulkActionSelect" style="margin:0;padding:8px;">
-                        <option value="">Choose Bulk Action...</option>
-                        <option value="delete">Delete Selected</option>
-                        <option value="price_update">Update Prices</option>
-                        <option value="category_add">Add Category</option>
-                        <option value="stock_update">Update Stock</option>
-                    </select>
-                    <button id="applyBulkAction" class="primary" style="padding:8px 20px;">Apply</button>
-                    <button onclick="$('.bulk-checkbox').prop('checked', false); updateBulkBar();" class="secondary">Clear Selection</button>
-                </div>
-                <div id="bulkProgress" style="display:none;margin-top:15px;">
-                    <div style="background:#e5e7eb;height:30px;border-radius:6px;overflow:hidden;">
-                        <div id="bulkProgressBar" style="background:#10b981;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;color:white;font-weight:600;font-size:12px;"></div>
-                    </div>
-                    <div id="bulkStatus" style="margin-top:10px;font-size:13px;color:#6b7280;"></div>
-                </div>
-            </div>
-        `);
-        
-        function updateBulkBar() {
-            const checked = $('.bulk-checkbox:checked').length;
+        // Add Bulk Actions Bar (using existing bulk bar in HTML)
+        function updateBulkSelection() {
+            const checked = $('.product-checkbox:checked').length;
             $('#selectedCount').text(checked);
-            $('#bulkActionsBar').toggle(checked > 0);
+            if(checked > 0) {
+                $('#bulkActionBar').show();
+            } else {
+                $('#bulkActionBar').hide();
+            }
         }
         
-        $('#applyBulkAction').on('click', function() {
+        // Apply Bulk Action (global function for onclick handler)
+        window.applyBulkAction = function() {
             const action = $('#bulkActionSelect').val();
             if(!action) {
                 alert('Please select a bulk action');
                 return;
             }
             
-            const productIds = $('.bulk-checkbox:checked').map(function() {
+            const productIds = $('.product-checkbox:checked').map(function() {
                 return $(this).val();
             }).get();
             
@@ -7752,7 +7735,7 @@ add_action('wp_footer', function() {
             
             // Start bulk action
             processBulkAction(action, productIds, 0, additionalParams);
-        });
+        }; // End of applyBulkAction function
         
         function processBulkAction(action, productIds, chunk, additionalParams) {
             $('#bulkProgress').show();

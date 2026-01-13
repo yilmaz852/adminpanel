@@ -7934,3 +7934,994 @@ add_action('wp_footer', function() {
     </script>
     <?php
 });
+
+// ============================================================================
+// B2B SUPPORT TICKET MODULE
+// ============================================================================
+
+// Create Support Tickets Tables
+function b2b_create_support_tables() {
+    global $wpdb;
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    // Tickets table
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $sql_tickets = "CREATE TABLE IF NOT EXISTS $table_tickets (
+        ticket_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_number VARCHAR(50) UNIQUE NOT NULL,
+        customer_id BIGINT UNSIGNED NOT NULL,
+        assigned_agent_id BIGINT UNSIGNED NULL,
+        order_id BIGINT UNSIGNED NULL,
+        subject VARCHAR(255) NOT NULL,
+        category ENUM('order','product','delivery','billing','general') DEFAULT 'general',
+        priority ENUM('low','normal','high','urgent') DEFAULT 'normal',
+        status ENUM('new','open','pending','resolved','closed') DEFAULT 'new',
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        resolved_at DATETIME NULL,
+        closed_at DATETIME NULL,
+        INDEX idx_customer (customer_id),
+        INDEX idx_agent (assigned_agent_id),
+        INDEX idx_status (status),
+        INDEX idx_created (created_at)
+    ) $charset_collate;";
+    
+    // Replies table
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    $sql_replies = "CREATE TABLE IF NOT EXISTS $table_replies (
+        reply_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        message TEXT NOT NULL,
+        is_internal TINYINT(1) DEFAULT 0,
+        created_at DATETIME NOT NULL,
+        INDEX idx_ticket (ticket_id),
+        INDEX idx_user (user_id)
+    ) $charset_collate;";
+    
+    // Attachments table
+    $table_attachments = $wpdb->prefix . 'b2b_support_attachments';
+    $sql_attachments = "CREATE TABLE IF NOT EXISTS $table_attachments (
+        attachment_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_id BIGINT UNSIGNED NOT NULL,
+        reply_id BIGINT UNSIGNED NULL,
+        file_name VARCHAR(255) NOT NULL,
+        file_path VARCHAR(500) NOT NULL,
+        file_size BIGINT UNSIGNED NOT NULL,
+        file_type VARCHAR(100) NOT NULL,
+        uploaded_by BIGINT UNSIGNED NOT NULL,
+        uploaded_at DATETIME NOT NULL,
+        INDEX idx_ticket (ticket_id)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql_tickets);
+    dbDelta($sql_replies);
+    dbDelta($sql_attachments);
+}
+add_action('init', 'b2b_create_support_tables');
+
+// Generate unique ticket number
+function b2b_generate_ticket_number() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    $last_ticket = $wpdb->get_var("SELECT ticket_number FROM $table ORDER BY ticket_id DESC LIMIT 1");
+    
+    if($last_ticket) {
+        $num = intval(str_replace('TK-', '', $last_ticket)) + 1;
+    } else {
+        $num = 1;
+    }
+    
+    return 'TK-' . str_pad($num, 5, '0', STR_PAD_LEFT);
+}
+
+// AJAX: Create new ticket
+add_action('wp_ajax_b2b_create_ticket', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $customer_id = get_current_user_id();
+    $subject = sanitize_text_field($_POST['subject'] ?? '');
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    $category = sanitize_text_field($_POST['category'] ?? 'general');
+    $priority = sanitize_text_field($_POST['priority'] ?? 'normal');
+    $order_id = intval($_POST['order_id'] ?? 0);
+    
+    if(empty($subject) || empty($message)) {
+        wp_send_json_error(['message' => 'Subject and message are required']);
+    }
+    
+    $ticket_number = b2b_generate_ticket_number();
+    $now = current_time('mysql');
+    
+    $wpdb->insert($table, [
+        'ticket_number' => $ticket_number,
+        'customer_id' => $customer_id,
+        'order_id' => $order_id > 0 ? $order_id : null,
+        'subject' => $subject,
+        'category' => $category,
+        'priority' => $priority,
+        'status' => 'new',
+        'created_at' => $now,
+        'updated_at' => $now
+    ]);
+    
+    $ticket_id = $wpdb->insert_id;
+    
+    // Add first message
+    $wpdb->insert($table_replies, [
+        'ticket_id' => $ticket_id,
+        'user_id' => $customer_id,
+        'message' => $message,
+        'is_internal' => 0,
+        'created_at' => $now
+    ]);
+    
+    // Log activity
+    b2b_log_activity('created_ticket', 'ticket', $ticket_id, $ticket_number, "Ticket: $subject");
+    
+    wp_send_json_success([
+        'ticket_id' => $ticket_id,
+        'ticket_number' => $ticket_number,
+        'message' => 'Ticket created successfully'
+    ]);
+});
+
+// AJAX: Add reply to ticket
+add_action('wp_ajax_b2b_add_ticket_reply', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    global $wpdb;
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $ticket_id = intval($_POST['ticket_id'] ?? 0);
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    $is_internal = intval($_POST['is_internal'] ?? 0);
+    $user_id = get_current_user_id();
+    
+    if(empty($message)) {
+        wp_send_json_error(['message' => 'Message is required']);
+    }
+    
+    // Verify access
+    if(!current_user_can('manage_woocommerce')) {
+        // Customer can only reply to their own tickets
+        $ticket = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_tickets WHERE ticket_id = %d",
+            $ticket_id
+        ));
+        
+        if(!$ticket || $ticket->customer_id != $user_id) {
+            wp_send_json_error(['message' => 'Access denied']);
+        }
+        $is_internal = 0; // Customers can't create internal notes
+    }
+    
+    $now = current_time('mysql');
+    
+    $wpdb->insert($table_replies, [
+        'ticket_id' => $ticket_id,
+        'user_id' => $user_id,
+        'message' => $message,
+        'is_internal' => $is_internal,
+        'created_at' => $now
+    ]);
+    
+    // Update ticket
+    $wpdb->update($table_tickets, 
+        ['updated_at' => $now],
+        ['ticket_id' => $ticket_id]
+    );
+    
+    wp_send_json_success(['message' => 'Reply added successfully']);
+});
+
+// AJAX: Update ticket status
+add_action('wp_ajax_b2b_update_ticket_status', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if(!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Access denied']);
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $ticket_id = intval($_POST['ticket_id'] ?? 0);
+    $status = sanitize_text_field($_POST['status'] ?? '');
+    
+    $valid_statuses = ['new', 'open', 'pending', 'resolved', 'closed'];
+    if(!in_array($status, $valid_statuses)) {
+        wp_send_json_error(['message' => 'Invalid status']);
+    }
+    
+    $now = current_time('mysql');
+    $update_data = [
+        'status' => $status,
+        'updated_at' => $now
+    ];
+    
+    if($status == 'resolved') {
+        $update_data['resolved_at'] = $now;
+    } elseif($status == 'closed') {
+        $update_data['closed_at'] = $now;
+    }
+    
+    $wpdb->update($table, $update_data, ['ticket_id' => $ticket_id]);
+    
+    b2b_log_activity('updated_ticket_status', 'ticket', $ticket_id, null, "Status changed to: $status");
+    
+    wp_send_json_success(['message' => 'Status updated']);
+});
+
+// AJAX: Assign ticket to agent
+add_action('wp_ajax_b2b_assign_ticket', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if(!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Access denied']);
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $ticket_id = intval($_POST['ticket_id'] ?? 0);
+    $agent_id = intval($_POST['agent_id'] ?? 0);
+    
+    $wpdb->update($table, 
+        [
+            'assigned_agent_id' => $agent_id > 0 ? $agent_id : null,
+            'updated_at' => current_time('mysql')
+        ],
+        ['ticket_id' => $ticket_id]
+    );
+    
+    $agent_name = $agent_id > 0 ? get_userdata($agent_id)->display_name : 'Unassigned';
+    b2b_log_activity('assigned_ticket', 'ticket', $ticket_id, null, "Assigned to: $agent_name");
+    
+    wp_send_json_success(['message' => 'Ticket assigned']);
+});
+
+// Support Tickets List Page (Admin)
+function b2b_page_support_tickets() {
+    if(!current_user_can('manage_woocommerce')) {
+        wp_die('Access denied');
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    // Filters
+    $status_filter = sanitize_text_field($_GET['status'] ?? '');
+    $priority_filter = sanitize_text_field($_GET['priority'] ?? '');
+    $category_filter = sanitize_text_field($_GET['category'] ?? '');
+    $agent_filter = intval($_GET['agent'] ?? 0);
+    $search = sanitize_text_field($_GET['search'] ?? '');
+    
+    // Build query
+    $where = ['1=1'];
+    if($status_filter) $where[] = $wpdb->prepare("status = %s", $status_filter);
+    if($priority_filter) $where[] = $wpdb->prepare("priority = %s", $priority_filter);
+    if($category_filter) $where[] = $wpdb->prepare("category = %s", $category_filter);
+    if($agent_filter) $where[] = $wpdb->prepare("assigned_agent_id = %d", $agent_filter);
+    if($search) {
+        $like = '%' . $wpdb->esc_like($search) . '%';
+        $where[] = $wpdb->prepare("(ticket_number LIKE %s OR subject LIKE %s)", $like, $like);
+    }
+    
+    $where_sql = implode(' AND ', $where);
+    
+    // Pagination
+    $per_page = 20;
+    $current_page = max(1, intval($_GET['paged'] ?? 1));
+    $offset = ($current_page - 1) * $per_page;
+    
+    $total = $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE $where_sql");
+    $tickets = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table WHERE $where_sql ORDER BY created_at DESC LIMIT %d OFFSET %d",
+        $per_page, $offset
+    ));
+    
+    // Statistics
+    $stats = [
+        'total' => $wpdb->get_var("SELECT COUNT(*) FROM $table"),
+        'open' => $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status IN ('new','open')"),
+        'pending' => $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status = 'pending'"),
+        'resolved' => $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status = 'resolved'")
+    ];
+    
+    b2b_adm_header('Support Tickets');
+    ?>
+    <style>
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; }
+    .stat-card h3 { margin: 0 0 10px 0; font-size: 14px; opacity: 0.9; }
+    .stat-card .number { font-size: 32px; font-weight: bold; }
+    .filters { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+    .filters select, .filters input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; }
+    .ticket-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+    .ticket-table th, .ticket-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+    .ticket-table th { background: #f8f9fa; font-weight: 600; }
+    .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .status-new { background: #e3f2fd; color: #1976d2; }
+    .status-open { background: #e8f5e9; color: #388e3c; }
+    .status-pending { background: #fff3e0; color: #f57c00; }
+    .status-resolved { background: #f1f8e9; color: #689f38; }
+    .status-closed { background: #f5f5f5; color: #757575; }
+    .priority-low { color: #757575; }
+    .priority-normal { color: #1976d2; }
+    .priority-high { color: #f57c00; font-weight: 600; }
+    .priority-urgent { color: #d32f2f; font-weight: 600; }
+    </style>
+    
+    <div class="stat-cards">
+        <div class="stat-card">
+            <h3>📊 Total Tickets</h3>
+            <div class="number"><?php echo $stats['total']; ?></div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h3>🔥 Open Tickets</h3>
+            <div class="number"><?php echo $stats['open']; ?></div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <h3>⏳ Pending</h3>
+            <div class="number"><?php echo $stats['pending']; ?></div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <h3>✅ Resolved</h3>
+            <div class="number"><?php echo $stats['resolved']; ?></div>
+        </div>
+    </div>
+    
+    <div class="filters">
+        <select onchange="window.location.href = updateQueryParam('status', this.value)">
+            <option value="">All Status</option>
+            <option value="new" <?php selected($status_filter, 'new'); ?>>New</option>
+            <option value="open" <?php selected($status_filter, 'open'); ?>>Open</option>
+            <option value="pending" <?php selected($status_filter, 'pending'); ?>>Pending</option>
+            <option value="resolved" <?php selected($status_filter, 'resolved'); ?>>Resolved</option>
+            <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed</option>
+        </select>
+        
+        <select onchange="window.location.href = updateQueryParam('priority', this.value)">
+            <option value="">All Priority</option>
+            <option value="low" <?php selected($priority_filter, 'low'); ?>>Low</option>
+            <option value="normal" <?php selected($priority_filter, 'normal'); ?>>Normal</option>
+            <option value="high" <?php selected($priority_filter, 'high'); ?>>High</option>
+            <option value="urgent" <?php selected($priority_filter, 'urgent'); ?>>Urgent</option>
+        </select>
+        
+        <select onchange="window.location.href = updateQueryParam('category', this.value)">
+            <option value="">All Categories</option>
+            <option value="order" <?php selected($category_filter, 'order'); ?>>Order</option>
+            <option value="product" <?php selected($category_filter, 'product'); ?>>Product</option>
+            <option value="delivery" <?php selected($category_filter, 'delivery'); ?>>Delivery</option>
+            <option value="billing" <?php selected($category_filter, 'billing'); ?>>Billing</option>
+            <option value="general" <?php selected($category_filter, 'general'); ?>>General</option>
+        </select>
+        
+        <input type="text" placeholder="Search tickets..." value="<?php echo esc_attr($search); ?>" 
+               onchange="window.location.href = updateQueryParam('search', this.value)">
+    </div>
+    
+    <table class="ticket-table">
+        <thead>
+            <tr>
+                <th>Ticket #</th>
+                <th>Subject</th>
+                <th>Customer</th>
+                <th>Category</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach($tickets as $ticket): 
+                $customer = get_userdata($ticket->customer_id);
+            ?>
+            <tr>
+                <td><strong><?php echo esc_html($ticket->ticket_number); ?></strong></td>
+                <td><?php echo esc_html($ticket->subject); ?></td>
+                <td><?php echo $customer ? esc_html($customer->display_name) : 'Unknown'; ?></td>
+                <td><?php echo ucfirst($ticket->category); ?></td>
+                <td class="priority-<?php echo $ticket->priority; ?>"><?php echo ucfirst($ticket->priority); ?></td>
+                <td><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></td>
+                <td><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></td>
+                <td>
+                    <a href="?b2b_adm_page=support-ticket&ticket_id=<?php echo $ticket->ticket_id; ?>" class="button button-small">View</a>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    
+    <script>
+    function updateQueryParam(key, value) {
+        const url = new URL(window.location.href);
+        if(value) {
+            url.searchParams.set(key, value);
+        } else {
+            url.searchParams.delete(key);
+        }
+        url.searchParams.delete('paged'); // Reset pagination
+        return url.toString();
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Support Ticket Detail Page (Admin)
+function b2b_page_support_ticket_detail() {
+    if(!current_user_can('manage_woocommerce')) {
+        wp_die('Access denied');
+    }
+    
+    global $wpdb;
+    $ticket_id = intval($_GET['ticket_id'] ?? 0);
+    
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d",
+        $ticket_id
+    ));
+    
+    if(!$ticket) {
+        wp_die('Ticket not found');
+    }
+    
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    $customer = get_userdata($ticket->customer_id);
+    $order = $ticket->order_id ? wc_get_order($ticket->order_id) : null;
+    
+    b2b_adm_header('Ticket: ' . $ticket->ticket_number);
+    ?>
+    <style>
+    .ticket-header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .ticket-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
+    .ticket-meta-item { padding: 10px; background: #f8f9fa; border-radius: 6px; }
+    .ticket-meta-item label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .ticket-meta-item value { font-weight: 600; }
+    .order-info { background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0; }
+    .messages-container { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .message { padding: 15px; margin-bottom: 15px; border-radius: 8px; border-left: 4px solid #667eea; background: #f8f9fa; }
+    .message.internal { background: #fff3e0; border-left-color: #f57c00; }
+    .message-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .message-author { font-weight: 600; }
+    .message-time { color: #666; font-size: 13px; }
+    .reply-form { background: white; padding: 20px; border-radius: 8px; }
+    .quick-actions { display: flex; gap: 10px; margin-bottom: 20px; }
+    </style>
+    
+    <div class="ticket-header">
+        <h2><?php echo esc_html($ticket->subject); ?></h2>
+        <div class="ticket-meta">
+            <div class="ticket-meta-item">
+                <label>Ticket Number:</label>
+                <value><?php echo esc_html($ticket->ticket_number); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Customer:</label>
+                <value><?php echo $customer ? esc_html($customer->display_name) : 'Unknown'; ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Category:</label>
+                <value><?php echo ucfirst($ticket->category); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Priority:</label>
+                <value class="priority-<?php echo $ticket->priority; ?>"><?php echo ucfirst($ticket->priority); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Status:</label>
+                <value><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Created:</label>
+                <value><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></value>
+            </div>
+        </div>
+    </div>
+    
+    <?php if($order): ?>
+    <div class="order-info">
+        <h3>🛒 Linked Order: <a href="?b2b_adm_page=order&order_id=<?php echo $order->get_id(); ?>">#<?php echo $order->get_order_number(); ?></a></h3>
+        <p><strong>Date:</strong> <?php echo $order->get_date_created()->format('Y-m-d H:i'); ?> | 
+           <strong>Status:</strong> <?php echo $order->get_status(); ?> | 
+           <strong>Total:</strong> <?php echo $order->get_formatted_order_total(); ?></p>
+        <p><strong>Products:</strong></p>
+        <ul>
+            <?php foreach($order->get_items() as $item): ?>
+            <li><?php echo $item->get_name(); ?> × <?php echo $item->get_quantity(); ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+    
+    <div class="quick-actions">
+        <label>Change Status:</label>
+        <button onclick="changeTicketStatus('new')" class="button">New</button>
+        <button onclick="changeTicketStatus('open')" class="button">Open</button>
+        <button onclick="changeTicketStatus('pending')" class="button">Pending</button>
+        <button onclick="changeTicketStatus('resolved')" class="button button-primary">Resolved</button>
+        <button onclick="changeTicketStatus('closed')" class="button">Closed</button>
+    </div>
+    
+    <div class="quick-actions">
+        <label>Assign to:</label>
+        <select id="assignAgent" onchange="assignTicket(this.value)">
+            <option value="0">Unassigned</option>
+            <?php
+            $agents = get_users(['role' => 'administrator']);
+            foreach($agents as $agent):
+            ?>
+            <option value="<?php echo $agent->ID; ?>" <?php selected($ticket->assigned_agent_id, $agent->ID); ?>>
+                <?php echo esc_html($agent->display_name); ?>
+            </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    
+    <div class="messages-container">
+        <h3>Conversation</h3>
+        <?php foreach($replies as $reply): 
+            $author = get_userdata($reply->user_id);
+        ?>
+        <div class="message <?php echo $reply->is_internal ? 'internal' : ''; ?>">
+            <div class="message-header">
+                <span class="message-author">
+                    <?php echo $author ? esc_html($author->display_name) : 'Unknown'; ?>
+                    <?php if($reply->is_internal): ?><span style="color: #f57c00;"> (Internal Note)</span><?php endif; ?>
+                </span>
+                <span class="message-time"><?php echo date('Y-m-d H:i', strtotime($reply->created_at)); ?></span>
+            </div>
+            <div class="message-content"><?php echo nl2br(esc_html($reply->message)); ?></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <div class="reply-form">
+        <h3>Add Reply</h3>
+        <textarea id="replyMessage" rows="5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+        <div style="margin-top: 10px;">
+            <label><input type="checkbox" id="isInternal"> Internal Note (not visible to customer)</label>
+        </div>
+        <button onclick="addReply()" class="button button-primary" style="margin-top: 10px;">Add Reply</button>
+    </div>
+    
+    <script>
+    function changeTicketStatus(status) {
+        if(!confirm('Change ticket status to: ' + status + '?')) return;
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_update_ticket_status',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                status: status
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Status updated!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    
+    function assignTicket(agentId) {
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_assign_ticket',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                agent_id: agentId
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Ticket assigned!');
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    
+    function addReply() {
+        const message = jQuery('#replyMessage').val();
+        const isInternal = jQuery('#isInternal').is(':checked') ? 1 : 0;
+        
+        if(!message) {
+            alert('Please enter a message');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_add_ticket_reply',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                message: message,
+                is_internal: isInternal
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Reply added!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: My Support Tickets Page
+function b2b_page_my_support_tickets() {
+    $current_user = wp_get_current_user();
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $status_filter = sanitize_text_field($_GET['status'] ?? '');
+    $where = $wpdb->prepare("customer_id = %d", $current_user->ID);
+    if($status_filter) {
+        $where .= $wpdb->prepare(" AND status = %s", $status_filter);
+    }
+    
+    $tickets = $wpdb->get_results("SELECT * FROM $table WHERE $where ORDER BY created_at DESC");
+    
+    b2b_adm_header('My Support Tickets');
+    ?>
+    <style>
+    .support-actions { margin-bottom: 20px; }
+    .ticket-list { background: white; border-radius: 8px; overflow: hidden; }
+    .ticket-item { padding: 20px; border-bottom: 1px solid #eee; }
+    .ticket-item:hover { background: #f8f9fa; }
+    .ticket-item h3 { margin: 0 0 10px 0; }
+    .ticket-meta-inline { font-size: 13px; color: #666; }
+    </style>
+    
+    <div class="support-actions">
+        <a href="?b2b_adm_page=create-support-ticket" class="button button-primary">Create New Ticket</a>
+        
+        <select onchange="window.location.href = '?b2b_adm_page=my-support&status=' + this.value" style="margin-left: 10px;">
+            <option value="">All Status</option>
+            <option value="new" <?php selected($status_filter, 'new'); ?>>New</option>
+            <option value="open" <?php selected($status_filter, 'open'); ?>>Open</option>
+            <option value="pending" <?php selected($status_filter, 'pending'); ?>>Pending</option>
+            <option value="resolved" <?php selected($status_filter, 'resolved'); ?>>Resolved</option>
+            <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed</option>
+        </select>
+    </div>
+    
+    <div class="ticket-list">
+        <?php if(empty($tickets)): ?>
+        <div class="ticket-item">No tickets found. <a href="?b2b_adm_page=create-support-ticket">Create your first ticket</a></div>
+        <?php else: ?>
+        <?php foreach($tickets as $ticket): ?>
+        <div class="ticket-item">
+            <h3>
+                <a href="?b2b_adm_page=view-support-ticket&ticket_id=<?php echo $ticket->ticket_id; ?>">
+                    <?php echo esc_html($ticket->subject); ?>
+                </a>
+            </h3>
+            <div class="ticket-meta-inline">
+                <span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span> |
+                Ticket: <?php echo esc_html($ticket->ticket_number); ?> |
+                Category: <?php echo ucfirst($ticket->category); ?> |
+                Priority: <?php echo ucfirst($ticket->priority); ?> |
+                Created: <?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: Create Support Ticket Page
+function b2b_page_create_support_ticket() {
+    $current_user = wp_get_current_user();
+    
+    // Get customer's recent orders
+    $orders = wc_get_orders([
+        'customer_id' => $current_user->ID,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    b2b_adm_header('Create Support Ticket');
+    ?>
+    <style>
+    .ticket-form { background: white; padding: 30px; border-radius: 8px; max-width: 800px; }
+    .form-field { margin-bottom: 20px; }
+    .form-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+    .form-field input, .form-field select, .form-field textarea {
+        width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;
+    }
+    </style>
+    
+    <div class="ticket-form">
+        <h2>Create New Support Ticket</h2>
+        
+        <div class="form-field">
+            <label>Subject *</label>
+            <input type="text" id="ticketSubject" placeholder="Brief description of your issue">
+        </div>
+        
+        <div class="form-field">
+            <label>Category *</label>
+            <select id="ticketCategory">
+                <option value="general">General Question</option>
+                <option value="order">Order Issue</option>
+                <option value="product">Product Question</option>
+                <option value="delivery">Delivery Issue</option>
+                <option value="billing">Billing/Payment</option>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Priority</label>
+            <select id="ticketPriority">
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Related Order (Optional)</label>
+            <select id="ticketOrder">
+                <option value="0">No order selected</option>
+                <?php foreach($orders as $order): ?>
+                <option value="<?php echo $order->get_id(); ?>">
+                    Order #<?php echo $order->get_order_number(); ?> - <?php echo $order->get_date_created()->format('Y-m-d'); ?> - <?php echo $order->get_formatted_order_total(); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Message *</label>
+            <textarea id="ticketMessage" rows="8" placeholder="Please describe your issue in detail..."></textarea>
+        </div>
+        
+        <button onclick="createTicket()" class="button button-primary">Submit Ticket</button>
+        <a href="?b2b_adm_page=my-support" class="button">Cancel</a>
+    </div>
+    
+    <script>
+    function createTicket() {
+        const subject = jQuery('#ticketSubject').val();
+        const message = jQuery('#ticketMessage').val();
+        const category = jQuery('#ticketCategory').val();
+        const priority = jQuery('#ticketPriority').val();
+        const order_id = jQuery('#ticketOrder').val();
+        
+        if(!subject || !message) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_create_ticket',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                subject: subject,
+                message: message,
+                category: category,
+                priority: priority,
+                order_id: order_id
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Ticket created! Ticket number: ' + response.data.ticket_number);
+                    window.location.href = '?b2b_adm_page=my-support';
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: View Support Ticket Page
+function b2b_page_view_support_ticket() {
+    $current_user = wp_get_current_user();
+    $ticket_id = intval($_GET['ticket_id'] ?? 0);
+    
+    global $wpdb;
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d AND customer_id = %d",
+        $ticket_id, $current_user->ID
+    ));
+    
+    if(!$ticket) {
+        wp_die('Ticket not found or access denied');
+    }
+    
+    // Get only public replies
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d AND is_internal = 0 ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    $order = $ticket->order_id ? wc_get_order($ticket->order_id) : null;
+    
+    b2b_adm_header('Ticket: ' . $ticket->ticket_number);
+    ?>
+    <div class="ticket-header">
+        <h2><?php echo esc_html($ticket->subject); ?></h2>
+        <div class="ticket-meta">
+            <div class="ticket-meta-item">
+                <label>Ticket Number:</label>
+                <value><?php echo esc_html($ticket->ticket_number); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Category:</label>
+                <value><?php echo ucfirst($ticket->category); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Priority:</label>
+                <value><?php echo ucfirst($ticket->priority); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Status:</label>
+                <value><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Created:</label>
+                <value><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></value>
+            </div>
+        </div>
+    </div>
+    
+    <?php if($order): ?>
+    <div class="order-info">
+        <h3>🛒 Related Order: #<?php echo $order->get_order_number(); ?></h3>
+        <p><strong>Date:</strong> <?php echo $order->get_date_created()->format('Y-m-d H:i'); ?> | 
+           <strong>Status:</strong> <?php echo $order->get_status(); ?> | 
+           <strong>Total:</strong> <?php echo $order->get_formatted_order_total(); ?></p>
+    </div>
+    <?php endif; ?>
+    
+    <div class="messages-container">
+        <h3>Conversation</h3>
+        <?php foreach($replies as $reply): 
+            $author = get_userdata($reply->user_id);
+        ?>
+        <div class="message">
+            <div class="message-header">
+                <span class="message-author"><?php echo $author ? esc_html($author->display_name) : 'Unknown'; ?></span>
+                <span class="message-time"><?php echo date('Y-m-d H:i', strtotime($reply->created_at)); ?></span>
+            </div>
+            <div class="message-content"><?php echo nl2br(esc_html($reply->message)); ?></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <?php if($ticket->status != 'closed'): ?>
+    <div class="reply-form">
+        <h3>Add Message</h3>
+        <textarea id="replyMessage" rows="5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+        <button onclick="addReply()" class="button button-primary" style="margin-top: 10px;">Send Message</button>
+    </div>
+    
+    <script>
+    function addReply() {
+        const message = jQuery('#replyMessage').val();
+        
+        if(!message) {
+            alert('Please enter a message');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_add_ticket_reply',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                message: message,
+                is_internal: 0
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Message sent!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    </script>
+    <?php endif; ?>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Add Support menu items
+add_filter('b2b_pro_admin_menu_items', function($menu) {
+    // Admin menu
+    if(current_user_can('manage_woocommerce')) {
+        $menu[] = [
+            'slug' => 'support-tickets',
+            'title' => 'Support',
+            'icon' => 'headphones',
+            'callback' => 'b2b_page_support_tickets'
+        ];
+        $menu[] = [
+            'slug' => 'support-ticket',
+            'title' => 'Ticket Detail',
+            'callback' => 'b2b_page_support_ticket_detail',
+            'hidden' => true
+        ];
+    }
+    
+    // Customer menu
+    $menu[] = [
+        'slug' => 'my-support',
+        'title' => 'Support',
+        'icon' => 'headphones',
+        'callback' => 'b2b_page_my_support_tickets'
+    ];
+    $menu[] = [
+        'slug' => 'create-support-ticket',
+        'title' => 'Create Ticket',
+        'callback' => 'b2b_page_create_support_ticket',
+        'hidden' => true
+    ];
+    $menu[] = [
+        'slug' => 'view-support-ticket',
+        'title' => 'View Ticket',
+        'callback' => 'b2b_page_view_support_ticket',
+        'hidden' => true
+    ];
+    
+    return $menu;
+}, 30);
+
+// End of B2B Support Ticket Module

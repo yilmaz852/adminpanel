@@ -1183,6 +1183,17 @@ function b2b_adm_header($title) {
         .customer-section h3{margin:0 0 15px 0;padding-bottom:10px;border-bottom:2px solid var(--border);color:var(--primary);font-size:16px;}
         .form-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;}
         
+        /* Mobile Menu Toggle Button */
+        .mobile-menu-toggle{display:none;position:fixed;top:15px;left:15px;z-index:1001;background:var(--primary);color:white;border:none;padding:12px 15px;border-radius:8px;cursor:pointer;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+        .mobile-menu-toggle:active{background:#1e293b}
+        
+        /* Sidebar Overlay for Mobile */
+        .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:98;backdrop-filter:blur(2px)}
+        .sidebar-overlay.active{display:block}
+        
+        /* Responsive Tables */
+        .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -10px;padding:0 10px}
+        
         /* Responsive Design */
         @media (max-width: 1200px) {
             .sidebar{width:240px;}
@@ -1196,28 +1207,47 @@ function b2b_adm_header($title) {
             .form-grid{grid-template-columns:1fr;}
         }
         @media (max-width: 768px) {
-            body{flex-direction:column;}
-            .sidebar{width:100%;height:auto;position:relative;}
-            .sidebar-nav{padding:10px;display:flex;flex-wrap:wrap;gap:5px;}
-            .sidebar-nav a, .submenu-toggle{flex:1 1 auto;min-width:120px;}
-            .submenu{padding-left:0;}
-            .main{margin-left:0;padding:20px;width:100%;}
-            .page-header{flex-direction:column;align-items:flex-start;gap:15px;}
-            .dash-grid{grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));}
-            table{font-size:11px;}
-            th,td{padding:8px 6px;}
-            .stats-box{flex-wrap:wrap;}
+            .mobile-menu-toggle{display:flex;align-items:center;justify-content:center}
+            body{flex-direction:column}
+            .sidebar{width:280px;height:100%;position:fixed;left:0;top:0;z-index:999;transform:translateX(-100%);transition:transform 0.3s ease}
+            .sidebar.mobile-open{transform:translateX(0)}
+            .sidebar-nav{padding:20px 10px;display:block}
+            .sidebar-nav a, .submenu-toggle{flex:initial;min-width:initial;width:100%}
+            .submenu{padding-left:15px}
+            .main{margin-left:0;padding:20px;padding-top:65px;width:100%}
+            .page-header{flex-direction:column;align-items:flex-start;gap:15px}
+            .page-header button,.page-header a{width:100%}
+            .dash-grid{grid-template-columns:repeat(auto-fill, minmax(140px, 1fr))}
+            .table-responsive{margin:0 -20px;padding:0 20px}
+            table{font-size:11px;min-width:700px}
+            th,td{padding:8px 6px}
+            .stats-box{flex-wrap:wrap;gap:15px}
+            .modal-content{width:100%;max-width:none;border-radius:0;margin:20px}
+            #bulkEditPanel > div{grid-template-columns:1fr !important}
         }
         @media (max-width: 480px) {
-            .main{padding:15px;}
-            .card, .customer-section{padding:15px;}
-            .stats-box{flex-direction:column;gap:10px;}
-            button{padding:8px 15px;font-size:13px;}
-            .dash-grid{grid-template-columns:1fr;}
+            .main{padding:15px;padding-top:60px}
+            .card, .customer-section{padding:15px}
+            .stats-box{flex-direction:column;gap:10px}
+            button{padding:10px 15px;font-size:13px;width:100%}
+            .dash-grid{grid-template-columns:1fr}
+            table{font-size:10px;min-width:600px}
+            th,td{padding:6px 4px}
+            input,select,textarea{font-size:16px}
+            .modal-content{margin:10px}
+            .sidebar{width:85%;max-width:320px}
         }
     </style>
     </head>
     <body>
+
+    <!-- Mobile Menu Toggle Button -->
+    <button class="mobile-menu-toggle" onclick="toggleMobileMenu()" aria-label="Toggle Menu">
+        <i class="fa-solid fa-bars"></i>
+    </button>
+
+    <!-- Sidebar Overlay for Mobile -->
+    <div class="sidebar-overlay" onclick="toggleMobileMenu()"></div>
 
     <div class="sidebar">
         <div class="sidebar-head"><i class="fa-solid fa-shield-halved"></i> ADMIN PANEL V10</div>
@@ -1275,6 +1305,27 @@ function b2b_adm_header($title) {
         el.classList.toggle('active');
         el.nextElementSibling.classList.toggle('active');
     }
+    
+    // Mobile menu toggle
+    function toggleMobileMenu() {
+        document.querySelector('.sidebar').classList.toggle('mobile-open');
+        document.querySelector('.sidebar-overlay').classList.toggle('active');
+        document.body.style.overflow = document.querySelector('.sidebar').classList.contains('mobile-open') ? 'hidden' : '';
+    }
+    
+    // Close mobile menu when clicking a link
+    document.addEventListener('DOMContentLoaded', function() {
+        if(window.innerWidth <= 768) {
+            const sidebarLinks = document.querySelectorAll('.sidebar-nav a');
+            sidebarLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if(window.innerWidth <= 768) {
+                        setTimeout(toggleMobileMenu, 200);
+                    }
+                });
+            });
+        }
+    });
     </script>
     <?php
 }
@@ -2950,6 +3001,7 @@ add_action('template_redirect', function () {
         </div>
         
         <!-- Enhanced Product Table -->
+        <div class="table-responsive">
         <table id="prodTable">
             <thead>
                 <tr>
@@ -3009,6 +3061,7 @@ add_action('template_redirect', function () {
             <?php endforeach; endif; ?>
             </tbody>
         </table>
+        </div><!-- .table-responsive -->
         
         <!-- Pagination -->
         <?php if($products->max_num_pages > 1): ?>

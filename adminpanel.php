@@ -62,11 +62,15 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/tax-exemption/?$', 'index.php?b2b_adm_page=settings_tax', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
+    
+    // Support Module
+    add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
+    add_rewrite_rule('^b2b-panel/support-ticket/?$', 'index.php?b2b_adm_page=support-ticket', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v17_shipping')) {
+    if (!get_option('b2b_rewrite_v18_support')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v17_shipping', true);
+        update_option('b2b_rewrite_v18_support', true);
     }
 });
 
@@ -8478,6 +8482,25 @@ add_action('wp_ajax_b2b_assign_ticket', function() {
     b2b_log_activity('assigned_ticket', 'ticket', $ticket_id, null, "Assigned to: $agent_name");
     
     wp_send_json_success(['message' => 'Ticket assigned']);
+});
+
+// ===================================================== 
+//    SUPPORT TICKETS PAGES (Admin Panel)
+// ===================================================== 
+add_action('template_redirect', function () {
+    $page = get_query_var('b2b_adm_page');
+    if (!in_array($page, ['support-tickets', 'support-ticket'])) return;
+    b2b_adm_guard();
+    
+    if ($page === 'support-tickets') {
+        b2b_page_support_tickets();
+        exit;
+    }
+    
+    if ($page === 'support-ticket') {
+        b2b_page_support_ticket_detail();
+        exit;
+    }
 });
 
 // Support Tickets List Page (Admin)

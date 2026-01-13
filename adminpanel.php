@@ -1184,15 +1184,19 @@ function b2b_adm_header($title) {
         .form-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;}
         
         /* Mobile Menu Toggle Button */
-        .mobile-menu-toggle{display:none;position:fixed;top:15px;left:15px;z-index:1001;background:var(--primary);color:white;border:none;padding:12px 15px;border-radius:8px;cursor:pointer;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
-        .mobile-menu-toggle:active{background:#1e293b}
+        .mobile-menu-toggle{display:none;position:fixed;top:0;left:0;z-index:1002;background:var(--primary);color:white;border:none;padding:0;width:56px;height:56px;cursor:pointer;font-size:20px;box-shadow:0 2px 12px rgba(0,0,0,0.2);border-bottom-right-radius:16px;align-items:center;justify-content:center}
+        .mobile-menu-toggle:active{background:#1e293b;transform:scale(0.95)}
+        
+        /* Mobile Header Bar */
+        .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+        .mobile-header .page-title{margin:0;padding:0 70px;line-height:56px;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
         
         /* Sidebar Overlay for Mobile */
-        .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:98;backdrop-filter:blur(2px)}
-        .sidebar-overlay.active{display:block}
+        .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(3px);opacity:0;transition:opacity 0.3s ease}
+        .sidebar-overlay.active{display:block;opacity:1}
         
         /* Responsive Tables */
-        .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -10px;padding:0 10px}
+        .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0}
         
         /* Responsive Design */
         @media (max-width: 1200px) {
@@ -1207,35 +1211,47 @@ function b2b_adm_header($title) {
             .form-grid{grid-template-columns:1fr;}
         }
         @media (max-width: 768px) {
-            .mobile-menu-toggle{display:flex;align-items:center;justify-content:center}
-            body{flex-direction:column}
-            .sidebar{width:280px;height:100%;position:fixed;left:0;top:0;z-index:999;transform:translateX(-100%);transition:transform 0.3s ease}
+            .mobile-menu-toggle{display:flex}
+            .mobile-header{display:block}
+            body{flex-direction:column;overflow-x:hidden}
+            .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
             .sidebar.mobile-open{transform:translateX(0)}
-            .sidebar-nav{padding:20px 10px;display:block}
-            .sidebar-nav a, .submenu-toggle{flex:initial;min-width:initial;width:100%}
-            .submenu{padding-left:15px}
-            .main{margin-left:0;padding:20px;padding-top:65px;width:100%}
-            .page-header{flex-direction:column;align-items:flex-start;gap:15px}
-            .page-header button,.page-header a{width:100%}
-            .dash-grid{grid-template-columns:repeat(auto-fill, minmax(140px, 1fr))}
-            .table-responsive{margin:0 -20px;padding:0 20px}
-            table{font-size:11px;min-width:700px}
-            th,td{padding:8px 6px}
-            .stats-box{flex-wrap:wrap;gap:15px}
-            .modal-content{width:100%;max-width:none;border-radius:0;margin:20px}
-            #bulkEditPanel > div{grid-template-columns:1fr !important}
+            .sidebar-nav{padding:80px 15px 20px 15px;display:block}
+            .sidebar-nav a, .submenu-toggle{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
+            .submenu{padding-left:20px}
+            .submenu a{padding:10px 16px;font-size:14px}
+            .main{margin-left:0;padding:16px;padding-top:72px;width:100%;max-width:100%;overflow-x:hidden}
+            .page-header{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:16px}
+            .page-header .page-title{display:none}
+            .page-header button,.page-header a{width:100%;margin:0}
+            .dash-grid{grid-template-columns:repeat(2, 1fr);gap:12px}
+            .table-responsive{overflow-x:auto}
+            table{font-size:12px;min-width:650px}
+            th,td{padding:10px 8px}
+            .stats-box{flex-wrap:wrap;gap:12px}
+            .modal-content{width:calc(100% - 32px);max-width:none;border-radius:12px;margin:16px}
+            #bulkEditPanel{padding:16px}
+            #bulkEditPanel > div{grid-template-columns:1fr !important;gap:16px}
+            .bulk-section{padding:16px}
+            .card{padding:16px;margin-bottom:16px}
+            .customer-section{padding:16px;margin-bottom:16px}
         }
         @media (max-width: 480px) {
-            .main{padding:15px;padding-top:60px}
-            .card, .customer-section{padding:15px}
+            .main{padding:12px;padding-top:68px}
+            .card, .customer-section{padding:12px;margin-bottom:12px}
             .stats-box{flex-direction:column;gap:10px}
-            button{padding:10px 15px;font-size:13px;width:100%}
-            .dash-grid{grid-template-columns:1fr}
-            table{font-size:10px;min-width:600px}
-            th,td{padding:6px 4px}
-            input,select,textarea{font-size:16px}
-            .modal-content{margin:10px}
-            .sidebar{width:85%;max-width:320px}
+            button{padding:12px 16px;font-size:14px;width:100%}
+            .dash-grid{grid-template-columns:1fr;gap:12px}
+            table{font-size:11px;min-width:550px}
+            th,td{padding:8px 6px}
+            input,select,textarea{font-size:16px;padding:12px}
+            .modal-content{margin:12px;width:calc(100% - 24px)}
+            .sidebar{width:85%;max-width:280px}
+            .sidebar-nav{padding:70px 12px 16px 12px}
+            .sidebar-nav a, .submenu-toggle{padding:12px 14px}
+            #bulkEditPanel{padding:12px}
+            .bulk-section{padding:12px}
+            .page-header{gap:10px}
         }
     </style>
     </head>
@@ -1245,6 +1261,11 @@ function b2b_adm_header($title) {
     <button class="mobile-menu-toggle" onclick="toggleMobileMenu()" aria-label="Toggle Menu">
         <i class="fa-solid fa-bars"></i>
     </button>
+
+    <!-- Mobile Header Bar -->
+    <div class="mobile-header">
+        <div class="page-title" id="mobilePageTitle">Admin Panel</div>
+    </div>
 
     <!-- Sidebar Overlay for Mobile -->
     <div class="sidebar-overlay" onclick="toggleMobileMenu()"></div>
@@ -1308,23 +1329,51 @@ function b2b_adm_header($title) {
     
     // Mobile menu toggle
     function toggleMobileMenu() {
-        document.querySelector('.sidebar').classList.toggle('mobile-open');
-        document.querySelector('.sidebar-overlay').classList.toggle('active');
-        document.body.style.overflow = document.querySelector('.sidebar').classList.contains('mobile-open') ? 'hidden' : '';
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        const isOpen = sidebar.classList.contains('mobile-open');
+        
+        sidebar.classList.toggle('mobile-open');
+        overlay.classList.toggle('active');
+        
+        // Lock body scroll when menu is open
+        if(!isOpen) {
+            document.body.style.overflow = 'hidden';
+            document.body.style.position = 'fixed';
+            document.body.style.width = '100%';
+        } else {
+            document.body.style.overflow = '';
+            document.body.style.position = '';
+            document.body.style.width = '';
+        }
+    }
+    
+    // Update mobile header title based on current page
+    function updateMobileTitle() {
+        const pageTitle = document.querySelector('.main .page-title');
+        const mobileTitle = document.getElementById('mobilePageTitle');
+        if(pageTitle && mobileTitle && window.innerWidth <= 768) {
+            mobileTitle.textContent = pageTitle.textContent;
+        }
     }
     
     // Close mobile menu when clicking a link
     document.addEventListener('DOMContentLoaded', function() {
+        updateMobileTitle();
+        
         if(window.innerWidth <= 768) {
             const sidebarLinks = document.querySelectorAll('.sidebar-nav a');
             sidebarLinks.forEach(link => {
                 link.addEventListener('click', function() {
                     if(window.innerWidth <= 768) {
-                        setTimeout(toggleMobileMenu, 200);
+                        setTimeout(toggleMobileMenu, 150);
                     }
                 });
             });
         }
+        
+        // Update mobile title on window resize
+        window.addEventListener('resize', updateMobileTitle);
     });
     </script>
     <?php

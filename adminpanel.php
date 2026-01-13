@@ -2857,10 +2857,40 @@ add_action('template_redirect', function () {
             <button onclick="toggleQuickEdit()" class="secondary" style="margin-left:10px;">Cancel</button>
         </div>
         
+        <!-- Bulk Actions Bar -->
+        <div id="bulkActionBar" style="display:none;margin-bottom:15px;padding:15px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:8px;color:white;">
+            <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+                <strong id="selectedCount" style="font-size:16px;">0 items selected</strong>
+                <button onclick="selectAllProducts()" style="background:rgba(255,255,255,0.2);color:white;padding:8px 16px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;cursor:pointer;font-weight:600;">
+                    Select All
+                </button>
+                <button onclick="deselectAllProducts()" style="background:rgba(255,255,255,0.2);color:white;padding:8px 16px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;cursor:pointer;font-weight:600;">
+                    Deselect All
+                </button>
+                <select id="bulkActionSelect" style="padding:8px 12px;border-radius:6px;border:none;font-weight:600;">
+                    <option value="">Choose Bulk Action...</option>
+                    <option value="delete">Delete Selected</option>
+                    <option value="price_update">Update Price</option>
+                    <option value="add_category">Add Category</option>
+                    <option value="stock_update">Update Stock</option>
+                </select>
+                <button onclick="applyBulkAction()" style="background:#10b981;color:white;padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                    <i class="fa-solid fa-play"></i> Apply
+                </button>
+            </div>
+            <div id="bulkProgress" style="display:none;margin-top:15px;">
+                <div style="background:rgba(255,255,255,0.3);border-radius:8px;height:24px;overflow:hidden;">
+                    <div id="bulkProgressBar" style="background:#10b981;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;"></div>
+                </div>
+                <p id="bulkStatus" style="margin-top:8px;font-size:13px;"></p>
+            </div>
+        </div>
+        
         <!-- Enhanced Product Table -->
         <table id="prodTable">
             <thead>
                 <tr>
+                    <th style="width:40px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleAllProducts(this)"></th>
                     <th data-col="0">Image</th>
                     <th data-col="1">Name</th>
                     <th data-col="2">SKU</th>
@@ -2873,12 +2903,13 @@ add_action('template_redirect', function () {
             </thead>
             <tbody>
             <?php if(empty($products->products)): ?>
-                <tr><td colspan="8" style="text-align:center;padding:30px;color:#999">No products found.</td></tr>
+                <tr><td colspan="9" style="text-align:center;padding:30px;color:#999">No products found.</td></tr>
             <?php else: foreach ($products->products as $p): 
                 $img = wp_get_attachment_image_src($p->get_image_id(),'thumbnail');
                 $cats = wp_get_post_terms($p->get_id(), 'product_cat', ['fields' => 'names']);
             ?>
             <tr data-product-id="<?= $p->get_id() ?>">
+                <td><input type="checkbox" class="product-checkbox" value="<?= $p->get_id() ?>" onchange="updateBulkSelection()"></td>
                 <td data-col="0"><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
                 <td data-col="1"><strong><?= esc_html($p->get_name()) ?></strong></td>
                 <td data-col="2"><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
@@ -3120,6 +3151,147 @@ add_action('template_redirect', function () {
             });
         });
     });
+    
+    // Bulk Actions JavaScript
+    function updateBulkSelection() {
+        const checkboxes = document.querySelectorAll('.product-checkbox');
+        const checked = document.querySelectorAll('.product-checkbox:checked');
+        const bulkBar = document.getElementById('bulkActionBar');
+        const selectedCount = document.getElementById('selectedCount');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        
+        if(checked.length > 0) {
+            bulkBar.style.display = 'block';
+            selectedCount.textContent = checked.length + ' items selected';
+        } else {
+            bulkBar.style.display = 'none';
+        }
+        
+        selectAllCheckbox.checked = (checked.length === checkboxes.length && checkboxes.length > 0);
+    }
+    
+    function toggleAllProducts(checkbox) {
+        document.querySelectorAll('.product-checkbox').forEach(cb => {
+            cb.checked = checkbox.checked;
+        });
+        updateBulkSelection();
+    }
+    
+    function selectAllProducts() {
+        document.querySelectorAll('.product-checkbox').forEach(cb => {
+            cb.checked = true;
+        });
+        updateBulkSelection();
+    }
+    
+    function deselectAllProducts() {
+        document.querySelectorAll('.product-checkbox').forEach(cb => {
+            cb.checked = false;
+        });
+        updateBulkSelection();
+    }
+    
+    function applyBulkAction() {
+        const action = document.getElementById('bulkActionSelect').value;
+        if(!action) {
+            alert('Please select an action first.');
+            return;
+        }
+        
+        const selectedIds = Array.from(document.querySelectorAll('.product-checkbox:checked')).map(cb => cb.value);
+        if(selectedIds.length === 0) {
+            alert('Please select at least one product.');
+            return;
+        }
+        
+        // Handle different actions
+        if(action === 'delete') {
+            if(!confirm(`Are you sure you want to delete ${selectedIds.length} products? This action cannot be undone.`)) {
+                return;
+            }
+            processBulkAction(action, selectedIds, {});
+        } else if(action === 'price_update') {
+            const type = prompt('Enter "percent" for percentage change or "fixed" for fixed amount:', 'percent');
+            if(!type) return;
+            const value = prompt('Enter value (e.g., 10 for 10% increase, -5 for 5% decrease):', '0');
+            if(value === null) return;
+            processBulkAction(action, selectedIds, {type, value});
+        } else if(action === 'add_category') {
+            const categoryId = prompt('Enter category ID to add:', '');
+            if(!categoryId) return;
+            processBulkAction(action, selectedIds, {category_id: categoryId});
+        } else if(action === 'stock_update') {
+            const stock = prompt('Enter new stock quantity:', '0');
+            if(stock === null) return;
+            processBulkAction(action, selectedIds, {stock});
+        }
+    }
+    
+    function processBulkAction(action, productIds, params) {
+        const progressDiv = document.getElementById('bulkProgress');
+        const progressBar = document.getElementById('bulkProgressBar');
+        const statusText = document.getElementById('bulkStatus');
+        
+        progressDiv.style.display = 'block';
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+        statusText.textContent = 'Processing...';
+        
+        const chunkSize = 10;
+        let processed = 0;
+        let succeeded = 0;
+        let failed = 0;
+        
+        function processChunk(startIndex) {
+            const chunk = productIds.slice(startIndex, startIndex + chunkSize);
+            if(chunk.length === 0) {
+                // Done
+                progressBar.textContent = '100%';
+                statusText.textContent = `Completed! ${succeeded} succeeded, ${failed} failed.`;
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+                return;
+            }
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({
+                    action: 'b2b_bulk_action_products',
+                    nonce: '<?= wp_create_nonce("b2b_bulk_action") ?>',
+                    bulk_action: action,
+                    product_ids: JSON.stringify(chunk),
+                    params: JSON.stringify(params)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    succeeded += (data.data.succeeded || 0);
+                    failed += (data.data.failed || 0);
+                }
+                processed += chunk.length;
+                const percent = Math.round((processed / productIds.length) * 100);
+                progressBar.style.width = percent + '%';
+                progressBar.textContent = percent + '%';
+                statusText.textContent = `Processing... ${processed}/${productIds.length}`;
+                
+                // Process next chunk
+                processChunk(startIndex + chunkSize);
+            })
+            .catch(error => {
+                failed += chunk.length;
+                processed += chunk.length;
+                const percent = Math.round((processed / productIds.length) * 100);
+                progressBar.style.width = percent + '%';
+                progressBar.textContent = percent + '%';
+                processChunk(startIndex + chunkSize);
+            });
+        }
+        
+        processChunk(0);
+    }
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -3830,6 +4002,44 @@ add_action('template_redirect', function () {
         // Fiyatlar (Varyasyonlu ise parent fiyatı genelde pasiftir ama kaydediyoruz)
         update_post_meta($id, '_regular_price', wc_clean($_POST['price']));
         update_post_meta($id, '_price', wc_clean($_POST['price']));
+        
+        // Sale Price
+        if(!empty($_POST['sale_price'])) {
+            update_post_meta($id, '_sale_price', wc_clean($_POST['sale_price']));
+            update_post_meta($id, '_price', wc_clean($_POST['sale_price'])); // Active price becomes sale price
+        } else {
+            delete_post_meta($id, '_sale_price');
+        }
+        
+        // Shipping (Weight and Dimensions)
+        if(!empty($_POST['weight'])) {
+            update_post_meta($id, '_weight', wc_clean($_POST['weight']));
+        } else {
+            delete_post_meta($id, '_weight');
+        }
+        if(!empty($_POST['length'])) {
+            update_post_meta($id, '_length', wc_clean($_POST['length']));
+        } else {
+            delete_post_meta($id, '_length');
+        }
+        if(!empty($_POST['width'])) {
+            update_post_meta($id, '_width', wc_clean($_POST['width']));
+        } else {
+            delete_post_meta($id, '_width');
+        }
+        if(!empty($_POST['height'])) {
+            update_post_meta($id, '_height', wc_clean($_POST['height']));
+        } else {
+            delete_post_meta($id, '_height');
+        }
+        
+        // Tax Settings
+        if(isset($_POST['tax_status'])) {
+            update_post_meta($id, '_tax_status', wc_clean($_POST['tax_status']));
+        }
+        if(isset($_POST['tax_class'])) {
+            update_post_meta($id, '_tax_class', wc_clean($_POST['tax_class']));
+        }
 
         // 4. PARENT STOCK MANAGEMENT (Global Stock for Variations)
         // Bu bölüm artık hem basit hem varyasyonlu ürünler için çalışır.
@@ -3923,9 +4133,45 @@ add_action('template_redirect', function () {
                     <div><label>SKU</label><input type="text" name="sku" value="<?= $p->get_sku() ?>"></div>
                     <?php if (!$is_variable): ?>
                         <div><label>Regular Price</label><input type="number" step="0.01" name="price" value="<?= $p->get_regular_price() ?>"></div>
+                        <div><label>Sale Price</label><input type="number" step="0.01" name="sale_price" value="<?= $p->get_sale_price() ?>"></div>
                     <?php else: ?>
                         <div><label>Base Price (Optional)</label><input type="number" step="0.01" name="price" value="<?= $p->get_regular_price() ?>"></div>
+                        <div><label>Base Sale Price (Optional)</label><input type="number" step="0.01" name="sale_price" value="<?= $p->get_sale_price() ?>"></div>
                     <?php endif; ?>
+                </div>
+            </div>
+            
+            <!-- SHIPPING SETTINGS -->
+            <div class="edit-card" style="border-top:4px solid #a855f7;">
+                <h3 style="color:#a855f7;"><i class="fa-solid fa-truck"></i> Shipping</h3>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+                    <div><label>Weight (kg)</label><input type="number" step="0.01" name="weight" value="<?= $p->get_weight() ?>"></div>
+                    <div><label>Length (cm)</label><input type="number" step="0.01" name="length" value="<?= $p->get_length() ?>"></div>
+                    <div><label>Width (cm)</label><input type="number" step="0.01" name="width" value="<?= $p->get_width() ?>"></div>
+                    <div><label>Height (cm)</label><input type="number" step="0.01" name="height" value="<?= $p->get_height() ?>"></div>
+                </div>
+            </div>
+            
+            <!-- TAX SETTINGS -->
+            <div class="edit-card" style="border-top:4px solid #6366f1;">
+                <h3 style="color:#6366f1;"><i class="fa-solid fa-receipt"></i> Tax Settings</h3>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+                    <div>
+                        <label>Tax Status</label>
+                        <select name="tax_status">
+                            <option value="taxable" <?= selected($p->get_tax_status(), 'taxable', false) ?>>Taxable</option>
+                            <option value="shipping" <?= selected($p->get_tax_status(), 'shipping', false) ?>>Shipping only</option>
+                            <option value="none" <?= selected($p->get_tax_status(), 'none', false) ?>>None</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Tax Class</label>
+                        <select name="tax_class">
+                            <option value="" <?= selected($p->get_tax_class(), '', false) ?>>Standard</option>
+                            <option value="reduced-rate" <?= selected($p->get_tax_class(), 'reduced-rate', false) ?>>Reduced rate</option>
+                            <option value="zero-rate" <?= selected($p->get_tax_class(), 'zero-rate', false) ?>>Zero rate</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 

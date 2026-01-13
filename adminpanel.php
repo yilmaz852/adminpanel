@@ -3367,6 +3367,7 @@ add_action('template_redirect', function () {
             data += '&price_value=' + params.priceValue;
             data += '&price_action=' + params.priceAction;
         } else if(action === 'stock_update') {
+            data += '&stock_type=' + params.stockType;
             data += '&stock_value=' + params.stockValue;
             data += '&stock_action=' + params.stockAction;
         }

@@ -1314,6 +1314,13 @@ function b2b_adm_header($title) {
                 <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
                 <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
+            
+            <!-- Support Tickets Module -->
+            <?php if(current_user_can('manage_woocommerce')): ?>
+            <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
+            <?php else: ?>
+            <a href="<?= home_url('/b2b-panel/my-support') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['my-support','create-support-ticket','view-support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
+            <?php endif; ?>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -8883,45 +8890,4 @@ function b2b_page_view_support_ticket() {
     b2b_adm_footer();
 }
 
-// Add Support menu items
-add_filter('b2b_pro_admin_menu_items', function($menu) {
-    // Admin menu
-    if(current_user_can('manage_woocommerce')) {
-        $menu[] = [
-            'slug' => 'support-tickets',
-            'title' => 'Support',
-            'icon' => 'headphones',
-            'callback' => 'b2b_page_support_tickets'
-        ];
-        $menu[] = [
-            'slug' => 'support-ticket',
-            'title' => 'Ticket Detail',
-            'callback' => 'b2b_page_support_ticket_detail',
-            'hidden' => true
-        ];
-    }
-    
-    // Customer menu
-    $menu[] = [
-        'slug' => 'my-support',
-        'title' => 'Support',
-        'icon' => 'headphones',
-        'callback' => 'b2b_page_my_support_tickets'
-    ];
-    $menu[] = [
-        'slug' => 'create-support-ticket',
-        'title' => 'Create Ticket',
-        'callback' => 'b2b_page_create_support_ticket',
-        'hidden' => true
-    ];
-    $menu[] = [
-        'slug' => 'view-support-ticket',
-        'title' => 'View Ticket',
-        'callback' => 'b2b_page_view_support_ticket',
-        'hidden' => true
-    ];
-    
-    return $menu;
-}, 30);
-
-// End of B2B Support Ticket Module
+// End of B2B Support Ticket Module - Menu items added directly in sidebar HTML above

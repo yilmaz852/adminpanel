@@ -3350,7 +3350,8 @@ add_action('template_redirect', function () {
         // Build request data
         let data = 'action=b2b_bulk_action_products&nonce=<?= wp_create_nonce("b2b_ajax_nonce") ?>';
         data += '&bulk_action=' + action;
-        data += '&product_ids=' + chunk.join(',');
+        data += '&product_ids=' + productIds.join(','); // Send all IDs, backend will chunk
+        data += '&chunk=' + currentChunk;
         
         if(action === 'price_update') {
             data += '&price_type=' + params.priceType;
@@ -7521,7 +7522,9 @@ add_action('wp_ajax_b2b_bulk_action_products', function() {
     }
     
     $action = sanitize_text_field($_POST['bulk_action'] ?? '');
-    $product_ids = array_map('intval', $_POST['product_ids'] ?? []);
+    // Parse product_ids - it comes as comma-separated string
+    $product_ids_str = sanitize_text_field($_POST['product_ids'] ?? '');
+    $product_ids = !empty($product_ids_str) ? array_map('intval', explode(',', $product_ids_str)) : [];
     $chunk = intval($_POST['chunk'] ?? 0);
     $chunk_size = 10;
     

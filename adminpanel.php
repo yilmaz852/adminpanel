@@ -8845,6 +8845,10 @@ function b2b_page_support_ticket_detail() {
                 } else {
                     alert('Error: ' + response.data.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed: ' + error + '. Please try again.');
+                console.error('AJAX Error:', xhr, status, error);
             }
         });
     }
@@ -8865,6 +8869,10 @@ function b2b_page_support_ticket_detail() {
                 } else {
                     alert('Error: ' + response.data.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed: ' + error + '. Please try again.');
+                console.error('AJAX Error:', xhr, status, error);
             }
         });
     }
@@ -8895,6 +8903,10 @@ function b2b_page_support_ticket_detail() {
                 } else {
                     alert('Error: ' + response.data.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed: ' + error + '. Please try again.');
+                console.error('AJAX Error:', xhr, status, error);
             }
         });
     }
@@ -9075,6 +9087,10 @@ function b2b_page_create_support_ticket() {
                 } else {
                     alert('Error: ' + response.data.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed: ' + error + '. Please try again.');
+                console.error('AJAX Error:', xhr, status, error);
             }
         });
     }
@@ -9195,6 +9211,10 @@ function b2b_page_view_support_ticket() {
                 } else {
                     alert('Error: ' + response.data.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed: ' + error + '. Please try again.');
+                console.error('AJAX Error:', xhr, status, error);
             }
         });
     }

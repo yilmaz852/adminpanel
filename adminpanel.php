@@ -2877,7 +2877,7 @@ add_action('template_redirect', function () {
                     <div style="margin-bottom:10px;">
                         <label style="display:block;margin-bottom:5px;font-weight:600;">Type:</label>
                         <select id="priceType" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
-                            <option value="percent">Percentage (%)</option>
+                            <option value="percentage">Percentage (%)</option>
                             <option value="fixed">Fixed Amount (₺)</option>
                         </select>
                     </div>
@@ -2903,8 +2903,15 @@ add_action('template_redirect', function () {
                         <i class="fa-solid fa-box"></i> Stock Update
                     </h3>
                     <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Type:</label>
+                        <select id="stockType" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="fixed">Fixed Amount (units)</option>
+                            <option value="percentage">Percentage (%)</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:10px;">
                         <label style="display:block;margin-bottom:5px;font-weight:600;">Stock Value:</label>
-                        <input type="number" id="stockValue" placeholder="Enter quantity" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" min="0">
+                        <input type="number" id="stockValue" placeholder="Enter value" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" step="0.01">
                     </div>
                     <div style="margin-bottom:15px;">
                         <label style="display:block;margin-bottom:5px;font-weight:600;">Action:</label>
@@ -3300,11 +3307,12 @@ add_action('template_redirect', function () {
             return;
         }
         
+        const stockType = document.getElementById('stockType').value;
         const stockValue = document.getElementById('stockValue').value;
         const stockAction = document.getElementById('stockAction').value;
         
-        if(!stockValue || parseInt(stockValue) < 0) {
-            alert('Please enter a valid stock quantity');
+        if(!stockValue || parseFloat(stockValue) < 0) {
+            alert('Please enter a valid value');
             return;
         }
         
@@ -3314,6 +3322,7 @@ add_action('template_redirect', function () {
         
         showProgress();
         processBulkAction('stock_update', productIds, 0, {
+            stockType: stockType,
             stockValue: stockValue,
             stockAction: stockAction
         });
@@ -7585,26 +7594,39 @@ add_action('wp_ajax_b2b_bulk_action_products', function() {
                     break;
                     
                 case 'stock_update':
-                    $stock_value = intval($_POST['stock_value'] ?? 0);
+                    $stock_value = floatval($_POST['stock_value'] ?? 0);
                     $stock_action = sanitize_text_field($_POST['stock_action'] ?? 'set');
+                    $stock_type = sanitize_text_field($_POST['stock_type'] ?? 'fixed');
                     
                     $current_stock = $product->get_stock_quantity();
                     if($current_stock === null) $current_stock = 0;
                     
-                    // Calculate new stock based on action
-                    if($stock_action == 'set') {
-                        $new_stock = $stock_value;
-                    } else if($stock_action == 'increase') {
-                        $new_stock = $current_stock + $stock_value;
-                    } else { // decrease
-                        $new_stock = max(0, $current_stock - $stock_value);
+                    // Calculate new stock based on type and action
+                    if($stock_type == 'percentage') {
+                        // Percentage calculations
+                        if($stock_action == 'set') {
+                            $new_stock = round($current_stock * ($stock_value / 100));
+                        } else if($stock_action == 'increase') {
+                            $new_stock = round($current_stock * (1 + $stock_value / 100));
+                        } else { // decrease
+                            $new_stock = max(0, round($current_stock * (1 - $stock_value / 100)));
+                        }
+                    } else {
+                        // Fixed amount calculations
+                        if($stock_action == 'set') {
+                            $new_stock = intval($stock_value);
+                        } else if($stock_action == 'increase') {
+                            $new_stock = $current_stock + intval($stock_value);
+                        } else { // decrease
+                            $new_stock = max(0, $current_stock - intval($stock_value));
+                        }
                     }
                     
                     $product->set_manage_stock(true);
                     $product->set_stock_quantity($new_stock);
                     $product->set_stock_status($new_stock > 0 ? 'instock' : 'outofstock');
                     $product->save();
-                    b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk stock update: $stock_action $stock_value (new: $new_stock)");
+                    b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk stock update: $stock_type $stock_action $stock_value (new: $new_stock)");
                     $results['success'][] = $product->get_name();
                     break;
             }

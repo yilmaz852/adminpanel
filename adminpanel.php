@@ -2890,15 +2890,15 @@ add_action('template_redirect', function () {
         <table id="prodTable">
             <thead>
                 <tr>
-                    <th style="width:40px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleAllProducts(this)"></th>
-                    <th data-col="0">Image</th>
-                    <th data-col="1">Name</th>
-                    <th data-col="2">SKU</th>
-                    <th data-col="3">Category</th>
-                    <th data-col="4">Price</th>
-                    <th data-col="5">Stock</th>
-                    <th data-col="6">Status</th>
-                    <th data-col="7" style="text-align:right">Action</th>
+                    <th style="width:40px;"><input type="checkbox" id="selectAllCheckbox" onchange="window.toggleAllProducts(this)"></th>
+                    <th>Image</th>
+                    <th>Name</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -2909,13 +2909,13 @@ add_action('template_redirect', function () {
                 $cats = wp_get_post_terms($p->get_id(), 'product_cat', ['fields' => 'names']);
             ?>
             <tr data-product-id="<?= $p->get_id() ?>">
-                <td><input type="checkbox" class="product-checkbox" value="<?= $p->get_id() ?>" onchange="updateBulkSelection()"></td>
-                <td data-col="0"><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
-                <td data-col="1"><strong><?= esc_html($p->get_name()) ?></strong></td>
-                <td data-col="2"><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
-                <td data-col="3"><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
-                <td data-col="4"><strong><?= $p->get_price_html() ?></strong></td>
-                <td data-col="5" class="stock-cell">
+                <td><input type="checkbox" class="product-checkbox" value="<?= $p->get_id() ?>" onchange="window.updateBulkSelection()"></td>
+                <td><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
+                <td><strong><?= esc_html($p->get_name()) ?></strong></td>
+                <td><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
+                <td><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
+                <td><strong><?= $p->get_price_html() ?></strong></td>
+                <td class="stock-cell">
                     <?php if($p->managing_stock()): 
                         $qty = $p->get_stock_quantity();
                         $color = $qty > 10 ? '#10b981' : ($qty > 0 ? '#f59e0b' : '#ef4444');
@@ -2927,7 +2927,7 @@ add_action('template_redirect', function () {
                         <span class="stock-input" style="display:none;color:#6b7280;font-size:11px;">N/A</span>
                     <?php endif; ?>
                 </td>
-                <td data-col="6">
+                <td>
                     <?php 
                     $status = $p->get_status();
                     $status_color = $status == 'publish' ? '#d1fae5' : '#fee2e2';
@@ -2935,7 +2935,7 @@ add_action('template_redirect', function () {
                     ?>
                     <span style="background:<?= $status_color ?>;color:<?= $status_text_color ?>;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;"><?= $status ?></span>
                 </td>
-                <td data-col="7" style="text-align:right;">
+                <td style="text-align:right;">
                     <a href="<?= home_url('/b2b-panel/products/edit?id=' . $p->get_id()) ?>">
                         <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
                     </a>
@@ -2975,9 +2975,11 @@ add_action('template_redirect', function () {
     <script>
     // Products Column Toggle with localStorage
     function toggleColP(idx, show) { 
-        var rows = document.getElementById('prodTable').rows; 
+        var rows = document.getElementById('prodTable').rows;
+        // +1 to account for checkbox column which is column 0
+        var actualIdx = idx + 1;
         for(var i=0; i<rows.length; i++) { 
-            if(rows[i].cells.length > idx) rows[i].cells[idx].style.display = show ? '' : 'none'; 
+            if(rows[i].cells.length > actualIdx) rows[i].cells[actualIdx].style.display = show ? '' : 'none'; 
         }
         // Save state to localStorage
         var colStates = JSON.parse(localStorage.getItem('b2b_products_columns') || '{}');
@@ -7669,16 +7671,13 @@ add_action('wp_footer', function() {
         // Products Bulk Actions
         // Note: Checkboxes already exist in HTML, no need to prepend
         
-        // Connect existing select all checkbox to bulk checkboxes
-        $('#selectAllCheckbox').on('change', function() {
-            $('.product-checkbox').prop('checked', $(this).prop('checked'));
-            updateBulkSelection();
-        });
+        // Make functions global
+        window.toggleAllProducts = function(masterCheckbox) {
+            $('.product-checkbox').prop('checked', $(masterCheckbox).prop('checked'));
+            window.updateBulkSelection();
+        };
         
-        $('.product-checkbox').on('change', updateBulkSelection);
-        
-        // Add Bulk Actions Bar (using existing bulk bar in HTML)
-        function updateBulkSelection() {
+        window.updateBulkSelection = function() {
             const checked = $('.product-checkbox:checked').length;
             $('#selectedCount').text(checked);
             if(checked > 0) {
@@ -7686,7 +7685,10 @@ add_action('wp_footer', function() {
             } else {
                 $('#bulkActionBar').hide();
             }
-        }
+        };
+        
+        // Connect checkboxes
+        $('.product-checkbox').on('change', window.updateBulkSelection);
         
         // Apply Bulk Action (global function for onclick handler)
         window.applyBulkAction = function() {

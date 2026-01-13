@@ -21,12 +21,19 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-register/?$', 'index.php?b2b_adm_page=register', 'top');
     add_rewrite_rule('^b2b-panel/?$', 'index.php?b2b_adm_page=dashboard', 'top');
     add_rewrite_rule('^b2b-panel/orders/?$', 'index.php?b2b_adm_page=orders', 'top');
+    
+    // Reports
+    add_rewrite_rule('^b2b-panel/reports/?$', 'index.php?b2b_adm_page=reports', 'top');
+    
 	// Customers (New)
     add_rewrite_rule('^b2b-panel/customers/?$', 'index.php?b2b_adm_page=customers', 'top');
     add_rewrite_rule('^b2b-panel/customers/edit/?$', 'index.php?b2b_adm_page=customer_edit', 'top');
     
     // Ürünler Listesi
     add_rewrite_rule('^b2b-panel/products/?$', 'index.php?b2b_adm_page=products', 'top');
+    
+    // Ürün Yeni Ekle (Add New)
+    add_rewrite_rule('^b2b-panel/products/add-new/?$', 'index.php?b2b_adm_page=product_add_new', 'top');
     
     // Ürün Detay (Edit) - Bu satır en kritik olanı
     add_rewrite_rule('^b2b-panel/products/edit/?$', 'index.php?b2b_adm_page=product_edit', 'top');
@@ -55,11 +62,15 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/tax-exemption/?$', 'index.php?b2b_adm_page=settings_tax', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
+    
+    // Support Module
+    add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
+    add_rewrite_rule('^b2b-panel/support-ticket/?$', 'index.php?b2b_adm_page=support-ticket', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v17_shipping')) {
+    if (!get_option('b2b_rewrite_v18_support')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v17_shipping', true);
+        update_option('b2b_rewrite_v18_support', true);
     }
 });
 
@@ -116,7 +127,212 @@ add_action('woocommerce_before_calculate_totals', function($cart) {
    WOOCOMMERCE SHIPPING INTEGRATION (B2B Shipping Module)
 ===================================================== */
 
-// Add B2B shipping methods to WooCommerce checkout
+/**
+ * Helper function: Get all shipping zones (from WooCommerce native) with caching
+ */
+function b2b_get_all_shipping_zones($force_refresh = false) {
+    if(!class_exists('WC_Shipping_Zones')) {
+        return [];
+    }
+    
+    // Check cache first
+    $cache_key = 'b2b_shipping_zones_v1';
+    if(!$force_refresh) {
+        $cached = wp_cache_get($cache_key, 'b2b_shipping');
+        if($cached !== false) {
+            return $cached;
+        }
+    }
+    
+    $wc_zones = WC_Shipping_Zones::get_zones();
+    $zones = [];
+    
+    foreach($wc_zones as $wc_zone_data) {
+        $zone_id = $wc_zone_data['id'];
+        $wc_zone = new WC_Shipping_Zone($zone_id);
+        $shipping_methods = $wc_zone->get_shipping_methods();
+        
+        // Get regions
+        $regions = [];
+        foreach($wc_zone_data['zone_locations'] as $location) {
+            if($location->type == 'country') {
+                $regions[] = $location->code;
+            }
+        }
+        
+        // Get shipping methods
+        $flat_rate_data = ['enabled' => 0, 'cost' => 0, 'title' => 'Flat Rate'];
+        $free_ship_data = ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping'];
+        
+        foreach($shipping_methods as $method) {
+            if($method->id == 'flat_rate' && $method->enabled == 'yes') {
+                $flat_rate_data = [
+                    'enabled' => 1,
+                    'cost' => floatval($method->get_option('cost', 0)),
+                    'title' => $method->get_title(),
+                    'instance_id' => $method->get_instance_id()
+                ];
+            }
+            if($method->id == 'free_shipping' && $method->enabled == 'yes') {
+                $free_ship_data = [
+                    'enabled' => 1,
+                    'min_amount' => floatval($method->get_option('min_amount', 0)),
+                    'title' => $method->get_title(),
+                    'instance_id' => $method->get_instance_id()
+                ];
+            }
+        }
+        
+        // Get B2B extension data (group permissions)
+        $extensions = get_option('b2b_zone_extensions', []);
+        $extension = $extensions[$zone_id] ?? [];
+        
+        $zones[$zone_id] = [
+            'name' => $wc_zone_data['zone_name'],
+            'regions' => $regions,
+            'active' => 1,
+            'priority' => $wc_zone_data['zone_order'],
+            'methods' => [
+                'flat_rate' => $flat_rate_data,
+                'free_shipping' => $free_ship_data
+            ],
+            'group_permissions' => $extension['group_permissions'] ?? []
+        ];
+    }
+    
+    // Cache for 1 hour
+    wp_cache_set($cache_key, $zones, 'b2b_shipping', HOUR_IN_SECONDS);
+    
+    return $zones;
+}
+
+/**
+ * Clear shipping zones cache
+ */
+function b2b_clear_shipping_zones_cache() {
+    wp_cache_delete('b2b_shipping_zones_v1', 'b2b_shipping');
+}
+
+/**
+ * Helper function: Save/Update a shipping zone to WooCommerce
+ */
+function b2b_save_shipping_zone($zone_id, $zone_data) {
+    if(!class_exists('WC_Shipping_Zone')) {
+        return false;
+    }
+    
+    // Create or get zone
+    if($zone_id === 'new' || empty($zone_id)) {
+        $zone = new WC_Shipping_Zone();
+    } else {
+        $zone = new WC_Shipping_Zone($zone_id);
+    }
+    
+    // Set zone name and order
+    $zone->set_zone_name($zone_data['name']);
+    $zone->set_zone_order($zone_data['priority'] ?? 1);
+    $zone->save();
+    
+    $saved_zone_id = $zone->get_id();
+    
+    // Clear existing locations
+    global $wpdb;
+    $wpdb->delete($wpdb->prefix . 'woocommerce_shipping_zone_locations', ['zone_id' => $saved_zone_id]);
+    
+    // Add locations (regions/countries)
+    if(!empty($zone_data['regions'])) {
+        foreach($zone_data['regions'] as $region) {
+            $zone->add_location($region, 'country');
+        }
+    }
+    
+    // Handle shipping methods
+    $existing_methods = $zone->get_shipping_methods();
+    
+    // Flat Rate
+    if($zone_data['methods']['flat_rate']['enabled']) {
+        $flat_instance = null;
+        foreach($existing_methods as $method) {
+            if($method->id == 'flat_rate') {
+                $flat_instance = $method->get_instance_id();
+                break;
+            }
+        }
+        
+        if(!$flat_instance) {
+            $flat_instance = $zone->add_shipping_method('flat_rate');
+        }
+        
+        // Update settings
+        update_option('woocommerce_flat_rate_' . $flat_instance . '_settings', [
+            'title' => $zone_data['methods']['flat_rate']['title'],
+            'cost' => $zone_data['methods']['flat_rate']['cost'],
+            'tax_status' => 'taxable',
+            'enabled' => 'yes'
+        ]);
+    }
+    
+    // Free Shipping
+    if($zone_data['methods']['free_shipping']['enabled']) {
+        $free_instance = null;
+        foreach($existing_methods as $method) {
+            if($method->id == 'free_shipping') {
+                $free_instance = $method->get_instance_id();
+                break;
+            }
+        }
+        
+        if(!$free_instance) {
+            $free_instance = $zone->add_shipping_method('free_shipping');
+        }
+        
+        // Update settings
+        update_option('woocommerce_free_shipping_' . $free_instance . '_settings', [
+            'title' => $zone_data['methods']['free_shipping']['title'],
+            'min_amount' => $zone_data['methods']['free_shipping']['min_amount'],
+            'requires' => 'min_amount',
+            'enabled' => 'yes'
+        ]);
+    }
+    
+    // Save B2B extensions (group permissions)
+    if(isset($zone_data['group_permissions'])) {
+        $extensions = get_option('b2b_zone_extensions', []);
+        $extensions[$saved_zone_id] = [
+            'group_permissions' => $zone_data['group_permissions']
+        ];
+        update_option('b2b_zone_extensions', $extensions);
+    }
+    
+    // Clear cache after saving
+    b2b_clear_shipping_zones_cache();
+    
+    return $saved_zone_id;
+}
+
+/**
+ * Helper function: Delete a shipping zone from WooCommerce
+ */
+function b2b_delete_shipping_zone($zone_id) {
+    if(!class_exists('WC_Shipping_Zone')) {
+        return false;
+    }
+    
+    $zone = new WC_Shipping_Zone($zone_id);
+    $zone->delete();
+    
+    // Also delete B2B extensions
+    $extensions = get_option('b2b_zone_extensions', []);
+    unset($extensions[$zone_id]);
+    update_option('b2b_zone_extensions', $extensions);
+    
+    // Clear cache after deletion
+    b2b_clear_shipping_zones_cache();
+    
+    return true;
+}
+
+// Add B2B shipping methods to checkout
 add_filter('woocommerce_package_rates', function($rates, $package) {
     if(!is_user_logged_in()) {
         return $rates;
@@ -126,8 +342,8 @@ add_filter('woocommerce_package_rates', function($rates, $package) {
     $customer = WC()->customer;
     $country = $customer->get_shipping_country();
     
-    // Get all shipping zones
-    $zones = get_option('b2b_shipping_zones', []);
+    // Get all shipping zones from WooCommerce
+    $zones = b2b_get_all_shipping_zones();
     
     // Find matching zones for customer's country
     $matched_zones = [];
@@ -356,6 +572,58 @@ add_action('wp_ajax_b2b_delete_product', function() {
         wp_send_json_success(['message' => 'Product deleted successfully']);
     } else {
         wp_send_json_error('Failed to delete product');
+    }
+});
+
+// AJAX handler for duplicating products
+add_action('wp_ajax_b2b_duplicate_product', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'b2b_duplicate_product')) {
+        wp_send_json_error('Security check failed');
+        return;
+    }
+    
+    $product_id = intval($_POST['product_id']);
+    
+    if (!$product_id) {
+        wp_send_json_error('Invalid product ID');
+        return;
+    }
+    
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error('Product not found');
+        return;
+    }
+    
+    // Duplicate the product
+    $duplicate = new WC_Product_Simple();
+    $duplicate->set_name($product->get_name() . ' (Copy)');
+    $duplicate->set_slug('');
+    $duplicate->set_sku('');
+    $duplicate->set_regular_price($product->get_regular_price());
+    $duplicate->set_sale_price($product->get_sale_price());
+    $duplicate->set_description($product->get_description());
+    $duplicate->set_short_description($product->get_short_description());
+    $duplicate->set_category_ids($product->get_category_ids());
+    $duplicate->set_status('draft');
+    
+    // Save and get new ID
+    $new_id = $duplicate->save();
+    
+    if ($new_id) {
+        wp_send_json_success([
+            'message' => 'Product duplicated successfully',
+            'new_id' => $new_id,
+            'edit_url' => home_url('/b2b-panel/products/edit?id=' . $new_id)
+        ]);
+    } else {
+        wp_send_json_error('Failed to duplicate product');
     }
 });
 
@@ -852,6 +1120,7 @@ function b2b_adm_header($title) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root{--primary:#0f172a;--accent:#3b82f6;--bg:#f3f4f6;--white:#ffffff;--border:#e5e7eb;--text:#1f2937}
         body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px}
@@ -918,6 +1187,21 @@ function b2b_adm_header($title) {
         .customer-section h3{margin:0 0 15px 0;padding-bottom:10px;border-bottom:2px solid var(--border);color:var(--primary);font-size:16px;}
         .form-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;}
         
+        /* Mobile Menu Toggle Button */
+        .mobile-menu-toggle{display:none;position:fixed;top:0;left:0;z-index:1002;background:var(--primary);color:white;border:none;padding:0;width:56px;height:56px;cursor:pointer;font-size:20px;box-shadow:0 2px 12px rgba(0,0,0,0.2);border-bottom-right-radius:16px;align-items:center;justify-content:center}
+        .mobile-menu-toggle:active{background:#1e293b;transform:scale(0.95)}
+        
+        /* Mobile Header Bar */
+        .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+        .mobile-header .page-title{margin:0;padding:0 70px;line-height:56px;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+        
+        /* Sidebar Overlay for Mobile */
+        .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(3px);opacity:0;transition:opacity 0.3s ease}
+        .sidebar-overlay.active{display:block;opacity:1}
+        
+        /* Responsive Tables */
+        .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0}
+        
         /* Responsive Design */
         @media (max-width: 1200px) {
             .sidebar{width:240px;}
@@ -931,41 +1215,79 @@ function b2b_adm_header($title) {
             .form-grid{grid-template-columns:1fr;}
         }
         @media (max-width: 768px) {
-            body{flex-direction:column;}
-            .sidebar{width:100%;height:auto;position:relative;}
-            .sidebar-nav{padding:10px;display:flex;flex-wrap:wrap;gap:5px;}
-            .sidebar-nav a, .submenu-toggle{flex:1 1 auto;min-width:120px;}
-            .submenu{padding-left:0;}
-            .main{margin-left:0;padding:20px;width:100%;}
-            .page-header{flex-direction:column;align-items:flex-start;gap:15px;}
-            .dash-grid{grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));}
-            table{font-size:11px;}
-            th,td{padding:8px 6px;}
-            .stats-box{flex-wrap:wrap;}
+            .mobile-menu-toggle{display:flex}
+            .mobile-header{display:block}
+            body{flex-direction:column;overflow-x:hidden}
+            .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
+            .sidebar.mobile-open{transform:translateX(0)}
+            .sidebar-nav{padding:80px 15px 20px 15px;display:block}
+            .sidebar-nav a, .submenu-toggle{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
+            .submenu{padding-left:20px}
+            .submenu a{padding:10px 16px;font-size:14px}
+            .main{margin-left:0;padding:16px;padding-top:72px;width:100%;max-width:100%;overflow-x:hidden}
+            .page-header{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:16px}
+            .page-header .page-title{display:none}
+            .page-header button,.page-header a{width:100%;margin:0}
+            .dash-grid{grid-template-columns:repeat(2, 1fr);gap:12px}
+            .table-responsive{overflow-x:auto}
+            table{font-size:12px;min-width:650px}
+            th,td{padding:10px 8px}
+            .stats-box{flex-wrap:wrap;gap:12px}
+            .modal-content{width:calc(100% - 32px);max-width:none;border-radius:12px;margin:16px}
+            #bulkEditPanel{padding:16px}
+            #bulkEditPanel > div{grid-template-columns:1fr !important;gap:16px}
+            .bulk-section{padding:16px}
+            .card{padding:16px;margin-bottom:16px}
+            .customer-section{padding:16px;margin-bottom:16px}
         }
         @media (max-width: 480px) {
-            .main{padding:15px;}
-            .card, .customer-section{padding:15px;}
-            .stats-box{flex-direction:column;gap:10px;}
-            button{padding:8px 15px;font-size:13px;}
-            .dash-grid{grid-template-columns:1fr;}
+            .main{padding:12px;padding-top:68px}
+            .card, .customer-section{padding:12px;margin-bottom:12px}
+            .stats-box{flex-direction:column;gap:10px}
+            button{padding:12px 16px;font-size:14px;width:100%}
+            .dash-grid{grid-template-columns:1fr;gap:12px}
+            table{font-size:11px;min-width:550px}
+            th,td{padding:8px 6px}
+            input,select,textarea{font-size:16px;padding:12px}
+            .modal-content{margin:12px;width:calc(100% - 24px)}
+            .sidebar{width:85%;max-width:280px}
+            .sidebar-nav{padding:70px 12px 16px 12px}
+            .sidebar-nav a, .submenu-toggle{padding:12px 14px}
+            #bulkEditPanel{padding:12px}
+            .bulk-section{padding:12px}
+            .page-header{gap:10px}
         }
     </style>
     </head>
     <body>
+
+    <!-- Mobile Menu Toggle Button -->
+    <button class="mobile-menu-toggle" onclick="toggleMobileMenu()" aria-label="Toggle Menu">
+        <i class="fa-solid fa-bars"></i>
+    </button>
+
+    <!-- Mobile Header Bar -->
+    <div class="mobile-header">
+        <div class="page-title" id="mobilePageTitle">Admin Panel</div>
+    </div>
+
+    <!-- Sidebar Overlay for Mobile -->
+    <div class="sidebar-overlay" onclick="toggleMobileMenu()"></div>
 
     <div class="sidebar">
         <div class="sidebar-head"><i class="fa-solid fa-shield-halved"></i> ADMIN PANEL V10</div>
         <div class="sidebar-nav">
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
+            <a href="<?= home_url('/b2b-panel/reports') ?>" class="<?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="<?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>"><i class="fa-solid fa-clipboard-list"></i> Activity Log</a>
             
             <!-- Products Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-tags"></i> Products <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'||get_query_var('b2b_adm_page')=='product_add_new'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
                 <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="<?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>"><i class="fa-solid fa-folder-tree"></i> Categories</a>
                 <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="<?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</a>
                 <a href="<?= home_url('/b2b-panel/products/import') ?>" class="<?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>"><i class="fa-solid fa-file-import"></i> Import</a>
@@ -996,6 +1318,11 @@ function b2b_adm_header($title) {
                 <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
                 <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
+            
+            <!-- Support Tickets Module -->
+            <?php if(current_user_can('manage_woocommerce')): ?>
+            <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
+            <?php endif; ?>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -1008,6 +1335,55 @@ function b2b_adm_header($title) {
         el.classList.toggle('active');
         el.nextElementSibling.classList.toggle('active');
     }
+    
+    // Mobile menu toggle
+    function toggleMobileMenu() {
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        const isOpen = sidebar.classList.contains('mobile-open');
+        
+        sidebar.classList.toggle('mobile-open');
+        overlay.classList.toggle('active');
+        
+        // Lock body scroll when menu is open
+        if(!isOpen) {
+            document.body.style.overflow = 'hidden';
+            document.body.style.position = 'fixed';
+            document.body.style.width = '100%';
+        } else {
+            document.body.style.overflow = '';
+            document.body.style.position = '';
+            document.body.style.width = '';
+        }
+    }
+    
+    // Update mobile header title based on current page
+    function updateMobileTitle() {
+        const pageTitle = document.querySelector('.main .page-title');
+        const mobileTitle = document.getElementById('mobilePageTitle');
+        if(pageTitle && mobileTitle && window.innerWidth <= 768) {
+            mobileTitle.textContent = pageTitle.textContent;
+        }
+    }
+    
+    // Close mobile menu when clicking a link
+    document.addEventListener('DOMContentLoaded', function() {
+        updateMobileTitle();
+        
+        if(window.innerWidth <= 768) {
+            const sidebarLinks = document.querySelectorAll('.sidebar-nav a');
+            sidebarLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if(window.innerWidth <= 768) {
+                        setTimeout(toggleMobileMenu, 150);
+                    }
+                });
+            });
+        }
+        
+        // Update mobile title on window resize
+        window.addEventListener('resize', updateMobileTitle);
+    });
     </script>
     <?php
 }
@@ -1729,6 +2105,581 @@ add_action('template_redirect', function () {
         </tbody></table>
     </div>
 
+    <!-- Chart.js Dashboard Widgets -->
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:30px;margin-top:30px;">
+        <div class="card">
+            <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-area" style="color:#3b82f6;margin-right:10px;"></i>Sales Trend (Last 30 Days)</h3>
+            <canvas id="salesTrendChart" height="80"></canvas>
+        </div>
+        <div class="card">
+            <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-pie" style="color:#f59e0b;margin-right:10px;"></i>Order Status</h3>
+            <canvas id="orderStatusChart"></canvas>
+        </div>
+    </div>
+    
+    <div class="card" style="margin-top:30px;">
+        <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
+        <canvas id="topProductsChart" height="60"></canvas>
+    </div>
+
+    <script>
+    // Sales Trend Chart Data
+    <?php
+    $sales_30days = $wpdb->get_results($wpdb->prepare("
+        SELECT DATE(p.post_date) as date, SUM(pm.meta_value) as revenue
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND pm.meta_key = '_order_total'
+        AND p.post_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        GROUP BY DATE(p.post_date)
+        ORDER BY date ASC
+    "));
+    
+    $dates = [];
+    $revenues = [];
+    foreach($sales_30days as $day) {
+        $dates[] = date('M d', strtotime($day->date));
+        $revenues[] = round($day->revenue, 2);
+    }
+    ?>
+    
+    // Sales Trend Chart
+    const salesCtx = document.getElementById('salesTrendChart').getContext('2d');
+    new Chart(salesCtx, {
+        type: 'line',
+        data: {
+            labels: <?= json_encode($dates) ?>,
+            datasets: [{
+                label: 'Daily Sales ($)',
+                data: <?= json_encode($revenues) ?>,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // Order Status Pie Chart Data
+    <?php
+    $status_counts = [];
+    foreach($wh_stats as $stat) {
+        if($stat['count'] > 0) {
+            $status_counts[$stat['label']] = $stat['count'];
+        }
+    }
+    ?>
+    
+    const orderCtx = document.getElementById('orderStatusChart').getContext('2d');
+    new Chart(orderCtx, {
+        type: 'doughnut',
+        data: {
+            labels: <?= json_encode(array_keys($status_counts)) ?>,
+            datasets: [{
+                data: <?= json_encode(array_values($status_counts)) ?>,
+                backgroundColor: [
+                    '#10b981',
+                    '#3b82f6',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#8b5cf6',
+                    '#ec4899'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    
+    // Top Products Bar Chart
+    <?php
+    $top_products = $wpdb->get_results("
+        SELECT 
+            p.post_title as name,
+            SUM(oi.order_item_qty * oim.meta_value) as revenue
+        FROM {$wpdb->prefix}woocommerce_order_items oi
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim ON oi.order_item_id = oim.order_item_id AND oim.meta_key = '_line_total'
+        INNER JOIN {$wpdb->posts} p ON p.ID = (SELECT meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id = oi.order_item_id AND meta_key = '_product_id' LIMIT 1)
+        WHERE oi.order_item_type = 'line_item'
+        GROUP BY p.ID
+        ORDER BY revenue DESC
+        LIMIT 5
+    ");
+    
+    $product_names = [];
+    $product_revenues = [];
+    foreach($top_products as $prod) {
+        $product_names[] = $prod->name;
+        $product_revenues[] = round($prod->revenue, 2);
+    }
+    ?>
+    
+    const prodCtx = document.getElementById('topProductsChart').getContext('2d');
+    new Chart(prodCtx, {
+        type: 'bar',
+        data: {
+            labels: <?= json_encode($product_names) ?>,
+            datasets: [{
+                label: 'Revenue ($)',
+                data: <?= json_encode($product_revenues) ?>,
+                backgroundColor: [
+                    '#10b981',
+                    '#3b82f6',
+                    '#f59e0b',
+                    '#8b5cf6',
+                    '#ec4899'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            indexAxis: 'y',
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.x.toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    </script>
+
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   7B. PAGE: REPORTS MODULE (Comprehensive Analytics)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'reports') return;
+    b2b_adm_guard();
+    
+    global $wpdb;
+    
+    // Get date range from query params
+    $range = isset($_GET['range']) ? sanitize_text_field($_GET['range']) : '30days';
+    $start_date = '';
+    $end_date = date('Y-m-d 23:59:59');
+    
+    switch($range) {
+        case 'today':
+            $start_date = date('Y-m-d 00:00:00');
+            break;
+        case '7days':
+            $start_date = date('Y-m-d 00:00:00', strtotime('-7 days'));
+            break;
+        case '30days':
+            $start_date = date('Y-m-d 00:00:00', strtotime('-30 days'));
+            break;
+        case 'thismonth':
+            $start_date = date('Y-m-01 00:00:00');
+            break;
+        case 'lastmonth':
+            $start_date = date('Y-m-01 00:00:00', strtotime('first day of last month'));
+            $end_date = date('Y-m-t 23:59:59', strtotime('last day of last month'));
+            break;
+        case 'thisyear':
+            $start_date = date('Y-01-01 00:00:00');
+            break;
+        default:
+            $start_date = date('Y-m-d 00:00:00', strtotime('-30 days'));
+    }
+    
+    // Sales Reports Query
+    $sales_query = $wpdb->prepare("
+        SELECT 
+            COUNT(DISTINCT p.ID) as order_count,
+            SUM(pm.meta_value) as total_sales,
+            AVG(pm.meta_value) as avg_order_value
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND pm.meta_key = '_order_total'
+        AND p.post_date BETWEEN %s AND %s
+    ", $start_date, $end_date);
+    
+    $sales_data = $wpdb->get_row($sales_query);
+    
+    // Daily sales breakdown
+    $daily_sales = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            DATE(p.post_date) as date,
+            COUNT(DISTINCT p.ID) as orders,
+            SUM(pm.meta_value) as revenue
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND pm.meta_key = '_order_total'
+        AND p.post_date BETWEEN %s AND %s
+        GROUP BY DATE(p.post_date)
+        ORDER BY date DESC
+        LIMIT 30
+    ", $start_date, $end_date));
+    
+    // Top Customers Query
+    $top_customers = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            pm_customer.meta_value as customer_id,
+            COUNT(DISTINCT p.ID) as order_count,
+            SUM(pm_total.meta_value) as total_spent
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+        INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND p.post_date BETWEEN %s AND %s
+        AND pm_customer.meta_value > 0
+        GROUP BY pm_customer.meta_value
+        ORDER BY total_spent DESC
+        LIMIT 10
+    ", $start_date, $end_date));
+    
+    // B2B Group Analysis
+    $b2b_groups = b2b_get_groups();
+    $group_sales = [];
+    foreach($b2b_groups as $slug => $group) {
+        // Get users in this group
+        $users_in_group = get_users([
+            'meta_key' => 'b2b_group_slug',
+            'meta_value' => $slug,
+            'fields' => 'ID'
+        ]);
+        
+        if(!empty($users_in_group)) {
+            $user_ids = implode(',', $users_in_group);
+            $group_data = $wpdb->get_row($wpdb->prepare("
+                SELECT 
+                    COUNT(DISTINCT p.ID) as order_count,
+                    SUM(pm_total.meta_value) as total_sales
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+                INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+                WHERE p.post_type = 'shop_order'
+                AND p.post_status = 'wc-completed'
+                AND p.post_date BETWEEN %s AND %s
+                AND pm_customer.meta_value IN ($user_ids)
+            ", $start_date, $end_date));
+            
+            $group_sales[] = [
+                'name' => $group['name'],
+                'orders' => $group_data->order_count ?? 0,
+                'sales' => $group_data->total_sales ?? 0
+            ];
+        }
+    }
+    
+    // Top Products Performance
+    $top_products = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            pm_product.meta_value as product_id,
+            SUM(pm_qty.meta_value) as quantity_sold,
+            SUM(pm_total.meta_value) as revenue
+        FROM {$wpdb->prefix}woocommerce_order_items oi
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm_product ON oi.order_item_id = pm_product.order_item_id AND pm_product.meta_key = '_product_id'
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm_qty ON oi.order_item_id = pm_qty.order_item_id AND pm_qty.meta_key = '_qty'
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta pm_total ON oi.order_item_id = pm_total.order_item_id AND pm_total.meta_key = '_line_total'
+        INNER JOIN {$wpdb->posts} p ON oi.order_id = p.ID
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND p.post_date BETWEEN %s AND %s
+        GROUP BY pm_product.meta_value
+        ORDER BY revenue DESC
+        LIMIT 10
+    ", $start_date, $end_date));
+    
+    // Low Stock Alert
+    $low_stock_products = $wpdb->get_results("
+        SELECT p.ID, p.post_title, pm_stock.meta_value as stock
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm_stock ON p.ID = pm_stock.post_id AND pm_stock.meta_key = '_stock'
+        WHERE p.post_type = 'product'
+        AND p.post_status = 'publish'
+        AND CAST(pm_stock.meta_value AS SIGNED) <= 10
+        AND CAST(pm_stock.meta_value AS SIGNED) > 0
+        ORDER BY CAST(pm_stock.meta_value AS SIGNED) ASC
+        LIMIT 20
+    ");
+    
+    b2b_adm_header('Reports & Analytics');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">Reports & Analytics</h1>
+        <div style="display:flex;gap:10px;align-items:center;">
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/reports') ?>?range='+this.value" style="margin:0;padding:8px 12px;">
+                <option value="today" <?= selected($range, 'today') ?>>Today</option>
+                <option value="7days" <?= selected($range, '7days') ?>>Last 7 Days</option>
+                <option value="30days" <?= selected($range, '30days') ?>>Last 30 Days</option>
+                <option value="thismonth" <?= selected($range, 'thismonth') ?>>This Month</option>
+                <option value="lastmonth" <?= selected($range, 'lastmonth') ?>>Last Month</option>
+                <option value="thisyear" <?= selected($range, 'thisyear') ?>>This Year</option>
+            </select>
+        </div>
+    </div>
+    
+    <!-- Sales Overview -->
+    <div class="card" style="margin-bottom:25px;">
+        <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-line" style="color:#10b981;margin-right:10px;"></i>Sales Overview</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:20px;">
+            <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);padding:20px;border-radius:12px;color:white;">
+                <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Total Sales</div>
+                <div style="font-size:32px;font-weight:800;"><?= wc_price($sales_data->total_sales ?? 0) ?></div>
+                <div style="font-size:11px;opacity:0.8;margin-top:5px;"><?= ucfirst(str_replace(['days', 'thismonth', 'lastmonth', 'thisyear'], ['Days', 'This Month', 'Last Month', 'This Year'], $range)) ?></div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%);padding:20px;border-radius:12px;color:white;">
+                <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Total Orders</div>
+                <div style="font-size:32px;font-weight:800;"><?= number_format($sales_data->order_count ?? 0) ?></div>
+                <div style="font-size:11px;opacity:0.8;margin-top:5px;">Completed Orders</div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);padding:20px;border-radius:12px;color:white;">
+                <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Avg Order Value</div>
+                <div style="font-size:32px;font-weight:800;"><?= wc_price($sales_data->avg_order_value ?? 0) ?></div>
+                <div style="font-size:11px;opacity:0.8;margin-top:5px;">Per Order</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Daily Sales Trend -->
+    <div class="card" style="margin-bottom:25px;">
+        <h3 style="margin-top:0;"><i class="fa-solid fa-calendar-days" style="color:#3b82f6;margin-right:10px;"></i>Daily Sales Trend</h3>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;min-width:600px;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:12px;">Date</th>
+                        <th style="text-align:center;padding:12px;">Orders</th>
+                        <th style="text-align:right;padding:12px;">Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(!empty($daily_sales)): foreach($daily_sales as $day): ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:12px;"><strong><?= date('D, M j, Y', strtotime($day->date)) ?></strong></td>
+                        <td style="text-align:center;padding:12px;">
+                            <span style="background:#dbeafe;color:#1e40af;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">
+                                <?= $day->orders ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;padding:12px;"><strong style="color:#10b981;font-size:15px;"><?= wc_price($day->revenue) ?></strong></td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" style="text-align:center;padding:30px;color:#9ca3af;">No sales data for this period.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Two Column Layout -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));gap:25px;margin-bottom:25px;">
+        
+        <!-- Top Customers -->
+        <div class="card">
+            <h3 style="margin-top:0;"><i class="fa-solid fa-star" style="color:#f59e0b;margin-right:10px;"></i>Top Customers</h3>
+            <table style="width:100%;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:10px;">Customer</th>
+                        <th style="text-align:center;padding:10px;">Orders</th>
+                        <th style="text-align:right;padding:10px;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(!empty($top_customers)): foreach($top_customers as $customer): 
+                        $user = get_userdata($customer->customer_id);
+                        if(!$user) continue;
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:10px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <div style="width:32px;height:32px;background:#e0e7ff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#4f46e5;font-weight:700;font-size:12px;">
+                                    <?= strtoupper(substr($user->display_name, 0, 1)) ?>
+                                </div>
+                                <div>
+                                    <strong style="display:block;font-size:13px;"><?= esc_html($user->display_name) ?></strong>
+                                    <small style="color:#9ca3af;"><?= esc_html($user->user_email) ?></small>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="text-align:center;padding:10px;">
+                            <span style="background:#f3f4f6;color:#374151;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">
+                                <?= $customer->order_count ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;padding:10px;"><strong style="color:#10b981;"><?= wc_price($customer->total_spent) ?></strong></td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" style="text-align:center;padding:20px;color:#9ca3af;">No customer data available.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- B2B Group Analysis -->
+        <div class="card">
+            <h3 style="margin-top:0;"><i class="fa-solid fa-users-gear" style="color:#8b5cf6;margin-right:10px;"></i>B2B Group Analysis</h3>
+            <table style="width:100%;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:10px;">Group</th>
+                        <th style="text-align:center;padding:10px;">Orders</th>
+                        <th style="text-align:right;padding:10px;">Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(!empty($group_sales)): 
+                        usort($group_sales, function($a, $b) { return $b['sales'] - $a['sales']; });
+                        foreach($group_sales as $gs): 
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:10px;"><strong><?= esc_html($gs['name']) ?></strong></td>
+                        <td style="text-align:center;padding:10px;">
+                            <span style="background:#e0e7ff;color:#4f46e5;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">
+                                <?= $gs['orders'] ?>
+                            </span>
+                        </td>
+                        <td style="text-align:right;padding:10px;"><strong style="color:#10b981;"><?= wc_price($gs['sales']) ?></strong></td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="3" style="text-align:center;padding:20px;color:#9ca3af;">No group data available.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Top Products Performance -->
+    <div class="card" style="margin-bottom:25px;">
+        <h3 style="margin-top:0;"><i class="fa-solid fa-trophy" style="color:#ef4444;margin-right:10px;"></i>Top Products Performance</h3>
+        <table style="width:100%;">
+            <thead>
+                <tr style="background:#f9fafb;">
+                    <th style="text-align:left;padding:12px;">Product</th>
+                    <th style="text-align:center;padding:12px;">Qty Sold</th>
+                    <th style="text-align:right;padding:12px;">Revenue</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if(!empty($top_products)): foreach($top_products as $tp): 
+                    $product = wc_get_product($tp->product_id);
+                    if(!$product) continue;
+                ?>
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:12px;">
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <?php if($product->get_image_id()): ?>
+                            <img src="<?= wp_get_attachment_image_url($product->get_image_id(), 'thumbnail') ?>" style="width:40px;height:40px;border-radius:6px;object-fit:cover;">
+                            <?php else: ?>
+                            <div style="width:40px;height:40px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+                                <i class="fa-solid fa-image" style="color:#d1d5db;"></i>
+                            </div>
+                            <?php endif; ?>
+                            <div>
+                                <strong style="display:block;"><?= esc_html($product->get_name()) ?></strong>
+                                <small style="color:#9ca3af;">SKU: <?= $product->get_sku() ?: '-' ?></small>
+                            </div>
+                        </div>
+                    </td>
+                    <td style="text-align:center;padding:12px;">
+                        <span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">
+                            <?= number_format($tp->quantity_sold) ?>
+                        </span>
+                    </td>
+                    <td style="text-align:right;padding:12px;"><strong style="color:#10b981;font-size:15px;"><?= wc_price($tp->revenue) ?></strong></td>
+                </tr>
+                <?php endforeach; else: ?>
+                <tr><td colspan="3" style="text-align:center;padding:30px;color:#9ca3af;">No product sales data for this period.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Low Stock Alert -->
+    <?php if(!empty($low_stock_products)): ?>
+    <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;">
+        <h3 style="margin-top:0;color:#991b1b;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:10px;"></i>Low Stock Alert</h3>
+        <p style="color:#7f1d1d;margin-bottom:15px;">The following products have low stock levels and may need reordering:</p>
+        <table style="width:100%;background:white;border-radius:8px;">
+            <thead>
+                <tr style="background:#fee2e2;">
+                    <th style="text-align:left;padding:10px;color:#991b1b;">Product</th>
+                    <th style="text-align:center;padding:10px;color:#991b1b;">Stock</th>
+                    <th style="text-align:right;padding:10px;color:#991b1b;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($low_stock_products as $lsp): ?>
+                <tr style="border-bottom:1px solid #fee2e2;">
+                    <td style="padding:10px;"><strong><?= esc_html($lsp->post_title) ?></strong></td>
+                    <td style="text-align:center;padding:10px;">
+                        <span style="background:#fee2e2;color:#dc2626;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">
+                            <?= $lsp->stock ?> left
+                        </span>
+                    </td>
+                    <td style="text-align:right;padding:10px;">
+                        <a href="<?= home_url('/b2b-panel/products/edit?id=' . $lsp->ID) ?>">
+                            <button class="secondary" style="padding:6px 12px;font-size:12px;">Update Stock</button>
+                        </a>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+    
     <?php b2b_adm_footer(); exit;
 });
 
@@ -1940,9 +2891,16 @@ add_action('template_redirect', function () {
     ?>
     <div class="page-header">
         <h1 class="page-title">Products</h1>
-        <button id="quickEditToggle" onclick="toggleQuickEdit()" class="secondary" style="display:flex;align-items:center;gap:8px;">
-            <i class="fa-solid fa-bolt"></i> Quick Edit Stock
-        </button>
+        <div style="display:flex;gap:10px;">
+            <a href="<?= home_url('/b2b-panel/products/add-new') ?>">
+                <button class="primary" style="display:flex;align-items:center;gap:8px;">
+                    <i class="fa-solid fa-plus"></i> Add New Product
+                </button>
+            </a>
+            <button id="quickEditToggle" onclick="toggleQuickEdit()" class="secondary" style="display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-bolt"></i> Quick Edit Stock
+            </button>
+        </div>
     </div>
     <div class="card">
         <!-- Enhanced Filter Bar -->
@@ -2008,34 +2966,129 @@ add_action('template_redirect', function () {
             <button onclick="toggleQuickEdit()" class="secondary" style="margin-left:10px;">Cancel</button>
         </div>
         
+        <!-- Simplified Bulk Actions -->
+        <div style="margin-bottom:15px;">
+            <button onclick="toggleBulkEditPanel()" style="background:#667eea;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">
+                <i class="fa-solid fa-edit"></i> Bulk Edit
+            </button>
+            <span id="selectedCount" style="margin-left:15px;font-weight:600;color:#666;">0 items selected</span>
+        </div>
+        
+        <!-- Bulk Edit Panel (Hidden by default) -->
+        <div id="bulkEditPanel" style="display:none;margin-bottom:20px;background:#f8f9fa;border:2px solid #dee2e6;border-radius:8px;padding:20px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
+                
+                <!-- Price Update Section -->
+                <div style="background:white;padding:15px;border-radius:6px;border:2px solid #3b82f6;">
+                    <h3 style="margin:0 0 15px 0;color:#1e40af;font-size:16px;">
+                        <i class="fa-solid fa-dollar-sign"></i> Price Update
+                    </h3>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Type:</label>
+                        <select id="priceType" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="percentage">Percentage (%)</option>
+                            <option value="fixed">Fixed Amount (₺)</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Value:</label>
+                        <input type="number" id="priceValue" placeholder="Enter value" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" step="0.01">
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Action:</label>
+                        <select id="priceAction" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="increase">Increase</option>
+                            <option value="decrease">Decrease</option>
+                        </select>
+                    </div>
+                    <button onclick="bulkUpdatePrice()" style="width:100%;background:#3b82f6;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-check"></i> Update Prices
+                    </button>
+                </div>
+                
+                <!-- Stock Update Section -->
+                <div style="background:white;padding:15px;border-radius:6px;border:2px solid #10b981;">
+                    <h3 style="margin:0 0 15px 0;color:#059669;font-size:16px;">
+                        <i class="fa-solid fa-box"></i> Stock Update
+                    </h3>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Type:</label>
+                        <select id="stockType" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="fixed">Fixed Amount (units)</option>
+                            <option value="percentage">Percentage (%)</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Stock Value:</label>
+                        <input type="number" id="stockValue" placeholder="Enter value" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" step="0.01">
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Action:</label>
+                        <select id="stockAction" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="set">Set to Value</option>
+                            <option value="increase">Increase by Value</option>
+                            <option value="decrease">Decrease by Value</option>
+                        </select>
+                    </div>
+                    <button onclick="bulkUpdateStock()" style="width:100%;background:#10b981;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-check"></i> Update Stock
+                    </button>
+                </div>
+                
+                <!-- Delete Section -->
+                <div style="background:white;padding:15px;border-radius:6px;border:2px solid #ef4444;">
+                    <h3 style="margin:0 0 15px 0;color:#dc2626;font-size:16px;">
+                        <i class="fa-solid fa-trash"></i> Delete Products
+                    </h3>
+                    <p style="color:#666;font-size:13px;margin-bottom:15px;">
+                        ⚠️ This action cannot be undone. Selected products will be permanently deleted.
+                    </p>
+                    <button onclick="bulkDelete()" style="width:100%;background:#ef4444;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-trash"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Progress Section -->
+            <div id="bulkProgress" style="display:none;margin-top:20px;padding:15px;background:white;border-radius:6px;border:1px solid #ddd;">
+                <div style="background:#e5e7eb;border-radius:8px;height:30px;overflow:hidden;margin-bottom:10px;">
+                    <div id="bulkProgressBar" style="background:#10b981;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-weight:600;color:white;"></div>
+                </div>
+                <p id="bulkStatus" style="margin:0;font-size:14px;text-align:center;color:#666;"></p>
+            </div>
+        </div>
+        
         <!-- Enhanced Product Table -->
+        <div class="table-responsive">
         <table id="prodTable">
             <thead>
                 <tr>
-                    <th data-col="0">Image</th>
-                    <th data-col="1">Name</th>
-                    <th data-col="2">SKU</th>
-                    <th data-col="3">Category</th>
-                    <th data-col="4">Price</th>
-                    <th data-col="5">Stock</th>
-                    <th data-col="6">Status</th>
-                    <th data-col="7" style="text-align:right">Action</th>
+                    <th style="width:40px;"><input type="checkbox" id="selectAllCheckbox" onchange="window.toggleAllProducts(this)"></th>
+                    <th>Image</th>
+                    <th>Name</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Action</th>
                 </tr>
             </thead>
             <tbody>
             <?php if(empty($products->products)): ?>
-                <tr><td colspan="8" style="text-align:center;padding:30px;color:#999">No products found.</td></tr>
+                <tr><td colspan="9" style="text-align:center;padding:30px;color:#999">No products found.</td></tr>
             <?php else: foreach ($products->products as $p): 
                 $img = wp_get_attachment_image_src($p->get_image_id(),'thumbnail');
                 $cats = wp_get_post_terms($p->get_id(), 'product_cat', ['fields' => 'names']);
             ?>
             <tr data-product-id="<?= $p->get_id() ?>">
-                <td data-col="0"><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
-                <td data-col="1"><strong><?= esc_html($p->get_name()) ?></strong></td>
-                <td data-col="2"><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
-                <td data-col="3"><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
-                <td data-col="4"><strong><?= $p->get_price_html() ?></strong></td>
-                <td data-col="5" class="stock-cell">
+                <td><input type="checkbox" class="product-checkbox" value="<?= $p->get_id() ?>" onchange="window.updateBulkSelection()"></td>
+                <td><img src="<?= $img ? $img[0] : 'https://via.placeholder.com/40' ?>" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></td>
+                <td><strong><?= esc_html($p->get_name()) ?></strong></td>
+                <td><code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:11px;"><?= esc_html($p->get_sku() ?: '-') ?></code></td>
+                <td><small style="color:#6b7280;"><?= !empty($cats) ? esc_html(implode(', ', $cats)) : '-' ?></small></td>
+                <td><strong><?= $p->get_price_html() ?></strong></td>
+                <td class="stock-cell">
                     <?php if($p->managing_stock()): 
                         $qty = $p->get_stock_quantity();
                         $color = $qty > 10 ? '#10b981' : ($qty > 0 ? '#f59e0b' : '#ef4444');
@@ -2047,7 +3100,7 @@ add_action('template_redirect', function () {
                         <span class="stock-input" style="display:none;color:#6b7280;font-size:11px;">N/A</span>
                     <?php endif; ?>
                 </td>
-                <td data-col="6">
+                <td>
                     <?php 
                     $status = $p->get_status();
                     $status_color = $status == 'publish' ? '#d1fae5' : '#fee2e2';
@@ -2055,16 +3108,18 @@ add_action('template_redirect', function () {
                     ?>
                     <span style="background:<?= $status_color ?>;color:<?= $status_text_color ?>;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;"><?= $status ?></span>
                 </td>
-                <td data-col="7" style="text-align:right;">
+                <td style="text-align:right;">
                     <a href="<?= home_url('/b2b-panel/products/edit?id=' . $p->get_id()) ?>">
                         <button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button>
                     </a>
+                    <button class="duplicate-product-btn" data-product-id="<?= $p->get_id() ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 12px;font-size:12px;background:#3b82f6;color:white;border:none;border-radius:5px;cursor:pointer;margin-left:5px;"><i class="fa-solid fa-copy"></i></button>
                     <button class="delete-product-btn" data-product-id="<?= $p->get_id() ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 12px;font-size:12px;background:#dc2626;color:white;border:none;border-radius:5px;cursor:pointer;margin-left:5px;"><i class="fa-solid fa-trash"></i></button>
                 </td>
             </tr>
             <?php endforeach; endif; ?>
             </tbody>
         </table>
+        </div><!-- .table-responsive -->
         
         <!-- Pagination -->
         <?php if($products->max_num_pages > 1): ?>
@@ -2094,9 +3149,11 @@ add_action('template_redirect', function () {
     <script>
     // Products Column Toggle with localStorage
     function toggleColP(idx, show) { 
-        var rows = document.getElementById('prodTable').rows; 
+        var rows = document.getElementById('prodTable').rows;
+        // +1 to account for checkbox column which is column 0
+        var actualIdx = idx + 1;
         for(var i=0; i<rows.length; i++) { 
-            if(rows[i].cells.length > idx) rows[i].cells[idx].style.display = show ? '' : 'none'; 
+            if(rows[i].cells.length > actualIdx) rows[i].cells[actualIdx].style.display = show ? '' : 'none'; 
         }
         // Save state to localStorage
         var colStates = JSON.parse(localStorage.getItem('b2b_products_columns') || '{}');
@@ -2232,6 +3289,230 @@ add_action('template_redirect', function () {
             });
         });
     });
+    
+    // Duplicate product handler
+    document.querySelectorAll('.duplicate-product-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const productId = this.getAttribute('data-product-id');
+            const productName = this.getAttribute('data-product-name');
+            
+            if(!confirm(`Duplicate "${productName}"?`)) {
+                return;
+            }
+            
+            // Disable button during request
+            this.disabled = true;
+            this.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'action=b2b_duplicate_product&product_id=' + productId + '&nonce=<?= wp_create_nonce("b2b_duplicate_product") ?>'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    alert('Product duplicated successfully! Redirecting to edit...');
+                    window.location.href = data.data.edit_url;
+                } else {
+                    alert('Error: ' + (data.data || 'Unknown error'));
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fa-solid fa-copy"></i>';
+                }
+            })
+            .catch(error => {
+                alert('Error duplicating product: ' + error);
+                this.disabled = false;
+                this.innerHTML = '<i class="fa-solid fa-copy"></i>';
+            });
+        });
+    });
+    
+    // Simplified Bulk Actions JavaScript
+    function updateBulkSelection() {
+        const checkboxes = document.querySelectorAll('.product-checkbox');
+        const checked = document.querySelectorAll('.product-checkbox:checked');
+        const selectedCount = document.getElementById('selectedCount');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        
+        selectedCount.textContent = checked.length + ' items selected';
+        selectAllCheckbox.checked = (checked.length === checkboxes.length && checkboxes.length > 0);
+    }
+    
+    function toggleAllProducts(checkbox) {
+        document.querySelectorAll('.product-checkbox').forEach(cb => {
+            cb.checked = checkbox.checked;
+        });
+        updateBulkSelection();
+    }
+    
+    // Toggle bulk edit panel
+    window.toggleBulkEditPanel = function() {
+        const panel = document.getElementById('bulkEditPanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+    
+    // Get selected product IDs
+    function getSelectedProductIds() {
+        const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    }
+    
+    // Show progress
+    function showProgress() {
+        document.getElementById('bulkProgress').style.display = 'block';
+        document.getElementById('bulkProgressBar').style.width = '0%';
+        document.getElementById('bulkProgressBar').textContent = '0%';
+        document.getElementById('bulkStatus').textContent = 'Processing...';
+    }
+    
+    // Update progress
+    function updateProgress(current, total, success, errors) {
+        const percent = Math.round((current / total) * 100);
+        document.getElementById('bulkProgressBar').style.width = percent + '%';
+        document.getElementById('bulkProgressBar').textContent = percent + '%';
+        document.getElementById('bulkStatus').textContent = current + ' of ' + total + ' processed | ' + success + ' succeeded, ' + errors + ' errors';
+    }
+    
+    // Complete progress
+    function completeProgress() {
+        document.getElementById('bulkProgressBar').style.background = '#10b981';
+        document.getElementById('bulkProgressBar').textContent = 'Complete!';
+        setTimeout(() => window.location.reload(), 2000);
+    }
+    
+    // Bulk Update Price
+    window.bulkUpdatePrice = function() {
+        const productIds = getSelectedProductIds();
+        if(productIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+        
+        const priceType = document.getElementById('priceType').value;
+        const priceValue = document.getElementById('priceValue').value;
+        const priceAction = document.getElementById('priceAction').value;
+        
+        if(!priceValue || parseFloat(priceValue) <= 0) {
+            alert('Please enter a valid value');
+            return;
+        }
+        
+        if(!confirm('Update prices for ' + productIds.length + ' products?')) {
+            return;
+        }
+        
+        showProgress();
+        processBulkAction('price_update', productIds, 0, {
+            priceType: priceType,
+            priceValue: priceValue,
+            priceAction: priceAction
+        });
+    }
+    
+    // Bulk Update Stock
+    window.bulkUpdateStock = function() {
+        const productIds = getSelectedProductIds();
+        if(productIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+        
+        const stockType = document.getElementById('stockType').value;
+        const stockValue = document.getElementById('stockValue').value;
+        const stockAction = document.getElementById('stockAction').value;
+        
+        if(!stockValue || parseFloat(stockValue) < 0) {
+            alert('Please enter a valid value');
+            return;
+        }
+        
+        if(!confirm('Update stock for ' + productIds.length + ' products?')) {
+            return;
+        }
+        
+        showProgress();
+        processBulkAction('stock_update', productIds, 0, {
+            stockType: stockType,
+            stockValue: stockValue,
+            stockAction: stockAction
+        });
+    }
+    
+    // Bulk Delete
+    window.bulkDelete = function() {
+        const productIds = getSelectedProductIds();
+        if(productIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+        
+        if(!confirm('Are you sure you want to delete ' + productIds.length + ' products? This action cannot be undone!')) {
+            return;
+        }
+        
+        showProgress();
+        processBulkAction('delete', productIds, 0, {});
+    }
+    
+    // Process bulk action in chunks
+    function processBulkAction(action, productIds, currentChunk, params) {
+        const chunkSize = 10;
+        const startIndex = currentChunk * chunkSize;
+        const endIndex = Math.min(startIndex + chunkSize, productIds.length);
+        const chunk = productIds.slice(startIndex, endIndex);
+        
+        // Initialize accumulator
+        if(!window.bulkResults) {
+            window.bulkResults = {success: 0, errors: 0};
+        }
+        
+        // Build request data
+        let data = 'action=b2b_bulk_action_products&nonce=<?= wp_create_nonce("b2b_ajax_nonce") ?>';
+        data += '&bulk_action=' + action;
+        data += '&product_ids=' + productIds.join(','); // Send all IDs, backend will chunk
+        data += '&chunk=' + currentChunk;
+        
+        if(action === 'price_update') {
+            data += '&price_type=' + params.priceType;
+            data += '&price_value=' + params.priceValue;
+            data += '&price_action=' + params.priceAction;
+        } else if(action === 'stock_update') {
+            data += '&stock_type=' + params.stockType;
+            data += '&stock_value=' + params.stockValue;
+            data += '&stock_action=' + params.stockAction;
+        }
+        
+        fetch('<?= admin_url('admin-ajax.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: data
+        })
+        .then(response => response.json())
+        .then(response => {
+            if(response.success && response.data.results) {
+                // Accumulate results
+                window.bulkResults.success += response.data.results.success ? response.data.results.success.length : 0;
+                window.bulkResults.errors += response.data.results.errors ? response.data.results.errors.length : 0;
+                
+                const totalProcessed = window.bulkResults.success + window.bulkResults.errors;
+                updateProgress(totalProcessed, productIds.length, window.bulkResults.success, window.bulkResults.errors);
+                
+                // Process next chunk or complete
+                if(endIndex < productIds.length) {
+                    processBulkAction(action, productIds, currentChunk + 1, params);
+                } else {
+                    delete window.bulkResults;
+                    completeProgress();
+                }
+            } else {
+                document.getElementById('bulkStatus').textContent = 'Error: ' + (response.data || 'Unknown error');
+            }
+        })
+        .catch(error => {
+            document.getElementById('bulkStatus').textContent = 'Error: ' + error;
+        });
+    }
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -2942,6 +4223,44 @@ add_action('template_redirect', function () {
         // Fiyatlar (Varyasyonlu ise parent fiyatı genelde pasiftir ama kaydediyoruz)
         update_post_meta($id, '_regular_price', wc_clean($_POST['price']));
         update_post_meta($id, '_price', wc_clean($_POST['price']));
+        
+        // Sale Price
+        if(!empty($_POST['sale_price'])) {
+            update_post_meta($id, '_sale_price', wc_clean($_POST['sale_price']));
+            update_post_meta($id, '_price', wc_clean($_POST['sale_price'])); // Active price becomes sale price
+        } else {
+            delete_post_meta($id, '_sale_price');
+        }
+        
+        // Shipping (Weight and Dimensions)
+        if(!empty($_POST['weight'])) {
+            update_post_meta($id, '_weight', wc_clean($_POST['weight']));
+        } else {
+            delete_post_meta($id, '_weight');
+        }
+        if(!empty($_POST['length'])) {
+            update_post_meta($id, '_length', wc_clean($_POST['length']));
+        } else {
+            delete_post_meta($id, '_length');
+        }
+        if(!empty($_POST['width'])) {
+            update_post_meta($id, '_width', wc_clean($_POST['width']));
+        } else {
+            delete_post_meta($id, '_width');
+        }
+        if(!empty($_POST['height'])) {
+            update_post_meta($id, '_height', wc_clean($_POST['height']));
+        } else {
+            delete_post_meta($id, '_height');
+        }
+        
+        // Tax Settings
+        if(isset($_POST['tax_status'])) {
+            update_post_meta($id, '_tax_status', wc_clean($_POST['tax_status']));
+        }
+        if(isset($_POST['tax_class'])) {
+            update_post_meta($id, '_tax_class', wc_clean($_POST['tax_class']));
+        }
 
         // 4. PARENT STOCK MANAGEMENT (Global Stock for Variations)
         // Bu bölüm artık hem basit hem varyasyonlu ürünler için çalışır.
@@ -3015,10 +4334,15 @@ add_action('template_redirect', function () {
         @media(max-width:900px) { .grid-edit { grid-template-columns: 1fr; } }
     </style>
 
-    <div style="margin-bottom:20px;display:inline-flex;gap:15px;align-items:center">
-        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;color:#6b7280;font-size:14px;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-arrow-left"></i> Back</a>
-        <button id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="padding:6px 10px;background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:5px;cursor:pointer;font-size:18px;line-height:1;" title="Delete Product"><i class="fa-solid fa-trash"></i></button>
+    <!-- Back Button at Top -->
+    <div style="margin-bottom:15px;">
+        <a href="<?= home_url('/b2b-panel/products') ?>" style="text-decoration:none;color:#6b7280;font-size:14px;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;transition:all 0.2s;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Products
+        </a>
     </div>
+
+    <!-- Product Type Badge -->
+    <div style="margin-bottom:20px;">
         <span style="background:<?= $is_variable?'#fef3c7':'#d1fae5' ?>;color:<?= $is_variable?'#92400e':'#065f46' ?>;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700">
             <?= $is_variable ? 'VARIABLE PRODUCT' : 'SIMPLE PRODUCT' ?>
         </span>
@@ -3035,9 +4359,45 @@ add_action('template_redirect', function () {
                     <div><label>SKU</label><input type="text" name="sku" value="<?= $p->get_sku() ?>"></div>
                     <?php if (!$is_variable): ?>
                         <div><label>Regular Price</label><input type="number" step="0.01" name="price" value="<?= $p->get_regular_price() ?>"></div>
+                        <div><label>Sale Price</label><input type="number" step="0.01" name="sale_price" value="<?= $p->get_sale_price() ?>"></div>
                     <?php else: ?>
                         <div><label>Base Price (Optional)</label><input type="number" step="0.01" name="price" value="<?= $p->get_regular_price() ?>"></div>
+                        <div><label>Base Sale Price (Optional)</label><input type="number" step="0.01" name="sale_price" value="<?= $p->get_sale_price() ?>"></div>
                     <?php endif; ?>
+                </div>
+            </div>
+            
+            <!-- SHIPPING SETTINGS -->
+            <div class="edit-card" style="border-top:4px solid #a855f7;">
+                <h3 style="color:#a855f7;"><i class="fa-solid fa-truck"></i> Shipping</h3>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+                    <div><label>Weight (kg)</label><input type="number" step="0.01" name="weight" value="<?= $p->get_weight() ?>"></div>
+                    <div><label>Length (cm)</label><input type="number" step="0.01" name="length" value="<?= $p->get_length() ?>"></div>
+                    <div><label>Width (cm)</label><input type="number" step="0.01" name="width" value="<?= $p->get_width() ?>"></div>
+                    <div><label>Height (cm)</label><input type="number" step="0.01" name="height" value="<?= $p->get_height() ?>"></div>
+                </div>
+            </div>
+            
+            <!-- TAX SETTINGS -->
+            <div class="edit-card" style="border-top:4px solid #6366f1;">
+                <h3 style="color:#6366f1;"><i class="fa-solid fa-receipt"></i> Tax Settings</h3>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+                    <div>
+                        <label>Tax Status</label>
+                        <select name="tax_status">
+                            <option value="taxable" <?= selected($p->get_tax_status(), 'taxable', false) ?>>Taxable</option>
+                            <option value="shipping" <?= selected($p->get_tax_status(), 'shipping', false) ?>>Shipping only</option>
+                            <option value="none" <?= selected($p->get_tax_status(), 'none', false) ?>>None</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Tax Class</label>
+                        <select name="tax_class">
+                            <option value="" <?= selected($p->get_tax_class(), '', false) ?>>Standard</option>
+                            <option value="reduced-rate" <?= selected($p->get_tax_class(), 'reduced-rate', false) ?>>Reduced rate</option>
+                            <option value="zero-rate" <?= selected($p->get_tax_class(), 'zero-rate', false) ?>>Zero rate</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -3106,7 +4466,12 @@ add_action('template_redirect', function () {
                 <h3>Publish</h3>
                 <label>Status</label>
                 <select name="status" style="margin-bottom:15px"><option value="publish" <?= selected($p->get_status(),'publish') ?>>Active</option><option value="draft" <?= selected($p->get_status(),'draft') ?>>Draft</option></select>
-                <button style="width:100%;padding:12px">Save Changes</button>
+                <button type="submit" style="width:100%;padding:12px;background:#2563eb;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;margin-bottom:10px;">
+                    <i class="fa-solid fa-save"></i> Save Changes
+                </button>
+                <button type="button" id="delete-product-detail-btn" data-product-id="<?= $id ?>" data-product-name="<?= esc_attr($p->get_name()) ?>" style="width:100%;padding:12px;background:#dc2626;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">
+                    <i class="fa-solid fa-trash"></i> Delete Product
+                </button>
             </div>
 
             <div class="edit-card">
@@ -3172,6 +4537,267 @@ add_action('template_redirect', function () {
     
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   10B. PAGE: PRODUCT ADD NEW (Internal)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'product_add_new') return;
+    b2b_adm_guard();
+    
+    // Handle form submission
+    if (isset($_POST['create_product'])) {
+        $product_name = sanitize_text_field($_POST['product_name']);
+        $product_sku = sanitize_text_field($_POST['product_sku']);
+        $product_price = floatval($_POST['product_price']);
+        $product_sale_price = floatval($_POST['product_sale_price'] ?? 0);
+        $product_stock = intval($_POST['product_stock']);
+        $product_description = wp_kses_post($_POST['product_description'] ?? '');
+        $product_short_description = wp_kses_post($_POST['product_short_description'] ?? '');
+        $product_categories = isset($_POST['product_categories']) ? array_map('intval', $_POST['product_categories']) : [];
+        $product_weight = sanitize_text_field($_POST['product_weight'] ?? '');
+        $product_length = sanitize_text_field($_POST['product_length'] ?? '');
+        $product_width = sanitize_text_field($_POST['product_width'] ?? '');
+        $product_height = sanitize_text_field($_POST['product_height'] ?? '');
+        $stock_status = sanitize_text_field($_POST['stock_status'] ?? 'instock');
+        $tax_status = sanitize_text_field($_POST['tax_status'] ?? 'taxable');
+        $tax_class = sanitize_text_field($_POST['tax_class'] ?? '');
+        $product_type = sanitize_text_field($_POST['product_type'] ?? 'simple');
+        
+        // Create new product
+        $product = new WC_Product_Simple();
+        $product->set_name($product_name);
+        $product->set_status('draft'); // Start as draft
+        
+        if($product_sku) {
+            $product->set_sku($product_sku);
+        }
+        
+        // Pricing
+        if($product_price > 0) {
+            $product->set_regular_price($product_price);
+        }
+        if($product_sale_price > 0 && $product_sale_price < $product_price) {
+            $product->set_sale_price($product_sale_price);
+        }
+        
+        // Description
+        if($product_description) {
+            $product->set_description($product_description);
+        }
+        if($product_short_description) {
+            $product->set_short_description($product_short_description);
+        }
+        
+        // Categories
+        if(!empty($product_categories)) {
+            $product->set_category_ids($product_categories);
+        }
+        
+        // Weight & Dimensions
+        if($product_weight) {
+            $product->set_weight($product_weight);
+        }
+        if($product_length) {
+            $product->set_length($product_length);
+        }
+        if($product_width) {
+            $product->set_width($product_width);
+        }
+        if($product_height) {
+            $product->set_height($product_height);
+        }
+        
+        // Stock management
+        $product->set_manage_stock(true);
+        $product->set_stock_quantity($product_stock);
+        $product->set_stock_status($stock_status);
+        
+        // Tax
+        $product->set_tax_status($tax_status);
+        if($tax_class) {
+            $product->set_tax_class($tax_class);
+        }
+        
+        // Save and get ID
+        $new_id = $product->save();
+        
+        if($new_id) {
+            // Redirect to edit page
+            wp_redirect(home_url('/b2b-panel/products/edit?id=' . $new_id . '&created=1'));
+            exit;
+        }
+    }
+    
+    // Get categories for dropdown
+    $product_categories = get_terms([
+        'taxonomy' => 'product_cat',
+        'hide_empty' => false,
+        'orderby' => 'name',
+        'order' => 'ASC'
+    ]);
+    
+    b2b_adm_header('Add New Product');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title">Add New Product</h1>
+    </div>
+    
+    <div class="card" style="max-width:1000px;">
+        <form method="POST">
+            <!-- Basic Information -->
+            <h3 style="margin-top:0;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-info-circle" style="color:#3b82f6;"></i> Basic Information
+            </h3>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Product Name *</label>
+                <input type="text" name="product_name" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Enter product name">
+            </div>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">SKU</label>
+                    <input type="text" name="product_sku" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Product SKU">
+                    <small style="color:#6b7280;">Optional. Leave empty for auto-generate.</small>
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Categories</label>
+                    <select name="product_categories[]" multiple style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;min-height:100px;">
+                        <?php if(!empty($product_categories)): foreach($product_categories as $cat): ?>
+                        <option value="<?= $cat->term_id ?>"><?= esc_html($cat->name) ?></option>
+                        <?php endforeach; endif; ?>
+                    </select>
+                    <small style="color:#6b7280;">Hold Ctrl/Cmd to select multiple</small>
+                </div>
+            </div>
+            
+            <!-- Descriptions -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-file-lines" style="color:#10b981;"></i> Descriptions
+            </h3>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Short Description</label>
+                <textarea name="product_short_description" rows="3" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Brief product summary (shown in product listings)"></textarea>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Full Description</label>
+                <textarea name="product_description" rows="6" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="Detailed product description"></textarea>
+            </div>
+            
+            <!-- Pricing -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-dollar-sign" style="color:#f59e0b;"></i> Pricing
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Regular Price ($) *</label>
+                    <input type="number" name="product_price" step="0.01" min="0" value="0" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Sale Price ($)</label>
+                    <input type="number" name="product_sale_price" step="0.01" min="0" value="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                    <small style="color:#6b7280;">Optional. Must be less than regular price.</small>
+                </div>
+            </div>
+            
+            <!-- Inventory -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-boxes-stacked" style="color:#8b5cf6;"></i> Inventory
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Stock Quantity</label>
+                    <input type="number" name="product_stock" min="0" value="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Stock Status</label>
+                    <select name="stock_status" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                        <option value="instock">In Stock</option>
+                        <option value="outofstock">Out of Stock</option>
+                        <option value="onbackorder">On Backorder</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Shipping -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-truck" style="color:#ef4444;"></i> Shipping
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Weight (kg)</label>
+                    <input type="number" name="product_weight" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Length (cm)</label>
+                    <input type="number" name="product_length" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Width (cm)</label>
+                    <input type="number" name="product_width" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Height (cm)</label>
+                    <input type="number" name="product_height" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;" placeholder="0.00">
+                </div>
+            </div>
+            
+            <!-- Tax Settings -->
+            <h3 style="margin-top:30px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-receipt" style="color:#14b8a6;"></i> Tax Settings
+            </h3>
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Tax Status</label>
+                    <select name="tax_status" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                        <option value="taxable">Taxable</option>
+                        <option value="shipping">Shipping only</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display:block;margin-bottom:8px;font-weight:600;color:#374151;">Tax Class</label>
+                    <select name="tax_class" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                        <option value="">Standard</option>
+                        <option value="reduced-rate">Reduced rate</option>
+                        <option value="zero-rate">Zero rate</option>
+                    </select>
+                </div>
+            </div>
+            
+            <input type="hidden" name="product_type" value="simple">
+            
+            <div style="padding:20px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;margin-top:30px;">
+                <p style="margin:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> <strong>Note:</strong> Product will be created as <strong>draft</strong>. You can add images and additional details on the edit page.</p>
+            </div>
+            
+            <div style="display:flex;gap:10px;">
+                <button type="submit" name="create_product" class="primary" style="padding:12px 24px;">
+                    <i class="fa-solid fa-plus"></i> Create Product
+                </button>
+                <a href="<?= home_url('/b2b-panel/products') ?>">
+                    <button type="button" class="secondary" style="padding:12px 24px;">Cancel</button>
+                </a>
+            </div>
+        </form>
+    </div>
+    
+    <?php b2b_adm_footer(); exit;
+});
   
 /* =====================================================
    11. PAGE: CUSTOMERS (B2BKING FIXED)
@@ -3188,6 +4814,10 @@ add_action('template_redirect', function () {
         $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
         $per_page = in_array($per_page, [10, 20, 50, 100]) ? $per_page : 20; // Validate per_page value
         
+        // Filter parameters
+        $filter_group = isset($_GET['filter_group']) ? sanitize_text_field($_GET['filter_group']) : '';
+        $filter_role = isset($_GET['filter_role']) ? sanitize_text_field($_GET['filter_role']) : '';
+        
         $args = [
             'role__in' => ['customer', 'subscriber', 'sales_agent'], 
             'number'   => $per_page,
@@ -3197,10 +4827,41 @@ add_action('template_redirect', function () {
             'order'    => 'DESC'
         ];
         
+        // Add meta query for filters
+        $meta_query = [];
+        if($filter_group) {
+            $meta_query[] = [
+                'key' => 'b2b_group_slug',
+                'value' => $filter_group,
+                'compare' => '='
+            ];
+        }
+        if($filter_role) {
+            $meta_query[] = [
+                'key' => 'b2b_role',
+                'value' => $filter_role,
+                'compare' => '='
+            ];
+        }
+        if(!empty($meta_query)) {
+            $args['meta_query'] = $meta_query;
+            if(count($meta_query) > 1) {
+                $args['meta_query']['relation'] = 'AND';
+            }
+        }
+        
         $user_query = new WP_User_Query($args);
         $users = $user_query->get_results();
         $total_users = $user_query->get_total();
         $total_pages = ceil($total_users / $per_page);
+        
+        // Get groups and roles for filters
+        $all_groups = b2b_get_groups();
+        $all_roles = get_option('b2b_roles', [
+            ['slug' => 'customer', 'name' => 'Customer'],
+            ['slug' => 'wholesaler', 'name' => 'Wholesaler'],
+            ['slug' => 'retailer', 'name' => 'Retailer']
+        ]);
 
         b2b_adm_header('Customer Management');
         ?>
@@ -3209,7 +4870,7 @@ add_action('template_redirect', function () {
         <div class="card">
             <!-- Toolbar -->
             <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:15px;align-items:center">
-                <div style="display:flex;gap:10px;align-items:center;">
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <div class="col-toggler">
                         <button type="button" class="secondary" onclick="document.querySelector('#cColDrop').classList.toggle('active')"><i class="fa-solid fa-table-columns"></i> Columns</button>
                         <div id="cColDrop" class="col-dropdown">
@@ -3224,21 +4885,49 @@ add_action('template_redirect', function () {
                     </div>
                     
                     <!-- Per Page Selector -->
-                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?>'" style="margin:0;max-width:120px;">
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?per_page='+this.value+'<?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_group ? '&filter_group='.urlencode($filter_group) : '' ?><?= $filter_role ? '&filter_role='.urlencode($filter_role) : '' ?>'" style="margin:0;max-width:120px;">
                         <option value="10" <?= selected($per_page, 10) ?>>10 per page</option>
                         <option value="20" <?= selected($per_page, 20) ?>>20 per page</option>
                         <option value="50" <?= selected($per_page, 50) ?>>50 per page</option>
                         <option value="100" <?= selected($per_page, 100) ?>>100 per page</option>
                     </select>
+                    
+                    <!-- Group Filter -->
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?filter_group='+this.value+'<?= $per_page != 20 ? '&per_page='.$per_page : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_role ? '&filter_role='.urlencode($filter_role) : '' ?>'" style="margin:0;max-width:150px;">
+                        <option value="">All Groups</option>
+                        <?php foreach($all_groups as $slug => $group): ?>
+                            <option value="<?= esc_attr($slug) ?>" <?= selected($filter_group, $slug) ?>><?= esc_html($group['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <!-- Role Filter -->
+                    <select onchange="window.location.href='<?= home_url('/b2b-panel/customers') ?>?filter_role='+this.value+'<?= $per_page != 20 ? '&per_page='.$per_page : '' ?><?= $s ? '&s='.urlencode($s) : '' ?><?= $filter_group ? '&filter_group='.urlencode($filter_group) : '' ?>'" style="margin:0;max-width:150px;">
+                        <option value="">All Roles</option>
+                        <?php foreach($all_roles as $role): ?>
+                            <option value="<?= esc_attr($role['slug']) ?>" <?= selected($filter_role, $role['slug']) ?>><?= esc_html($role['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    
+                    <?php if($filter_group || $filter_role): ?>
+                        <a href="<?= home_url('/b2b-panel/customers') ?>?<?= $per_page != 20 ? 'per_page='.$per_page : '' ?><?= $s ? ($per_page != 20 ? '&' : '').'s='.urlencode($s) : '' ?>" style="padding:8px 12px;color:#ef4444;text-decoration:none;white-space:nowrap;background:#fee2e2;border-radius:6px;font-size:13px;"><i class="fa-solid fa-times"></i> Clear Filters</a>
+                    <?php endif; ?>
                 </div>
 
                 <div style="flex:1;display:flex;justify-content:flex-end;gap:10px">
-                    <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">Total: <strong><?= $total_users ?></strong></span>
+                    <span style="align-self:center;font-size:12px;color:#6b7280;margin-right:10px">
+                        <?php if($filter_group || $filter_role): ?>
+                            Filtered: <strong><?= $total_users ?></strong>
+                        <?php else: ?>
+                            Total: <strong><?= $total_users ?></strong>
+                        <?php endif; ?>
+                    </span>
                     <form style="display:flex;gap:5px">
                         <?php if($per_page != 20): ?><input type="hidden" name="per_page" value="<?= $per_page ?>"><?php endif; ?>
+                        <?php if($filter_group): ?><input type="hidden" name="filter_group" value="<?= esc_attr($filter_group) ?>"><?php endif; ?>
+                        <?php if($filter_role): ?><input type="hidden" name="filter_role" value="<?= esc_attr($filter_role) ?>"><?php endif; ?>
                         <input name="s" value="<?= esc_attr($s) ?>" placeholder="Search customers..." style="margin:0;max-width:250px">
                         <button>Search</button>
-                        <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
+                        <?php if($s): ?><a href="<?= home_url('/b2b-panel/customers') ?>?<?= $per_page != 20 ? 'per_page='.$per_page : '' ?><?= $filter_group ? ($per_page != 20 ? '&' : '').'filter_group='.urlencode($filter_group) : '' ?><?= $filter_role ? ($per_page != 20 || $filter_group ? '&' : '').'filter_role='.urlencode($filter_role) : '' ?>" style="padding:10px;color:#ef4444;text-decoration:none">Reset</a><?php endif; ?>
                     </form>
                 </div>
             </div>
@@ -3274,9 +4963,21 @@ add_action('template_redirect', function () {
                         }
                     }
                     // -------------------
+                    
+                    // Get B2B role
+                    $b2b_role_slug = get_user_meta($u->ID, 'b2b_role', true);
+                    $b2b_role_name = '-';
+                    if($b2b_role_slug) {
+                        foreach($all_roles as $role) {
+                            if($role['slug'] == $b2b_role_slug) {
+                                $b2b_role_name = $role['name'];
+                                break;
+                            }
+                        }
+                    }
 
-                    $role_bg = in_array('sales_agent', $u->roles) ? '#dbeafe' : '#f3f4f6';
-                    $role_col = in_array('sales_agent', $u->roles) ? '#1e40af' : '#374151';
+                    $role_bg = $b2b_role_slug ? '#dbeafe' : '#f3f4f6';
+                    $role_col = $b2b_role_slug ? '#1e40af' : '#6b7280';
                 ?>
                 <tr>
                     <td data-col="0">#<?= $u->ID ?></td>
@@ -3309,7 +5010,7 @@ add_action('template_redirect', function () {
                     </td>
                     <td data-col="5">
                         <span style="background:<?= $role_bg ?>;color:<?= $role_col ?>;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase">
-                            <?= !empty($u->roles) ? $u->roles[0] : 'Guest' ?>
+                            <?= esc_html($b2b_role_name) ?>
                         </span>
                     </td>
                     <td data-col="6" style="text-align:right">
@@ -3331,6 +5032,8 @@ add_action('template_redirect', function () {
                         $page_params = [];
                         if($s) $page_params[] = 's=' . urlencode($s);
                         if($per_page != 20) $page_params[] = 'per_page=' . $per_page;
+                        if($filter_group) $page_params[] = 'filter_group=' . urlencode($filter_group);
+                        if($filter_role) $page_params[] = 'filter_role=' . urlencode($filter_role);
                         if($i > 1) $page_params[] = 'paged=' . $i;
                         $page_url = home_url('/b2b-panel/customers') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
                         $selected = ($i == $paged) ? 'selected' : '';
@@ -3641,7 +5344,7 @@ add_action('template_redirect', function () {
             
             <!-- Shipping Overrides Section -->
             <?php 
-            $shipping_zones = get_option('b2b_shipping_zones', []);
+            $shipping_zones = b2b_get_all_shipping_zones();
             $shipping_overrides = get_user_meta($id, 'b2b_shipping_overrides', true) ?: [];
             ?>
             <?php if(!empty($shipping_zones)): ?>
@@ -5418,7 +7121,7 @@ add_action('template_redirect', function () {
 });
 
 /* =====================================================
-   SHIPPING MODULE - PHASE 1
+   SHIPPING MODULE - NATIVE INTEGRATION
 ===================================================== */
 // Shipping Page
 add_action('template_redirect', function () {
@@ -5428,8 +7131,7 @@ add_action('template_redirect', function () {
     // Handle zone save/delete
     $message = '';
     if(isset($_POST['save_zone'])) {
-        $zones = get_option('b2b_shipping_zones', []);
-        $zone_id = isset($_POST['zone_id']) && !empty($_POST['zone_id']) && $_POST['zone_id'] != 'new' ? sanitize_text_field($_POST['zone_id']) : uniqid('zone_');
+        $zone_id = isset($_POST['zone_id']) && !empty($_POST['zone_id']) && $_POST['zone_id'] != 'new' ? intval($_POST['zone_id']) : 'new';
         
         $regions_input = isset($_POST['zone_regions'][0]) ? $_POST['zone_regions'][0] : '';
         $regions = array_map('trim', explode(',', $regions_input));
@@ -5441,19 +7143,17 @@ add_action('template_redirect', function () {
                 if(isset($group_data['allowed'])) {
                     $group_permissions[$group_id] = [
                         'allowed' => 1,
-                        'flat_rate_cost' => isset($group_data['flat_rate_cost']) ? floatval($group_data['flat_rate_cost']) : null,
-                        'free_shipping_min' => isset($group_data['free_shipping_min']) ? floatval($group_data['free_shipping_min']) : null,
+                        'flat_rate_cost' => isset($group_data['flat_rate_cost']) && $group_data['flat_rate_cost'] !== '' ? floatval($group_data['flat_rate_cost']) : null,
+                        'free_shipping_min' => isset($group_data['free_shipping_min']) && $group_data['free_shipping_min'] !== '' ? floatval($group_data['free_shipping_min']) : null,
                         'hidden_methods' => $group_data['hidden_methods'] ?? []
                     ];
                 }
             }
         }
         
-        $zones[$zone_id] = [
+        $zone_data = [
             'name' => sanitize_text_field($_POST['zone_name']),
-            'description' => sanitize_textarea_field($_POST['zone_description']),
             'regions' => array_filter($regions),
-            'active' => isset($_POST['zone_active']) ? 1 : 0,
             'priority' => intval($_POST['zone_priority'] ?? 1),
             'methods' => [
                 'flat_rate' => [
@@ -5470,33 +7170,37 @@ add_action('template_redirect', function () {
             'group_permissions' => $group_permissions
         ];
         
-        update_option('b2b_shipping_zones', $zones);
-        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Shipping zone saved.</div>';
+        $saved_id = b2b_save_shipping_zone($zone_id, $zone_data);
+        if($saved_id) {
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Shipping zone saved.</div>';
+        } else {
+            $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;"><strong>Error!</strong> Could not save shipping zone.</div>';
+        }
         
         // Redirect to list after save
-        if($_GET['edit'] ?? '' === 'new') {
+        if($zone_id === 'new') {
             wp_redirect(home_url('/b2b-panel/settings/shipping'));
             exit;
         }
     }
     
     if(isset($_GET['delete'])) {
-        $zones = get_option('b2b_shipping_zones', []);
-        unset($zones[sanitize_text_field($_GET['delete'])]);
-        update_option('b2b_shipping_zones', $zones);
+        $zone_id = intval($_GET['delete']);
+        if(b2b_delete_shipping_zone($zone_id)) {
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;">Shipping zone deleted.</div>';
+        }
         wp_redirect(home_url('/b2b-panel/settings/shipping'));
         exit;
     }
     
-    $zones = get_option('b2b_shipping_zones', []);
+    $zones = b2b_get_all_shipping_zones();
     $edit_zone = null;
     $edit_id = '';
     if(isset($_GET['edit'])) {
-        $edit_id = sanitize_text_field($_GET['edit']);
+        $edit_id = $_GET['edit'];
         if($edit_id == 'new') {
             $edit_zone = [
                 'name' => '', 
-                'description' => '', 
                 'regions' => [], 
                 'active' => 1, 
                 'priority' => 1, 
@@ -5507,7 +7211,7 @@ add_action('template_redirect', function () {
                 'group_permissions' => []
             ];
         } else {
-            $edit_zone = $zones[$edit_id] ?? null;
+            $edit_zone = $zones[intval($edit_id)] ?? null;
         }
     }
     
@@ -5517,76 +7221,7 @@ add_action('template_redirect', function () {
     ?>
     <div class="page-header"><h1 class="page-title">Shipping Zones</h1></div>
     
-    <?php 
-    // Handle WooCommerce Import
-    if(isset($_GET['wc_import']) && $_GET['wc_import'] == '1') {
-        if(class_exists('WC_Shipping_Zones')) {
-            $wc_zones = WC_Shipping_Zones::get_zones();
-            $b2b_zones = get_option('b2b_shipping_zones', []);
-            $imported_count = 0;
-            
-            foreach($wc_zones as $wc_zone_data) {
-                $zone_id = 'wc_' . $wc_zone_data['id'];
-                
-                // Get zone object for methods
-                $wc_zone = new WC_Shipping_Zone($wc_zone_data['id']);
-                $shipping_methods = $wc_zone->get_shipping_methods();
-                
-                $flat_rate_data = ['enabled' => 0, 'cost' => 0, 'title' => 'Flat Rate'];
-                $free_ship_data = ['enabled' => 0, 'min_amount' => 0, 'title' => 'Free Shipping'];
-                
-                foreach($shipping_methods as $method) {
-                    if($method->id == 'flat_rate' && $method->enabled == 'yes') {
-                        $flat_rate_data = [
-                            'enabled' => 1,
-                            'cost' => floatval($method->get_option('cost', 0)),
-                            'title' => $method->get_title()
-                        ];
-                    }
-                    if($method->id == 'free_shipping' && $method->enabled == 'yes') {
-                        $free_ship_data = [
-                            'enabled' => 1,
-                            'min_amount' => floatval($method->get_option('min_amount', 0)),
-                            'title' => $method->get_title()
-                        ];
-                    }
-                }
-                
-                // Get regions
-                $regions = [];
-                foreach($wc_zone_data['zone_locations'] as $location) {
-                    if($location->type == 'country') {
-                        $regions[] = $location->code;
-                    }
-                }
-                
-                $b2b_zones[$zone_id] = [
-                    'name' => $wc_zone_data['zone_name'],
-                    'description' => 'Imported from WooCommerce',
-                    'regions' => $regions,
-                    'active' => 1,
-                    'priority' => $wc_zone_data['zone_order'],
-                    'methods' => [
-                        'flat_rate' => $flat_rate_data,
-                        'free_shipping' => $free_ship_data
-                    ],
-                    'group_permissions' => []
-                ];
-                $imported_count++;
-            }
-            
-            update_option('b2b_shipping_zones', $b2b_zones);
-            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Imported ' . $imported_count . ' shipping zone(s) from WooCommerce.</div>';
-            echo $message;
-            wp_redirect(home_url('/b2b-panel/settings/shipping'));
-            exit;
-        } else {
-            $message = '<div style="padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:20px;"><strong>Error!</strong> WooCommerce is not active or shipping zones are not available.</div>';
-            echo $message;
-        }
-    }
-    
-    if($edit_zone): ?>
+    <?php if($edit_zone): ?>
     <!-- Edit Zone Form -->
     <div class="card" style="margin-bottom:20px;">
         <h3 style="margin-top:0;"><?= $edit_id == 'new' ? 'Add New Shipping Zone' : 'Edit Shipping Zone' ?></h3>
@@ -5599,22 +7234,11 @@ add_action('template_redirect', function () {
             </div>
             
             <div style="margin-bottom:20px;">
-                <label style="display:block;margin-bottom:5px;font-weight:600;">Description</label>
-                <textarea name="zone_description" rows="3" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($edit_zone['description']) ?></textarea>
-            </div>
-            
-            <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:5px;font-weight:600;">Regions (Countries)</label>
                 <input type="text" name="zone_regions[]" value="<?= esc_attr(implode(', ', $edit_zone['regions'] ?? [])) ?>" placeholder="TR, US, GB" style="width:100%;max-width:400px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;">
                 <small>Comma-separated country codes</small>
             </div>
             
-            <div style="margin-bottom:20px;">
-                <label style="display:flex;align-items:center;gap:10px;">
-                    <input type="checkbox" name="zone_active" value="1" <?= checked($edit_zone['active'] ?? 0, 1) ?>>
-                    <span>Active</span>
-                </label>
-            </div>
             
             <div style="margin-bottom:20px;">
                 <label style="display:block;margin-bottom:5px;font-weight:600;">Priority</label>
@@ -5717,11 +7341,8 @@ add_action('template_redirect', function () {
     </div>
     <?php else: ?>
     <!-- Add New Zone Button -->
-    <div style="margin-bottom:20px;display:flex;gap:10px;">
+    <div style="margin-bottom:20px;">
         <a href="<?= home_url('/b2b-panel/settings/shipping?edit=new') ?>"><button class="primary"><i class="fa-solid fa-plus"></i> Add Shipping Zone</button></a>
-        <?php if(class_exists('WC_Shipping_Zones')): ?>
-        <a href="<?= home_url('/b2b-panel/settings/shipping?wc_import=1') ?>"><button class="secondary" style="background:#3b82f6;color:white;border:none;"><i class="fa-solid fa-download"></i> Import from WooCommerce</button></a>
-        <?php endif; ?>
     </div>
     <?php endif; ?>
     
@@ -5738,15 +7359,17 @@ add_action('template_redirect', function () {
                         <th>Name</th>
                         <th>Regions</th>
                         <th>Methods</th>
-                        <th>Status</th>
+                        <th>B2B Groups</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach($zones as $zone_id => $zone): ?>
+                    <?php foreach($zones as $zone_id => $zone): 
+                        $b2b_groups_count = count($zone['group_permissions'] ?? []);
+                    ?>
                     <tr>
-                        <td><strong><?= esc_html($zone['name']) ?></strong><br><small><?= esc_html($zone['description']) ?></small></td>
-                        <td><?= esc_html(implode(', ', $zone['regions'] ?? [])) ?></td>
+                        <td><strong><?= esc_html($zone['name']) ?></strong></td>
+                        <td><?= esc_html(implode(', ', $zone['regions'] ?? [])) ?: 'All' ?></td>
                         <td>
                             <?php 
                             $methods = [];
@@ -5759,9 +7382,13 @@ add_action('template_redirect', function () {
                             ?>
                         </td>
                         <td>
-                            <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:<?= ($zone['active'] ?? 0) ? '#d1fae5' : '#fee2e2' ?>;color:<?= ($zone['active'] ?? 0) ? '#065f46' : '#991b1b' ?>">
-                                <?= ($zone['active'] ?? 0) ? 'ACTIVE' : 'INACTIVE' ?>
-                            </span>
+                            <?php if($b2b_groups_count > 0): ?>
+                                <span style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:#dbeafe;color:#1e40af;">
+                                    <?= $b2b_groups_count ?> group<?= $b2b_groups_count > 1 ? 's' : '' ?>
+                                </span>
+                            <?php else: ?>
+                                -
+                            <?php endif; ?>
                         </td>
                         <td>
                             <a href="<?= home_url('/b2b-panel/settings/shipping?edit='.urlencode($zone_id)) ?>"><button class="secondary" style="padding:6px 12px;font-size:12px;"><i class="fa-solid fa-pen"></i> Edit</button></a>
@@ -5777,3 +7404,1799 @@ add_action('template_redirect', function () {
     
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   BULK ACTIONS, DASHBOARD WIDGETS, ACTIVITY LOG
+===================================================== */
+
+// Create Activity Log Table on Activation
+register_activation_hook(__FILE__, 'b2b_create_activity_log_table');
+function b2b_create_activity_log_table() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        user_id bigint(20) NOT NULL,
+        user_name varchar(255) NOT NULL,
+        action varchar(100) NOT NULL,
+        entity_type varchar(50) NOT NULL,
+        entity_id bigint(20) DEFAULT NULL,
+        entity_name varchar(255) DEFAULT NULL,
+        details text DEFAULT NULL,
+        ip_address varchar(50) DEFAULT NULL,
+        created_at datetime NOT NULL,
+        PRIMARY KEY  (id),
+        KEY user_id (user_id),
+        KEY action (action),
+        KEY entity_type (entity_type),
+        KEY created_at (created_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+// Trigger table creation
+b2b_create_activity_log_table();
+
+// Helper Function: Log Activity
+function b2b_log_activity($action, $entity_type, $entity_id = null, $entity_name = null, $details = null) {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    
+    $current_user = wp_get_current_user();
+    if(!$current_user->ID) return false;
+    
+    $wpdb->insert($table_name, [
+        'user_id' => $current_user->ID,
+        'user_name' => $current_user->display_name,
+        'action' => $action,
+        'entity_type' => $entity_type,
+        'entity_id' => $entity_id,
+        'entity_name' => $entity_name,
+        'details' => $details,
+        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
+        'created_at' => current_time('mysql')
+    ]);
+    
+    return true;
+}
+
+// Daily Cleanup of Old Logs (90 days)
+add_action('init', function() {
+    if(!wp_next_scheduled('b2b_cleanup_old_logs')) {
+        wp_schedule_event(time(), 'daily', 'b2b_cleanup_old_logs');
+    }
+});
+
+add_action('b2b_cleanup_old_logs', function() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    $days_to_keep = apply_filters('b2b_activity_log_retention_days', 90);
+    
+    $wpdb->query($wpdb->prepare(
+        "DELETE FROM $table_name WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+        $days_to_keep
+    ));
+});
+
+// Activity Log Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'activity_log') return;
+    b2b_adm_guard();
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_activity_log';
+    
+    // Filters
+    $user_filter = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+    $action_filter = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+    $entity_filter = isset($_GET['entity_type']) ? sanitize_text_field($_GET['entity_type']) : '';
+    $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
+    $paged = max(1, isset($_GET['paged']) ? intval($_GET['paged']) : 1);
+    $per_page = 50;
+    $offset = ($paged - 1) * $per_page;
+    
+    // Build query
+    $where = ['1=1'];
+    if($user_filter) $where[] = $wpdb->prepare('user_id = %d', $user_filter);
+    if($action_filter) $where[] = $wpdb->prepare('action = %s', $action_filter);
+    if($entity_filter) $where[] = $wpdb->prepare('entity_type = %s', $entity_filter);
+    if($search) $where[] = $wpdb->prepare('(entity_name LIKE %s OR details LIKE %s)', '%'.$search.'%', '%'.$search.'%');
+    
+    $where_sql = implode(' AND ', $where);
+    
+    $total = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE $where_sql");
+    $logs = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_name WHERE $where_sql ORDER BY created_at DESC LIMIT %d OFFSET %d",
+        $per_page, $offset
+    ));
+    
+    $total_pages = ceil($total / $per_page);
+    
+    // Get unique values for filters
+    $all_users = $wpdb->get_results("SELECT DISTINCT user_id, user_name FROM $table_name ORDER BY user_name");
+    $all_actions = $wpdb->get_col("SELECT DISTINCT action FROM $table_name ORDER BY action");
+    $all_entities = $wpdb->get_col("SELECT DISTINCT entity_type FROM $table_name ORDER BY entity_type");
+    
+    b2b_adm_header('Activity Log');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title">Activity Log</h1>
+    </div>
+    
+    <div class="card">
+        <!-- Filters -->
+        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/activity-log') ?>?user_id='+this.value+'<?= $action_filter ? '&action='.$action_filter : '' ?><?= $entity_filter ? '&entity_type='.$entity_filter : '' ?><?= $search ? '&s='.urlencode($search) : '' ?>'" style="margin:0;">
+                <option value="0">All Users</option>
+                <?php foreach($all_users as $u): ?>
+                    <option value="<?= $u->user_id ?>" <?= selected($user_filter, $u->user_id) ?>><?= esc_html($u->user_name) ?></option>
+                <?php endforeach; ?>
+            </select>
+            
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/activity-log') ?>?action='+this.value+'<?= $user_filter ? '&user_id='.$user_filter : '' ?><?= $entity_filter ? '&entity_type='.$entity_filter : '' ?><?= $search ? '&s='.urlencode($search) : '' ?>'" style="margin:0;">
+                <option value="">All Actions</option>
+                <?php foreach($all_actions as $a): ?>
+                    <option value="<?= esc_attr($a) ?>" <?= selected($action_filter, $a) ?>><?= esc_html($a) ?></option>
+                <?php endforeach; ?>
+            </select>
+            
+            <select onchange="window.location.href='<?= home_url('/b2b-panel/activity-log') ?>?entity_type='+this.value+'<?= $user_filter ? '&user_id='.$user_filter : '' ?><?= $action_filter ? '&action='.$action_filter : '' ?><?= $search ? '&s='.urlencode($search) : '' ?>'" style="margin:0;">
+                <option value="">All Entity Types</option>
+                <?php foreach($all_entities as $e): ?>
+                    <option value="<?= esc_attr($e) ?>" <?= selected($entity_filter, $e) ?>><?= esc_html($e) ?></option>
+                <?php endforeach; ?>
+            </select>
+            
+            <form method="get" action="<?= home_url('/b2b-panel/activity-log') ?>" style="display:flex;gap:10px;flex:1;">
+                <?php if($user_filter): ?><input type="hidden" name="user_id" value="<?= $user_filter ?>"><?php endif; ?>
+                <?php if($action_filter): ?><input type="hidden" name="action" value="<?= esc_attr($action_filter) ?>"><?php endif; ?>
+                <?php if($entity_filter): ?><input type="hidden" name="entity_type" value="<?= esc_attr($entity_filter) ?>"><?php endif; ?>
+                <input name="s" value="<?= esc_attr($search) ?>" placeholder="Search entity or details..." style="margin:0;flex:1;min-width:200px;">
+                <button>Search</button>
+                <?php if($user_filter || $action_filter || $entity_filter || $search): ?>
+                    <a href="<?= home_url('/b2b-panel/activity-log') ?>" style="padding:10px;color:#ef4444;text-decoration:none;font-weight:600;">Reset</a>
+                <?php endif; ?>
+            </form>
+        </div>
+        
+        <!-- Activity Log Table -->
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>Details</th>
+                    <th>IP</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if(empty($logs)): ?>
+                <tr><td colspan="6" style="text-align:center;padding:30px;color:#999">No activity logs found.</td></tr>
+            <?php else: foreach ($logs as $log): 
+                $action_colors = [
+                    'created' => '#10b981',
+                    'updated' => '#3b82f6',
+                    'deleted' => '#ef4444',
+                    'bulk_action' => '#f59e0b',
+                ];
+                $color = $action_colors[strtolower($log->action)] ?? '#6b7280';
+            ?>
+            <tr>
+                <td><small style="color:#6b7280;"><?= human_time_diff(strtotime($log->created_at), current_time('timestamp')) ?> ago</small><br><small style="color:#9ca3af;"><?= date('M d, Y H:i', strtotime($log->created_at)) ?></small></td>
+                <td><?= get_avatar($log->user_id, 32) ?> <strong><?= esc_html($log->user_name) ?></strong></td>
+                <td><span style="background:<?= $color ?>;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;"><?= esc_html($log->action) ?></span></td>
+                <td><strong><?= esc_html($log->entity_type) ?></strong><?php if($log->entity_name): ?><br><small style="color:#6b7280;"><?= esc_html($log->entity_name) ?></small><?php endif; ?></td>
+                <td><small style="color:#6b7280;"><?= esc_html($log->details ?: '-') ?></small></td>
+                <td><code style="font-size:11px;color:#6b7280;"><?= esc_html($log->ip_address) ?></code></td>
+            </tr>
+            <?php endforeach; endif; ?>
+            </tbody>
+        </table>
+        
+        <!-- Pagination -->
+        <?php if($total_pages > 1): ?>
+        <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+            <span style="color:#6b7280;font-size:14px;">Page:</span>
+            <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                <?php 
+                for($i = 1; $i <= $total_pages; $i++) {
+                    $params = [];
+                    if($user_filter) $params[] = 'user_id=' . $user_filter;
+                    if($action_filter) $params[] = 'action=' . urlencode($action_filter);
+                    if($entity_filter) $params[] = 'entity_type=' . urlencode($entity_filter);
+                    if($search) $params[] = 's=' . urlencode($search);
+                    if($i > 1) $params[] = 'paged=' . $i;
+                    $url = home_url('/b2b-panel/activity-log') . (!empty($params) ? '?' . implode('&', $params) : '');
+                    echo '<option value="' . esc_attr($url) . '" ' . ($i == $paged ? 'selected' : '') . '>Page ' . $i . ' of ' . $total_pages . '</option>';
+                }
+                ?>
+            </select>
+            <span style="color:#6b7280;font-size:14px;">(<?= $total ?> total entries)</span>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+// Add Activity Log route
+add_action('init', function() {
+    add_rewrite_rule('^b2b-panel/activity-log/?$', 'index.php?b2b_adm_page=activity_log', 'top');
+    
+    if (!get_option('b2b_rewrite_v18_activitylog')) {
+        flush_rewrite_rules();
+        update_option('b2b_rewrite_v18_activitylog', true);
+    }
+});
+
+// AJAX: Bulk Actions for Products
+add_action('wp_ajax_b2b_bulk_action_products', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error('Insufficient permissions');
+    }
+    
+    $action = sanitize_text_field($_POST['bulk_action'] ?? '');
+    // Parse product_ids - it comes as comma-separated string
+    $product_ids_str = sanitize_text_field($_POST['product_ids'] ?? '');
+    $product_ids = !empty($product_ids_str) ? array_map('intval', explode(',', $product_ids_str)) : [];
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk_size = 10;
+    
+    // Process chunk
+    $chunk_ids = array_slice($product_ids, $chunk * $chunk_size, $chunk_size);
+    $results = ['success' => [], 'errors' => []];
+    
+    foreach($chunk_ids as $product_id) {
+        $product = wc_get_product($product_id);
+        if(!$product) {
+            $results['errors'][] = "Product ID $product_id not found";
+            continue;
+        }
+        
+        try {
+            switch($action) {
+                case 'delete':
+                    wp_delete_post($product_id, true);
+                    b2b_log_activity('deleted', 'product', $product_id, $product->get_name(), 'Bulk delete');
+                    $results['success'][] = $product->get_name();
+                    break;
+                    
+                case 'price_update':
+                    $price_action = sanitize_text_field($_POST['price_action'] ?? 'increase');
+                    $price_value = floatval($_POST['price_value'] ?? 0);
+                    $price_type = sanitize_text_field($_POST['price_type'] ?? 'percentage');
+                    
+                    $current_price = $product->get_regular_price();
+                    if($current_price > 0) {
+                        if($price_type == 'percentage') {
+                            $new_price = $price_action == 'increase' 
+                                ? $current_price * (1 + $price_value / 100)
+                                : $current_price * (1 - $price_value / 100);
+                        } else {
+                            $new_price = $price_action == 'increase'
+                                ? $current_price + $price_value
+                                : $current_price - $price_value;
+                        }
+                        $product->set_regular_price(max(0, $new_price));
+                        $product->save();
+                        b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk price update: $price_action $price_value");
+                        $results['success'][] = $product->get_name();
+                    }
+                    break;
+                    
+                case 'category_add':
+                    $category_id = intval($_POST['category_id'] ?? 0);
+                    if($category_id) {
+                        $current_cats = $product->get_category_ids();
+                        if(!in_array($category_id, $current_cats)) {
+                            $current_cats[] = $category_id;
+                            $product->set_category_ids($current_cats);
+                            $product->save();
+                            b2b_log_activity('updated', 'product', $product_id, $product->get_name(), 'Bulk category added');
+                            $results['success'][] = $product->get_name();
+                        }
+                    }
+                    break;
+                    
+                case 'stock_update':
+                    $stock_value = floatval($_POST['stock_value'] ?? 0);
+                    $stock_action = sanitize_text_field($_POST['stock_action'] ?? 'set');
+                    $stock_type = sanitize_text_field($_POST['stock_type'] ?? 'fixed');
+                    
+                    $current_stock = $product->get_stock_quantity();
+                    if($current_stock === null) $current_stock = 0;
+                    
+                    // Calculate new stock based on type and action
+                    if($stock_type == 'percentage') {
+                        // Percentage calculations
+                        if($stock_action == 'set') {
+                            $new_stock = round($current_stock * ($stock_value / 100));
+                        } else if($stock_action == 'increase') {
+                            $new_stock = round($current_stock * (1 + $stock_value / 100));
+                        } else { // decrease
+                            $new_stock = max(0, round($current_stock * (1 - $stock_value / 100)));
+                        }
+                    } else {
+                        // Fixed amount calculations
+                        if($stock_action == 'set') {
+                            $new_stock = intval($stock_value);
+                        } else if($stock_action == 'increase') {
+                            $new_stock = $current_stock + intval($stock_value);
+                        } else { // decrease
+                            $new_stock = max(0, $current_stock - intval($stock_value));
+                        }
+                    }
+                    
+                    $product->set_manage_stock(true);
+                    $product->set_stock_quantity($new_stock);
+                    $product->set_stock_status($new_stock > 0 ? 'instock' : 'outofstock');
+                    $product->save();
+                    b2b_log_activity('updated', 'product', $product_id, $product->get_name(), "Bulk stock update: $stock_type $stock_action $stock_value (new: $new_stock)");
+                    $results['success'][] = $product->get_name();
+                    break;
+            }
+        } catch(Exception $e) {
+            $results['errors'][] = $product->get_name() . ': ' . $e->getMessage();
+        }
+    }
+    
+    wp_send_json_success([
+        'results' => $results,
+        'has_more' => ($chunk + 1) * $chunk_size < count($product_ids),
+        'next_chunk' => $chunk + 1,
+        'progress' => min(100, round((($chunk + 1) * $chunk_size / count($product_ids)) * 100))
+    ]);
+});
+
+// AJAX: Bulk Actions for Customers
+add_action('wp_ajax_b2b_bulk_action_customers', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error('Insufficient permissions');
+    }
+    
+    $action = sanitize_text_field($_POST['bulk_action'] ?? '');
+    $customer_ids = array_map('intval', $_POST['customer_ids'] ?? []);
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk_size = 10;
+    
+    $chunk_ids = array_slice($customer_ids, $chunk * $chunk_size, $chunk_size);
+    $results = ['success' => [], 'errors' => []];
+    
+    foreach($chunk_ids as $customer_id) {
+        $customer = get_user_by('ID', $customer_id);
+        if(!$customer) {
+            $results['errors'][] = "Customer ID $customer_id not found";
+            continue;
+        }
+        
+        try {
+            switch($action) {
+                case 'assign_group':
+                    $group_slug = sanitize_text_field($_POST['group_slug'] ?? '');
+                    if($group_slug) {
+                        update_user_meta($customer_id, 'b2b_group_slug', $group_slug);
+                        b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, "Bulk group assignment: $group_slug");
+                        $results['success'][] = $customer->display_name;
+                    }
+                    break;
+                    
+                case 'assign_role':
+                    $b2b_role = sanitize_text_field($_POST['b2b_role'] ?? '');
+                    if($b2b_role) {
+                        update_user_meta($customer_id, 'b2b_role', $b2b_role);
+                        b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, "Bulk role assignment: $b2b_role");
+                        $results['success'][] = $customer->display_name;
+                    }
+                    break;
+                    
+                case 'approve':
+                    update_user_meta($customer_id, 'b2b_status', 'approved');
+                    b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, 'Bulk approval');
+                    $results['success'][] = $customer->display_name;
+                    break;
+                    
+                case 'reject':
+                    update_user_meta($customer_id, 'b2b_status', 'rejected');
+                    b2b_log_activity('updated', 'customer', $customer_id, $customer->display_name, 'Bulk rejection');
+                    $results['success'][] = $customer->display_name;
+                    break;
+            }
+        } catch(Exception $e) {
+            $results['errors'][] = $customer->display_name . ': ' . $e->getMessage();
+        }
+    }
+    
+    wp_send_json_success([
+        'results' => $results,
+        'has_more' => ($chunk + 1) * $chunk_size < count($customer_ids),
+        'next_chunk' => $chunk + 1,
+        'progress' => min(100, round((($chunk + 1) * $chunk_size / count($customer_ids)) * 100))
+    ]);
+});
+
+// AJAX: Bulk Actions for Orders
+add_action('wp_ajax_b2b_bulk_action_orders', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error('Insufficient permissions');
+    }
+    
+    $action = sanitize_text_field($_POST['bulk_action'] ?? '');
+    $order_ids = array_map('intval', $_POST['order_ids'] ?? []);
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk_size = 10;
+    
+    $chunk_ids = array_slice($order_ids, $chunk * $chunk_size, $chunk_size);
+    $results = ['success' => [], 'errors' => []];
+    
+    foreach($chunk_ids as $order_id) {
+        $order = wc_get_order($order_id);
+        if(!$order) {
+            $results['errors'][] = "Order #$order_id not found";
+            continue;
+        }
+        
+        try {
+            switch($action) {
+                case 'update_status':
+                    $new_status = sanitize_text_field($_POST['order_status'] ?? '');
+                    if($new_status) {
+                        $order->update_status($new_status);
+                        b2b_log_activity('updated', 'order', $order_id, "Order #$order_id", "Bulk status update: $new_status");
+                        $results['success'][] = "Order #$order_id";
+                    }
+                    break;
+                    
+                case 'delete':
+                    wp_delete_post($order_id, true);
+                    b2b_log_activity('deleted', 'order', $order_id, "Order #$order_id", 'Bulk delete');
+                    $results['success'][] = "Order #$order_id";
+                    break;
+            }
+        } catch(Exception $e) {
+            $results['errors'][] = "Order #$order_id: " . $e->getMessage();
+        }
+    }
+    
+    wp_send_json_success([
+        'results' => $results,
+        'has_more' => ($chunk + 1) * $chunk_size < count($order_ids),
+        'next_chunk' => $chunk + 1,
+        'progress' => min(100, round((($chunk + 1) * $chunk_size / count($order_ids)) * 100))
+    ]);
+});
+
+/* =====================================================
+   DASHBOARD WIDGETS WITH CHART.JS & UI UPDATES
+===================================================== */
+
+// Update Dashboard with Chart.js Widgets
+add_action('template_redirect', function () {
+    $page = get_query_var('b2b_adm_page');
+    if ($page !== 'dashboard') return;
+    
+    // This hook runs before the dashboard renders
+    // We'll modify the dashboard rendering directly in the header
+}, 5); // Priority 5 to run before main dashboard
+
+// Enhance sidebar menu with Activity Log link
+add_filter('b2b_sidebar_menu_items', function($items) {
+    // Add Activity Log after Reports
+    $new_items = [];
+    foreach($items as $key => $item) {
+        $new_items[$key] = $item;
+        if($key === 'reports') {
+            $new_items['activity_log'] = [
+                'label' => 'Activity Log',
+                'icon' => 'fa-solid fa-clipboard-list',
+                'url' => home_url('/b2b-panel/activity-log'),
+                'page' => 'activity_log'
+            ];
+        }
+    }
+    return $new_items;
+});
+
+// Add Bulk Actions UI to Products Page (Inject via JavaScript)
+add_action('wp_footer', function() {
+    $page = get_query_var('b2b_adm_page');
+    if($page !== 'products' && $page !== 'customers' && $page !== 'orders') return;
+    ?>
+    <script>
+    // Inject Bulk Actions UI
+    jQuery(document).ready(function($) {
+        <?php if($page == 'products'): ?>
+        // Products Bulk Actions
+        // Note: Checkboxes already exist in HTML, no need to prepend
+        
+        // Make functions global
+        window.toggleAllProducts = function(masterCheckbox) {
+            $('.product-checkbox').prop('checked', $(masterCheckbox).prop('checked'));
+            window.updateBulkSelection();
+        };
+        
+        window.updateBulkSelection = function() {
+            const checked = $('.product-checkbox:checked').length;
+            $('#selectedCount').text(checked);
+            if(checked > 0) {
+                $('#bulkActionBar').show();
+            } else {
+                $('#bulkActionBar').hide();
+            }
+        };
+        
+        // Connect checkboxes to update selection
+        $('.product-checkbox').on('change', updateBulkSelection);
+        
+        <?php endif; ?>
+    });
+    </script>
+    <?php
+});
+
+// ============================================================================
+// B2B SUPPORT TICKET MODULE
+// ============================================================================
+
+// Create Support Tickets Tables
+function b2b_create_support_tables() {
+    global $wpdb;
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    // Tickets table
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $sql_tickets = "CREATE TABLE IF NOT EXISTS $table_tickets (
+        ticket_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_number VARCHAR(50) UNIQUE NOT NULL,
+        customer_id BIGINT UNSIGNED NOT NULL,
+        assigned_agent_id BIGINT UNSIGNED NULL,
+        order_id BIGINT UNSIGNED NULL,
+        subject VARCHAR(255) NOT NULL,
+        category ENUM('order','product','delivery','billing','general') DEFAULT 'general',
+        priority ENUM('low','normal','high','urgent') DEFAULT 'normal',
+        status ENUM('new','open','pending','resolved','closed') DEFAULT 'new',
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        resolved_at DATETIME NULL,
+        closed_at DATETIME NULL,
+        INDEX idx_customer (customer_id),
+        INDEX idx_agent (assigned_agent_id),
+        INDEX idx_status (status),
+        INDEX idx_created (created_at)
+    ) $charset_collate;";
+    
+    // Replies table
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    $sql_replies = "CREATE TABLE IF NOT EXISTS $table_replies (
+        reply_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        message TEXT NOT NULL,
+        is_internal TINYINT(1) DEFAULT 0,
+        created_at DATETIME NOT NULL,
+        INDEX idx_ticket (ticket_id),
+        INDEX idx_user (user_id)
+    ) $charset_collate;";
+    
+    // Attachments table
+    $table_attachments = $wpdb->prefix . 'b2b_support_attachments';
+    $sql_attachments = "CREATE TABLE IF NOT EXISTS $table_attachments (
+        attachment_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_id BIGINT UNSIGNED NOT NULL,
+        reply_id BIGINT UNSIGNED NULL,
+        file_name VARCHAR(255) NOT NULL,
+        file_path VARCHAR(500) NOT NULL,
+        file_size BIGINT UNSIGNED NOT NULL,
+        file_type VARCHAR(100) NOT NULL,
+        uploaded_by BIGINT UNSIGNED NOT NULL,
+        uploaded_at DATETIME NOT NULL,
+        INDEX idx_ticket (ticket_id)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql_tickets);
+    dbDelta($sql_replies);
+    dbDelta($sql_attachments);
+}
+add_action('init', 'b2b_create_support_tables');
+
+// ========================================
+// WooCommerce My Account Integration
+// ========================================
+
+// Register WooCommerce My Account endpoints for support
+function b2b_register_support_endpoints() {
+    add_rewrite_endpoint('support-tickets', EP_ROOT | EP_PAGES);
+    add_rewrite_endpoint('create-support-ticket', EP_ROOT | EP_PAGES);
+    add_rewrite_endpoint('view-support-ticket', EP_ROOT | EP_PAGES);
+}
+add_action('init', 'b2b_register_support_endpoints');
+
+// Add Support Tickets to WooCommerce My Account menu
+function b2b_add_support_to_my_account_menu($items) {
+    // Insert Support Tickets after Orders
+    $new_items = [];
+    foreach($items as $key => $label) {
+        $new_items[$key] = $label;
+        if($key === 'orders') {
+            $new_items['support-tickets'] = __('Support Tickets', 'woocommerce');
+        }
+    }
+    return $new_items;
+}
+add_filter('woocommerce_account_menu_items', 'b2b_add_support_to_my_account_menu');
+
+// Support Tickets List Page (My Account)
+function b2b_my_account_support_tickets_content() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    $customer_id = get_current_user_id();
+    
+    $tickets = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table WHERE customer_id = %d ORDER BY created_at DESC",
+        $customer_id
+    ));
+    
+    echo '<h2>Support Tickets</h2>';
+    echo '<p><a href="' . wc_get_endpoint_url('create-support-ticket', '', wc_get_page_permalink('myaccount')) . '" class="button">Create New Ticket</a></p>';
+    
+    if(empty($tickets)) {
+        echo '<p>You have no support tickets yet.</p>';
+    } else {
+        echo '<table class="shop_table shop_table_responsive my_account_orders">';
+        echo '<thead><tr><th>Ticket #</th><th>Subject</th><th>Status</th><th>Priority</th><th>Created</th><th>Actions</th></tr></thead>';
+        echo '<tbody>';
+        foreach($tickets as $ticket) {
+            $status_colors = [
+                'new' => '#3b82f6',
+                'open' => '#10b981',
+                'pending' => '#f59e0b',
+                'resolved' => '#6366f1',
+                'closed' => '#6b7280'
+            ];
+            $color = $status_colors[$ticket->status] ?? '#6b7280';
+            
+            echo '<tr>';
+            echo '<td data-title="Ticket #">' . esc_html($ticket->ticket_number) . '</td>';
+            echo '<td data-title="Subject">' . esc_html($ticket->subject) . '</td>';
+            echo '<td data-title="Status"><span style="background:' . $color . ';color:white;padding:4px 8px;border-radius:4px;font-size:12px">' . esc_html(ucfirst($ticket->status)) . '</span></td>';
+            echo '<td data-title="Priority">' . esc_html(ucfirst($ticket->priority)) . '</td>';
+            echo '<td data-title="Created">' . esc_html(date('M j, Y', strtotime($ticket->created_at))) . '</td>';
+            echo '<td data-title="Actions"><a href="' . wc_get_endpoint_url('view-support-ticket', $ticket->ticket_id, wc_get_page_permalink('myaccount')) . '" class="button view">View</a></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+    }
+}
+add_action('woocommerce_account_support-tickets_endpoint', 'b2b_my_account_support_tickets_content');
+
+// Create Support Ticket Page (My Account)
+function b2b_my_account_create_ticket_content() {
+    global $wpdb;
+    $customer_id = get_current_user_id();
+    
+    // Get customer's recent orders
+    $orders = wc_get_orders([
+        'customer_id' => $customer_id,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    echo '<h2>Create Support Ticket</h2>';
+    echo '<form method="post" id="createTicketForm" style="max-width:600px">';
+    echo wp_nonce_field('b2b_create_ticket_wc', 'ticket_nonce', true, false);
+    
+    echo '<p><label>Subject *</label><input type="text" name="subject" required class="input-text" style="width:100%"></p>';
+    
+    echo '<p><label>Category *</label><select name="category" required class="input-text" style="width:100%">';
+    echo '<option value="general">General</option>';
+    echo '<option value="order">Order Issue</option>';
+    echo '<option value="product">Product Question</option>';
+    echo '<option value="delivery">Delivery</option>';
+    echo '<option value="billing">Billing</option>';
+    echo '</select></p>';
+    
+    echo '<p><label>Priority</label><select name="priority" class="input-text" style="width:100%">';
+    echo '<option value="normal">Normal</option>';
+    echo '<option value="low">Low</option>';
+    echo '<option value="high">High</option>';
+    echo '<option value="urgent">Urgent</option>';
+    echo '</select></p>';
+    
+    if(!empty($orders)) {
+        echo '<p><label>Related Order (Optional)</label><select name="order_id" class="input-text" style="width:100%">';
+        echo '<option value="">No specific order</option>';
+        foreach($orders as $order) {
+            echo '<option value="' . $order->get_id() . '">Order #' . $order->get_order_number() . ' - ' . $order->get_date_created()->format('M j, Y') . '</option>';
+        }
+        echo '</select></p>';
+    }
+    
+    echo '<p><label>Message *</label><textarea name="message" required rows="6" class="input-text" style="width:100%"></textarea></p>';
+    
+    echo '<p><button type="submit" class="button">Submit Ticket</button></p>';
+    echo '</form>';
+    
+    // Handle form submission
+    if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ticket_nonce']) && wp_verify_nonce($_POST['ticket_nonce'], 'b2b_create_ticket_wc')) {
+        $table = $wpdb->prefix . 'b2b_support_tickets';
+        $table_replies = $wpdb->prefix . 'b2b_support_replies';
+        
+        $subject = sanitize_text_field($_POST['subject'] ?? '');
+        $message = sanitize_textarea_field($_POST['message'] ?? '');
+        $category = sanitize_text_field($_POST['category'] ?? 'general');
+        $priority = sanitize_text_field($_POST['priority'] ?? 'normal');
+        $order_id = intval($_POST['order_id'] ?? 0);
+        
+        if(!empty($subject) && !empty($message)) {
+            $ticket_number = b2b_generate_ticket_number();
+            $now = current_time('mysql');
+            
+            $wpdb->insert($table, [
+                'ticket_number' => $ticket_number,
+                'customer_id' => $customer_id,
+                'order_id' => $order_id > 0 ? $order_id : null,
+                'subject' => $subject,
+                'category' => $category,
+                'priority' => $priority,
+                'status' => 'new',
+                'created_at' => $now,
+                'updated_at' => $now
+            ]);
+            
+            $ticket_id = $wpdb->insert_id;
+            
+            // Add initial message
+            $wpdb->insert($table_replies, [
+                'ticket_id' => $ticket_id,
+                'user_id' => $customer_id,
+                'message' => $message,
+                'is_internal' => 0,
+                'created_at' => $now
+            ]);
+            
+            // Activity log
+            b2b_log_activity(get_current_user_id(), 'ticket_created', 'support_ticket', $ticket_id, 'Created support ticket: ' . $ticket_number);
+            
+            wc_add_notice('Ticket created successfully! Ticket #' . $ticket_number, 'success');
+            wp_redirect(wc_get_endpoint_url('support-tickets', '', wc_get_page_permalink('myaccount')));
+            exit;
+        }
+    }
+}
+add_action('woocommerce_account_create-support-ticket_endpoint', 'b2b_my_account_create_ticket_content');
+
+// View Support Ticket Page (My Account)
+function b2b_my_account_view_ticket_content($ticket_id) {
+    global $wpdb;
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    $customer_id = get_current_user_id();
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d AND customer_id = %d",
+        $ticket_id, $customer_id
+    ));
+    
+    if(!$ticket) {
+        echo '<p>Ticket not found.</p>';
+        return;
+    }
+    
+    echo '<h2>Ticket #' . esc_html($ticket->ticket_number) . '</h2>';
+    echo '<p><a href="' . wc_get_endpoint_url('support-tickets', '', wc_get_page_permalink('myaccount')) . '">&larr; Back to Tickets</a></p>';
+    
+    // Ticket info
+    echo '<div style="background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px">';
+    echo '<p><strong>Subject:</strong> ' . esc_html($ticket->subject) . '</p>';
+    echo '<p><strong>Status:</strong> ' . esc_html(ucfirst($ticket->status)) . '</p>';
+    echo '<p><strong>Priority:</strong> ' . esc_html(ucfirst($ticket->priority)) . '</p>';
+    echo '<p><strong>Created:</strong> ' . esc_html(date('M j, Y g:i A', strtotime($ticket->created_at))) . '</p>';
+    
+    // Order info if linked
+    if($ticket->order_id) {
+        $order = wc_get_order($ticket->order_id);
+        if($order) {
+            echo '<p><strong>Related Order:</strong> <a href="' . $order->get_view_order_url() . '">Order #' . $order->get_order_number() . '</a></p>';
+        }
+    }
+    echo '</div>';
+    
+    // Conversation
+    echo '<h3>Conversation</h3>';
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d AND is_internal = 0 ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    foreach($replies as $reply) {
+        $user = get_userdata($reply->user_id);
+        $is_customer = ($reply->user_id == $customer_id);
+        $bg = $is_customer ? '#eff6ff' : '#f0fdf4';
+        
+        echo '<div style="background:' . $bg . ';padding:15px;border-radius:8px;margin-bottom:15px">';
+        echo '<p style="margin:0 0 10px;font-weight:600">' . esc_html($user->display_name) . ' <span style="font-weight:normal;color:#6b7280;font-size:13px">' . date('M j, Y g:i A', strtotime($reply->created_at)) . '</span></p>';
+        echo '<p style="margin:0">' . nl2br(esc_html($reply->message)) . '</p>';
+        echo '</div>';
+    }
+    
+    // Reply form (only if not closed)
+    if($ticket->status !== 'closed') {
+        echo '<h3>Add Message</h3>';
+        echo '<form method="post">';
+        echo wp_nonce_field('b2b_reply_ticket_wc_' . $ticket_id, 'reply_nonce', true, false);
+        echo '<p><textarea name="message" required rows="5" class="input-text" style="width:100%" placeholder="Type your message..."></textarea></p>';
+        echo '<p><button type="submit" class="button">Send Message</button></p>';
+        echo '</form>';
+        
+        // Handle reply submission
+        if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_nonce']) && wp_verify_nonce($_POST['reply_nonce'], 'b2b_reply_ticket_wc_' . $ticket_id)) {
+            $message = sanitize_textarea_field($_POST['message'] ?? '');
+            if(!empty($message)) {
+                $wpdb->insert($table_replies, [
+                    'ticket_id' => $ticket_id,
+                    'user_id' => $customer_id,
+                    'message' => $message,
+                    'is_internal' => 0,
+                    'created_at' => current_time('mysql')
+                ]);
+                
+                // Update ticket
+                $wpdb->update($table_tickets, 
+                    ['updated_at' => current_time('mysql'), 'status' => 'open'],
+                    ['ticket_id' => $ticket_id]
+                );
+                
+                wp_redirect(wc_get_endpoint_url('view-support-ticket', $ticket_id, wc_get_page_permalink('myaccount')));
+                exit;
+            }
+        }
+    } else {
+        echo '<p style="color:#6b7280">This ticket is closed. No further messages can be added.</p>';
+    }
+}
+add_action('woocommerce_account_view-support-ticket_endpoint', 'b2b_my_account_view_ticket_content');
+
+// Add support form to order detail page
+function b2b_add_support_form_to_order_page($order) {
+    $customer_id = get_current_user_id();
+    $order_id = $order->get_id();
+    
+    echo '<div style="margin-top:30px;padding:20px;background:#f9fafb;border-radius:8px">';
+    echo '<h3 style="cursor:pointer" onclick="document.getElementById(\'supportForm' . $order_id . '\').style.display=document.getElementById(\'supportForm' . $order_id . '\').style.display===\'none\'?\'block\':\'none\'">Need Help with This Order? ▼</h3>';
+    echo '<div id="supportForm' . $order_id . '" style="display:none">';
+    echo '<p>Submit a support ticket for this order:</p>';
+    echo '<form method="post" action="' . wc_get_endpoint_url('create-support-ticket', '', wc_get_page_permalink('myaccount')) . '">';
+    echo wp_nonce_field('b2b_create_ticket_wc', 'ticket_nonce', true, false);
+    echo '<input type="hidden" name="order_id" value="' . $order_id . '">';
+    echo '<input type="hidden" name="category" value="order">';
+    echo '<input type="hidden" name="subject" value="Support for Order #' . $order->get_order_number() . '">';
+    echo '<p><label>Priority</label><select name="priority" class="input-text" style="width:100%">';
+    echo '<option value="normal">Normal</option>';
+    echo '<option value="high">High</option>';
+    echo '<option value="urgent">Urgent</option>';
+    echo '</select></p>';
+    echo '<p><label>Describe your issue *</label><textarea name="message" required rows="4" class="input-text" style="width:100%"></textarea></p>';
+    echo '<p><button type="submit" class="button">Submit Ticket</button></p>';
+    echo '</form>';
+    echo '</div></div>';
+}
+add_action('woocommerce_after_order_details', 'b2b_add_support_form_to_order_page', 10, 1);
+
+// ========================================
+// End WooCommerce My Account Integration
+// ========================================
+
+// Generate unique ticket number
+function b2b_generate_ticket_number() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    $last_ticket = $wpdb->get_var("SELECT ticket_number FROM $table ORDER BY ticket_id DESC LIMIT 1");
+    
+    if($last_ticket) {
+        $num = intval(str_replace('TK-', '', $last_ticket)) + 1;
+    } else {
+        $num = 1;
+    }
+    
+    return 'TK-' . str_pad($num, 5, '0', STR_PAD_LEFT);
+}
+
+// AJAX: Create new ticket
+add_action('wp_ajax_b2b_create_ticket', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $customer_id = get_current_user_id();
+    $subject = sanitize_text_field($_POST['subject'] ?? '');
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    $category = sanitize_text_field($_POST['category'] ?? 'general');
+    $priority = sanitize_text_field($_POST['priority'] ?? 'normal');
+    $order_id = intval($_POST['order_id'] ?? 0);
+    
+    if(empty($subject) || empty($message)) {
+        wp_send_json_error(['message' => 'Subject and message are required']);
+    }
+    
+    $ticket_number = b2b_generate_ticket_number();
+    $now = current_time('mysql');
+    
+    $wpdb->insert($table, [
+        'ticket_number' => $ticket_number,
+        'customer_id' => $customer_id,
+        'order_id' => $order_id > 0 ? $order_id : null,
+        'subject' => $subject,
+        'category' => $category,
+        'priority' => $priority,
+        'status' => 'new',
+        'created_at' => $now,
+        'updated_at' => $now
+    ]);
+    
+    $ticket_id = $wpdb->insert_id;
+    
+    // Add first message
+    $wpdb->insert($table_replies, [
+        'ticket_id' => $ticket_id,
+        'user_id' => $customer_id,
+        'message' => $message,
+        'is_internal' => 0,
+        'created_at' => $now
+    ]);
+    
+    // Log activity
+    b2b_log_activity('created_ticket', 'ticket', $ticket_id, $ticket_number, "Ticket: $subject");
+    
+    wp_send_json_success([
+        'ticket_id' => $ticket_id,
+        'ticket_number' => $ticket_number,
+        'message' => 'Ticket created successfully'
+    ]);
+});
+
+// AJAX: Add reply to ticket
+add_action('wp_ajax_b2b_add_ticket_reply', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    global $wpdb;
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $ticket_id = intval($_POST['ticket_id'] ?? 0);
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    $is_internal = intval($_POST['is_internal'] ?? 0);
+    $user_id = get_current_user_id();
+    
+    if(empty($message)) {
+        wp_send_json_error(['message' => 'Message is required']);
+    }
+    
+    // Verify access
+    if(!current_user_can('manage_woocommerce')) {
+        // Customer can only reply to their own tickets
+        $ticket = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_tickets WHERE ticket_id = %d",
+            $ticket_id
+        ));
+        
+        if(!$ticket || $ticket->customer_id != $user_id) {
+            wp_send_json_error(['message' => 'Access denied']);
+        }
+        $is_internal = 0; // Customers can't create internal notes
+    }
+    
+    $now = current_time('mysql');
+    
+    $wpdb->insert($table_replies, [
+        'ticket_id' => $ticket_id,
+        'user_id' => $user_id,
+        'message' => $message,
+        'is_internal' => $is_internal,
+        'created_at' => $now
+    ]);
+    
+    // Update ticket
+    $wpdb->update($table_tickets, 
+        ['updated_at' => $now],
+        ['ticket_id' => $ticket_id]
+    );
+    
+    wp_send_json_success(['message' => 'Reply added successfully']);
+});
+
+// AJAX: Update ticket status
+add_action('wp_ajax_b2b_update_ticket_status', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if(!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Access denied']);
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $ticket_id = intval($_POST['ticket_id'] ?? 0);
+    $status = sanitize_text_field($_POST['status'] ?? '');
+    
+    $valid_statuses = ['new', 'open', 'pending', 'resolved', 'closed'];
+    if(!in_array($status, $valid_statuses)) {
+        wp_send_json_error(['message' => 'Invalid status']);
+    }
+    
+    $now = current_time('mysql');
+    $update_data = [
+        'status' => $status,
+        'updated_at' => $now
+    ];
+    
+    if($status == 'resolved') {
+        $update_data['resolved_at'] = $now;
+    } elseif($status == 'closed') {
+        $update_data['closed_at'] = $now;
+    }
+    
+    $wpdb->update($table, $update_data, ['ticket_id' => $ticket_id]);
+    
+    b2b_log_activity('updated_ticket_status', 'ticket', $ticket_id, null, "Status changed to: $status");
+    
+    wp_send_json_success(['message' => 'Status updated']);
+});
+
+// AJAX: Assign ticket to agent
+add_action('wp_ajax_b2b_assign_ticket', function() {
+    check_ajax_referer('b2b_ajax_nonce', 'nonce');
+    
+    if(!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Access denied']);
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $ticket_id = intval($_POST['ticket_id'] ?? 0);
+    $agent_id = intval($_POST['agent_id'] ?? 0);
+    
+    $wpdb->update($table, 
+        [
+            'assigned_agent_id' => $agent_id > 0 ? $agent_id : null,
+            'updated_at' => current_time('mysql')
+        ],
+        ['ticket_id' => $ticket_id]
+    );
+    
+    $agent_name = $agent_id > 0 ? get_userdata($agent_id)->display_name : 'Unassigned';
+    b2b_log_activity('assigned_ticket', 'ticket', $ticket_id, null, "Assigned to: $agent_name");
+    
+    wp_send_json_success(['message' => 'Ticket assigned']);
+});
+
+// ===================================================== 
+//    SUPPORT TICKETS PAGES (Admin Panel)
+// ===================================================== 
+add_action('template_redirect', function () {
+    $page = get_query_var('b2b_adm_page');
+    if (!in_array($page, ['support-tickets', 'support-ticket'])) return;
+    b2b_adm_guard();
+    
+    if ($page === 'support-tickets') {
+        b2b_page_support_tickets();
+        exit;
+    }
+    
+    if ($page === 'support-ticket') {
+        b2b_page_support_ticket_detail();
+        exit;
+    }
+});
+
+// Support Tickets List Page (Admin)
+function b2b_page_support_tickets() {
+    if(!current_user_can('manage_woocommerce')) {
+        wp_die('Access denied');
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    // Filters
+    $status_filter = sanitize_text_field($_GET['status'] ?? '');
+    $priority_filter = sanitize_text_field($_GET['priority'] ?? '');
+    $category_filter = sanitize_text_field($_GET['category'] ?? '');
+    $agent_filter = intval($_GET['agent'] ?? 0);
+    $search = sanitize_text_field($_GET['search'] ?? '');
+    
+    // Build query
+    $where = ['1=1'];
+    if($status_filter) $where[] = $wpdb->prepare("status = %s", $status_filter);
+    if($priority_filter) $where[] = $wpdb->prepare("priority = %s", $priority_filter);
+    if($category_filter) $where[] = $wpdb->prepare("category = %s", $category_filter);
+    if($agent_filter) $where[] = $wpdb->prepare("assigned_agent_id = %d", $agent_filter);
+    if($search) {
+        $like = '%' . $wpdb->esc_like($search) . '%';
+        $where[] = $wpdb->prepare("(ticket_number LIKE %s OR subject LIKE %s)", $like, $like);
+    }
+    
+    $where_sql = implode(' AND ', $where);
+    
+    // Pagination
+    $per_page = 20;
+    $current_page = max(1, intval($_GET['paged'] ?? 1));
+    $offset = ($current_page - 1) * $per_page;
+    
+    $total = $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE $where_sql");
+    $tickets = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table WHERE $where_sql ORDER BY created_at DESC LIMIT %d OFFSET %d",
+        $per_page, $offset
+    ));
+    
+    // Statistics
+    $stats = [
+        'total' => $wpdb->get_var("SELECT COUNT(*) FROM $table"),
+        'open' => $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status IN ('new','open')"),
+        'pending' => $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status = 'pending'"),
+        'resolved' => $wpdb->get_var("SELECT COUNT(*) FROM $table WHERE status = 'resolved'")
+    ];
+    
+    b2b_adm_header('Support Tickets');
+    ?>
+    <style>
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+    .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; }
+    .stat-card h3 { margin: 0 0 10px 0; font-size: 14px; opacity: 0.9; }
+    .stat-card .number { font-size: 32px; font-weight: bold; }
+    .filters { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+    .filters select, .filters input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; }
+    .ticket-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+    .ticket-table th, .ticket-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+    .ticket-table th { background: #f8f9fa; font-weight: 600; }
+    .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .status-new { background: #e3f2fd; color: #1976d2; }
+    .status-open { background: #e8f5e9; color: #388e3c; }
+    .status-pending { background: #fff3e0; color: #f57c00; }
+    .status-resolved { background: #f1f8e9; color: #689f38; }
+    .status-closed { background: #f5f5f5; color: #757575; }
+    .priority-low { color: #757575; }
+    .priority-normal { color: #1976d2; }
+    .priority-high { color: #f57c00; font-weight: 600; }
+    .priority-urgent { color: #d32f2f; font-weight: 600; }
+    </style>
+    
+    <div class="stat-cards">
+        <div class="stat-card">
+            <h3>📊 Total Tickets</h3>
+            <div class="number"><?php echo $stats['total']; ?></div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h3>🔥 Open Tickets</h3>
+            <div class="number"><?php echo $stats['open']; ?></div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <h3>⏳ Pending</h3>
+            <div class="number"><?php echo $stats['pending']; ?></div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <h3>✅ Resolved</h3>
+            <div class="number"><?php echo $stats['resolved']; ?></div>
+        </div>
+    </div>
+    
+    <div class="filters">
+        <select onchange="window.location.href = updateQueryParam('status', this.value)">
+            <option value="">All Status</option>
+            <option value="new" <?php selected($status_filter, 'new'); ?>>New</option>
+            <option value="open" <?php selected($status_filter, 'open'); ?>>Open</option>
+            <option value="pending" <?php selected($status_filter, 'pending'); ?>>Pending</option>
+            <option value="resolved" <?php selected($status_filter, 'resolved'); ?>>Resolved</option>
+            <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed</option>
+        </select>
+        
+        <select onchange="window.location.href = updateQueryParam('priority', this.value)">
+            <option value="">All Priority</option>
+            <option value="low" <?php selected($priority_filter, 'low'); ?>>Low</option>
+            <option value="normal" <?php selected($priority_filter, 'normal'); ?>>Normal</option>
+            <option value="high" <?php selected($priority_filter, 'high'); ?>>High</option>
+            <option value="urgent" <?php selected($priority_filter, 'urgent'); ?>>Urgent</option>
+        </select>
+        
+        <select onchange="window.location.href = updateQueryParam('category', this.value)">
+            <option value="">All Categories</option>
+            <option value="order" <?php selected($category_filter, 'order'); ?>>Order</option>
+            <option value="product" <?php selected($category_filter, 'product'); ?>>Product</option>
+            <option value="delivery" <?php selected($category_filter, 'delivery'); ?>>Delivery</option>
+            <option value="billing" <?php selected($category_filter, 'billing'); ?>>Billing</option>
+            <option value="general" <?php selected($category_filter, 'general'); ?>>General</option>
+        </select>
+        
+        <input type="text" placeholder="Search tickets..." value="<?php echo esc_attr($search); ?>" 
+               onchange="window.location.href = updateQueryParam('search', this.value)">
+    </div>
+    
+    <table class="ticket-table">
+        <thead>
+            <tr>
+                <th>Ticket #</th>
+                <th>Subject</th>
+                <th>Customer</th>
+                <th>Category</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach($tickets as $ticket): 
+                $customer = get_userdata($ticket->customer_id);
+            ?>
+            <tr>
+                <td><strong><?php echo esc_html($ticket->ticket_number); ?></strong></td>
+                <td><?php echo esc_html($ticket->subject); ?></td>
+                <td><?php echo $customer ? esc_html($customer->display_name) : 'Unknown'; ?></td>
+                <td><?php echo ucfirst($ticket->category); ?></td>
+                <td class="priority-<?php echo $ticket->priority; ?>"><?php echo ucfirst($ticket->priority); ?></td>
+                <td><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></td>
+                <td><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></td>
+                <td>
+                    <a href="?b2b_adm_page=support-ticket&ticket_id=<?php echo $ticket->ticket_id; ?>" class="button button-small">View</a>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    
+    <script>
+    function updateQueryParam(key, value) {
+        const url = new URL(window.location.href);
+        if(value) {
+            url.searchParams.set(key, value);
+        } else {
+            url.searchParams.delete(key);
+        }
+        url.searchParams.delete('paged'); // Reset pagination
+        return url.toString();
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Support Ticket Detail Page (Admin)
+function b2b_page_support_ticket_detail() {
+    if(!current_user_can('manage_woocommerce')) {
+        wp_die('Access denied');
+    }
+    
+    global $wpdb;
+    $ticket_id = intval($_GET['ticket_id'] ?? 0);
+    
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d",
+        $ticket_id
+    ));
+    
+    if(!$ticket) {
+        wp_die('Ticket not found');
+    }
+    
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    $customer = get_userdata($ticket->customer_id);
+    $order = $ticket->order_id ? wc_get_order($ticket->order_id) : null;
+    
+    b2b_adm_header('Ticket: ' . $ticket->ticket_number);
+    ?>
+    <style>
+    .ticket-header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .ticket-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
+    .ticket-meta-item { padding: 10px; background: #f8f9fa; border-radius: 6px; }
+    .ticket-meta-item label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .ticket-meta-item value { font-weight: 600; }
+    .order-info { background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0; }
+    .messages-container { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .message { padding: 15px; margin-bottom: 15px; border-radius: 8px; border-left: 4px solid #667eea; background: #f8f9fa; }
+    .message.internal { background: #fff3e0; border-left-color: #f57c00; }
+    .message-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .message-author { font-weight: 600; }
+    .message-time { color: #666; font-size: 13px; }
+    .reply-form { background: white; padding: 20px; border-radius: 8px; }
+    .quick-actions { display: flex; gap: 10px; margin-bottom: 20px; }
+    </style>
+    
+    <div class="ticket-header">
+        <h2><?php echo esc_html($ticket->subject); ?></h2>
+        <div class="ticket-meta">
+            <div class="ticket-meta-item">
+                <label>Ticket Number:</label>
+                <value><?php echo esc_html($ticket->ticket_number); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Customer:</label>
+                <value><?php echo $customer ? esc_html($customer->display_name) : 'Unknown'; ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Category:</label>
+                <value><?php echo ucfirst($ticket->category); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Priority:</label>
+                <value class="priority-<?php echo $ticket->priority; ?>"><?php echo ucfirst($ticket->priority); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Status:</label>
+                <value><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Created:</label>
+                <value><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></value>
+            </div>
+        </div>
+    </div>
+    
+    <?php if($order): ?>
+    <div class="order-info">
+        <h3>🛒 Linked Order: <a href="?b2b_adm_page=order&order_id=<?php echo $order->get_id(); ?>">#<?php echo $order->get_order_number(); ?></a></h3>
+        <p><strong>Date:</strong> <?php echo $order->get_date_created()->format('Y-m-d H:i'); ?> | 
+           <strong>Status:</strong> <?php echo $order->get_status(); ?> | 
+           <strong>Total:</strong> <?php echo $order->get_formatted_order_total(); ?></p>
+        <p><strong>Products:</strong></p>
+        <ul>
+            <?php foreach($order->get_items() as $item): ?>
+            <li><?php echo $item->get_name(); ?> × <?php echo $item->get_quantity(); ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+    
+    <div class="quick-actions">
+        <label>Change Status:</label>
+        <button onclick="changeTicketStatus('new')" class="button">New</button>
+        <button onclick="changeTicketStatus('open')" class="button">Open</button>
+        <button onclick="changeTicketStatus('pending')" class="button">Pending</button>
+        <button onclick="changeTicketStatus('resolved')" class="button button-primary">Resolved</button>
+        <button onclick="changeTicketStatus('closed')" class="button">Closed</button>
+    </div>
+    
+    <div class="quick-actions">
+        <label>Assign to:</label>
+        <select id="assignAgent" onchange="assignTicket(this.value)">
+            <option value="0">Unassigned</option>
+            <?php
+            $agents = get_users(['role' => 'administrator']);
+            foreach($agents as $agent):
+            ?>
+            <option value="<?php echo $agent->ID; ?>" <?php selected($ticket->assigned_agent_id, $agent->ID); ?>>
+                <?php echo esc_html($agent->display_name); ?>
+            </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    
+    <div class="messages-container">
+        <h3>Conversation</h3>
+        <?php foreach($replies as $reply): 
+            $author = get_userdata($reply->user_id);
+        ?>
+        <div class="message <?php echo $reply->is_internal ? 'internal' : ''; ?>">
+            <div class="message-header">
+                <span class="message-author">
+                    <?php echo $author ? esc_html($author->display_name) : 'Unknown'; ?>
+                    <?php if($reply->is_internal): ?><span style="color: #f57c00;"> (Internal Note)</span><?php endif; ?>
+                </span>
+                <span class="message-time"><?php echo date('Y-m-d H:i', strtotime($reply->created_at)); ?></span>
+            </div>
+            <div class="message-content"><?php echo nl2br(esc_html($reply->message)); ?></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <div class="reply-form">
+        <h3>Add Reply</h3>
+        <textarea id="replyMessage" rows="5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+        <div style="margin-top: 10px;">
+            <label><input type="checkbox" id="isInternal"> Internal Note (not visible to customer)</label>
+        </div>
+        <button onclick="addReply()" class="button button-primary" style="margin-top: 10px;">Add Reply</button>
+    </div>
+    
+    <script>
+    function changeTicketStatus(status) {
+        if(!confirm('Change ticket status to: ' + status + '?')) return;
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_update_ticket_status',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                status: status
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Status updated!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    
+    function assignTicket(agentId) {
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_assign_ticket',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                agent_id: agentId
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Ticket assigned!');
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    
+    function addReply() {
+        const message = jQuery('#replyMessage').val();
+        const isInternal = jQuery('#isInternal').is(':checked') ? 1 : 0;
+        
+        if(!message) {
+            alert('Please enter a message');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_add_ticket_reply',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                message: message,
+                is_internal: isInternal
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Reply added!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: My Support Tickets Page
+function b2b_page_my_support_tickets() {
+    $current_user = wp_get_current_user();
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'b2b_support_tickets';
+    
+    $status_filter = sanitize_text_field($_GET['status'] ?? '');
+    $where = $wpdb->prepare("customer_id = %d", $current_user->ID);
+    if($status_filter) {
+        $where .= $wpdb->prepare(" AND status = %s", $status_filter);
+    }
+    
+    $tickets = $wpdb->get_results("SELECT * FROM $table WHERE $where ORDER BY created_at DESC");
+    
+    b2b_adm_header('My Support Tickets');
+    ?>
+    <style>
+    .support-actions { margin-bottom: 20px; }
+    .ticket-list { background: white; border-radius: 8px; overflow: hidden; }
+    .ticket-item { padding: 20px; border-bottom: 1px solid #eee; }
+    .ticket-item:hover { background: #f8f9fa; }
+    .ticket-item h3 { margin: 0 0 10px 0; }
+    .ticket-meta-inline { font-size: 13px; color: #666; }
+    </style>
+    
+    <div class="support-actions">
+        <a href="?b2b_adm_page=create-support-ticket" class="button button-primary">Create New Ticket</a>
+        
+        <select onchange="window.location.href = '?b2b_adm_page=my-support&status=' + this.value" style="margin-left: 10px;">
+            <option value="">All Status</option>
+            <option value="new" <?php selected($status_filter, 'new'); ?>>New</option>
+            <option value="open" <?php selected($status_filter, 'open'); ?>>Open</option>
+            <option value="pending" <?php selected($status_filter, 'pending'); ?>>Pending</option>
+            <option value="resolved" <?php selected($status_filter, 'resolved'); ?>>Resolved</option>
+            <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed</option>
+        </select>
+    </div>
+    
+    <div class="ticket-list">
+        <?php if(empty($tickets)): ?>
+        <div class="ticket-item">No tickets found. <a href="?b2b_adm_page=create-support-ticket">Create your first ticket</a></div>
+        <?php else: ?>
+        <?php foreach($tickets as $ticket): ?>
+        <div class="ticket-item">
+            <h3>
+                <a href="?b2b_adm_page=view-support-ticket&ticket_id=<?php echo $ticket->ticket_id; ?>">
+                    <?php echo esc_html($ticket->subject); ?>
+                </a>
+            </h3>
+            <div class="ticket-meta-inline">
+                <span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span> |
+                Ticket: <?php echo esc_html($ticket->ticket_number); ?> |
+                Category: <?php echo ucfirst($ticket->category); ?> |
+                Priority: <?php echo ucfirst($ticket->priority); ?> |
+                Created: <?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: Create Support Ticket Page
+function b2b_page_create_support_ticket() {
+    $current_user = wp_get_current_user();
+    
+    // Get customer's recent orders
+    $orders = wc_get_orders([
+        'customer_id' => $current_user->ID,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    b2b_adm_header('Create Support Ticket');
+    ?>
+    <style>
+    .ticket-form { background: white; padding: 30px; border-radius: 8px; max-width: 800px; }
+    .form-field { margin-bottom: 20px; }
+    .form-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+    .form-field input, .form-field select, .form-field textarea {
+        width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;
+    }
+    </style>
+    
+    <div class="ticket-form">
+        <h2>Create New Support Ticket</h2>
+        
+        <div class="form-field">
+            <label>Subject *</label>
+            <input type="text" id="ticketSubject" placeholder="Brief description of your issue">
+        </div>
+        
+        <div class="form-field">
+            <label>Category *</label>
+            <select id="ticketCategory">
+                <option value="general">General Question</option>
+                <option value="order">Order Issue</option>
+                <option value="product">Product Question</option>
+                <option value="delivery">Delivery Issue</option>
+                <option value="billing">Billing/Payment</option>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Priority</label>
+            <select id="ticketPriority">
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Related Order (Optional)</label>
+            <select id="ticketOrder">
+                <option value="0">No order selected</option>
+                <?php foreach($orders as $order): ?>
+                <option value="<?php echo $order->get_id(); ?>">
+                    Order #<?php echo $order->get_order_number(); ?> - <?php echo $order->get_date_created()->format('Y-m-d'); ?> - <?php echo $order->get_formatted_order_total(); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Message *</label>
+            <textarea id="ticketMessage" rows="8" placeholder="Please describe your issue in detail..."></textarea>
+        </div>
+        
+        <button onclick="createTicket()" class="button button-primary">Submit Ticket</button>
+        <a href="?b2b_adm_page=my-support" class="button">Cancel</a>
+    </div>
+    
+    <script>
+    function createTicket() {
+        const subject = jQuery('#ticketSubject').val();
+        const message = jQuery('#ticketMessage').val();
+        const category = jQuery('#ticketCategory').val();
+        const priority = jQuery('#ticketPriority').val();
+        const order_id = jQuery('#ticketOrder').val();
+        
+        if(!subject || !message) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_create_ticket',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                subject: subject,
+                message: message,
+                category: category,
+                priority: priority,
+                order_id: order_id
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Ticket created! Ticket number: ' + response.data.ticket_number);
+                    window.location.href = '?b2b_adm_page=my-support';
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: View Support Ticket Page
+function b2b_page_view_support_ticket() {
+    $current_user = wp_get_current_user();
+    $ticket_id = intval($_GET['ticket_id'] ?? 0);
+    
+    global $wpdb;
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d AND customer_id = %d",
+        $ticket_id, $current_user->ID
+    ));
+    
+    if(!$ticket) {
+        wp_die('Ticket not found or access denied');
+    }
+    
+    // Get only public replies
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d AND is_internal = 0 ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    $order = $ticket->order_id ? wc_get_order($ticket->order_id) : null;
+    
+    b2b_adm_header('Ticket: ' . $ticket->ticket_number);
+    ?>
+    <div class="ticket-header">
+        <h2><?php echo esc_html($ticket->subject); ?></h2>
+        <div class="ticket-meta">
+            <div class="ticket-meta-item">
+                <label>Ticket Number:</label>
+                <value><?php echo esc_html($ticket->ticket_number); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Category:</label>
+                <value><?php echo ucfirst($ticket->category); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Priority:</label>
+                <value><?php echo ucfirst($ticket->priority); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Status:</label>
+                <value><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Created:</label>
+                <value><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></value>
+            </div>
+        </div>
+    </div>
+    
+    <?php if($order): ?>
+    <div class="order-info">
+        <h3>🛒 Related Order: #<?php echo $order->get_order_number(); ?></h3>
+        <p><strong>Date:</strong> <?php echo $order->get_date_created()->format('Y-m-d H:i'); ?> | 
+           <strong>Status:</strong> <?php echo $order->get_status(); ?> | 
+           <strong>Total:</strong> <?php echo $order->get_formatted_order_total(); ?></p>
+    </div>
+    <?php endif; ?>
+    
+    <div class="messages-container">
+        <h3>Conversation</h3>
+        <?php foreach($replies as $reply): 
+            $author = get_userdata($reply->user_id);
+        ?>
+        <div class="message">
+            <div class="message-header">
+                <span class="message-author"><?php echo $author ? esc_html($author->display_name) : 'Unknown'; ?></span>
+                <span class="message-time"><?php echo date('Y-m-d H:i', strtotime($reply->created_at)); ?></span>
+            </div>
+            <div class="message-content"><?php echo nl2br(esc_html($reply->message)); ?></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <?php if($ticket->status != 'closed'): ?>
+    <div class="reply-form">
+        <h3>Add Message</h3>
+        <textarea id="replyMessage" rows="5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+        <button onclick="addReply()" class="button button-primary" style="margin-top: 10px;">Send Message</button>
+    </div>
+    
+    <script>
+    function addReply() {
+        const message = jQuery('#replyMessage').val();
+        
+        if(!message) {
+            alert('Please enter a message');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_add_ticket_reply',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                message: message,
+                is_internal: 0
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Message sent!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            }
+        });
+    }
+    </script>
+    <?php endif; ?>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// End of B2B Support Ticket Module - Menu items added directly in sidebar HTML above

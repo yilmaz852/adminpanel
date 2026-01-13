@@ -2857,32 +2857,80 @@ add_action('template_redirect', function () {
             <button onclick="toggleQuickEdit()" class="secondary" style="margin-left:10px;">Cancel</button>
         </div>
         
-        <!-- Bulk Actions Bar -->
-        <div id="bulkActionBar" style="display:none;margin-bottom:15px;padding:15px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:8px;color:white;">
-            <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
-                <strong id="selectedCount" style="font-size:16px;">0 items selected</strong>
-                <button onclick="selectAllProducts()" style="background:rgba(255,255,255,0.2);color:white;padding:8px 16px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;cursor:pointer;font-weight:600;">
-                    Select All
-                </button>
-                <button onclick="deselectAllProducts()" style="background:rgba(255,255,255,0.2);color:white;padding:8px 16px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;cursor:pointer;font-weight:600;">
-                    Deselect All
-                </button>
-                <select id="bulkActionSelect" style="padding:8px 12px;border-radius:6px;border:none;font-weight:600;">
-                    <option value="">Choose Bulk Action...</option>
-                    <option value="delete">Delete Selected</option>
-                    <option value="price_update">Update Price</option>
-                    <option value="add_category">Add Category</option>
-                    <option value="stock_update">Update Stock</option>
-                </select>
-                <button onclick="applyBulkAction()" style="background:#10b981;color:white;padding:8px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
-                    <i class="fa-solid fa-play"></i> Apply
-                </button>
-            </div>
-            <div id="bulkProgress" style="display:none;margin-top:15px;">
-                <div style="background:rgba(255,255,255,0.3);border-radius:8px;height:24px;overflow:hidden;">
-                    <div id="bulkProgressBar" style="background:#10b981;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;"></div>
+        <!-- Simplified Bulk Actions -->
+        <div style="margin-bottom:15px;">
+            <button onclick="toggleBulkEditPanel()" style="background:#667eea;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">
+                <i class="fa-solid fa-edit"></i> Bulk Edit
+            </button>
+            <span id="selectedCount" style="margin-left:15px;font-weight:600;color:#666;">0 items selected</span>
+        </div>
+        
+        <!-- Bulk Edit Panel (Hidden by default) -->
+        <div id="bulkEditPanel" style="display:none;margin-bottom:20px;background:#f8f9fa;border:2px solid #dee2e6;border-radius:8px;padding:20px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
+                
+                <!-- Price Update Section -->
+                <div style="background:white;padding:15px;border-radius:6px;border:2px solid #3b82f6;">
+                    <h3 style="margin:0 0 15px 0;color:#1e40af;font-size:16px;">
+                        <i class="fa-solid fa-dollar-sign"></i> Price Update
+                    </h3>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Type:</label>
+                        <select id="priceType" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="percent">Percentage (%)</option>
+                            <option value="fixed">Fixed Amount (₺)</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Value:</label>
+                        <input type="number" id="priceValue" placeholder="Enter value" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" step="0.01">
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">Action:</label>
+                        <select id="priceAction" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="increase">Increase</option>
+                            <option value="decrease">Decrease</option>
+                        </select>
+                    </div>
+                    <button onclick="bulkUpdatePrice()" style="width:100%;background:#3b82f6;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-check"></i> Update Prices
+                    </button>
                 </div>
-                <p id="bulkStatus" style="margin-top:8px;font-size:13px;"></p>
+                
+                <!-- Stock Update Section -->
+                <div style="background:white;padding:15px;border-radius:6px;border:2px solid #10b981;">
+                    <h3 style="margin:0 0 15px 0;color:#059669;font-size:16px;">
+                        <i class="fa-solid fa-box"></i> Stock Update
+                    </h3>
+                    <div style="margin-bottom:15px;">
+                        <label style="display:block;margin-bottom:5px;font-weight:600;">New Stock Quantity:</label>
+                        <input type="number" id="stockValue" placeholder="Enter stock quantity" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;" min="0">
+                    </div>
+                    <button onclick="bulkUpdateStock()" style="width:100%;background:#10b981;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-check"></i> Update Stock
+                    </button>
+                </div>
+                
+                <!-- Delete Section -->
+                <div style="background:white;padding:15px;border-radius:6px;border:2px solid #ef4444;">
+                    <h3 style="margin:0 0 15px 0;color:#dc2626;font-size:16px;">
+                        <i class="fa-solid fa-trash"></i> Delete Products
+                    </h3>
+                    <p style="color:#666;font-size:13px;margin-bottom:15px;">
+                        ⚠️ This action cannot be undone. Selected products will be permanently deleted.
+                    </p>
+                    <button onclick="bulkDelete()" style="width:100%;background:#ef4444;color:white;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+                        <i class="fa-solid fa-trash"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Progress Section -->
+            <div id="bulkProgress" style="display:none;margin-top:20px;padding:15px;background:white;border-radius:6px;border:1px solid #ddd;">
+                <div style="background:#e5e7eb;border-radius:8px;height:30px;overflow:hidden;margin-bottom:10px;">
+                    <div id="bulkProgressBar" style="background:#10b981;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;font-weight:600;color:white;"></div>
+                </div>
+                <p id="bulkStatus" style="margin:0;font-size:14px;text-align:center;color:#666;"></p>
             </div>
         </div>
         
@@ -3154,21 +3202,14 @@ add_action('template_redirect', function () {
         });
     });
     
-    // Bulk Actions JavaScript
+    // Simplified Bulk Actions JavaScript
     function updateBulkSelection() {
         const checkboxes = document.querySelectorAll('.product-checkbox');
         const checked = document.querySelectorAll('.product-checkbox:checked');
-        const bulkBar = document.getElementById('bulkActionBar');
         const selectedCount = document.getElementById('selectedCount');
         const selectAllCheckbox = document.getElementById('selectAllCheckbox');
         
-        if(checked.length > 0) {
-            bulkBar.style.display = 'block';
-            selectedCount.textContent = checked.length + ' items selected';
-        } else {
-            bulkBar.style.display = 'none';
-        }
-        
+        selectedCount.textContent = checked.length + ' items selected';
         selectAllCheckbox.checked = (checked.length === checkboxes.length && checkboxes.length > 0);
     }
     
@@ -3179,29 +3220,164 @@ add_action('template_redirect', function () {
         updateBulkSelection();
     }
     
-    window.selectAllProducts = function() {
-        document.querySelectorAll('.product-checkbox').forEach(cb => {
-            cb.checked = true;
-        });
-        window.updateBulkSelection();
+    // Toggle bulk edit panel
+    window.toggleBulkEditPanel = function() {
+        const panel = document.getElementById('bulkEditPanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
     }
     
-    window.deselectAllProducts = function() {
-        document.querySelectorAll('.product-checkbox').forEach(cb => {
-            cb.checked = false;
-        });
-        window.updateBulkSelection();
+    // Get selected product IDs
+    function getSelectedProductIds() {
+        const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
     }
     
-    window.applyBulkAction = function() {
-        // Call the full implementation below - this is a forward reference
-        // The actual implementation is in the jQuery section below
-        if(window._applyBulkActionImpl) {
-            window._applyBulkActionImpl();
+    // Show progress
+    function showProgress() {
+        document.getElementById('bulkProgress').style.display = 'block';
+        document.getElementById('bulkProgressBar').style.width = '0%';
+        document.getElementById('bulkProgressBar').textContent = '0%';
+        document.getElementById('bulkStatus').textContent = 'Processing...';
+    }
+    
+    // Update progress
+    function updateProgress(current, total, success, errors) {
+        const percent = Math.round((current / total) * 100);
+        document.getElementById('bulkProgressBar').style.width = percent + '%';
+        document.getElementById('bulkProgressBar').textContent = percent + '%';
+        document.getElementById('bulkStatus').textContent = current + ' of ' + total + ' processed | ' + success + ' succeeded, ' + errors + ' errors';
+    }
+    
+    // Complete progress
+    function completeProgress() {
+        document.getElementById('bulkProgressBar').style.background = '#10b981';
+        document.getElementById('bulkProgressBar').textContent = 'Complete!';
+        setTimeout(() => window.location.reload(), 2000);
+    }
+    
+    // Bulk Update Price
+    window.bulkUpdatePrice = function() {
+        const productIds = getSelectedProductIds();
+        if(productIds.length === 0) {
+            alert('Please select at least one product');
+            return;
         }
+        
+        const priceType = document.getElementById('priceType').value;
+        const priceValue = document.getElementById('priceValue').value;
+        const priceAction = document.getElementById('priceAction').value;
+        
+        if(!priceValue || parseFloat(priceValue) <= 0) {
+            alert('Please enter a valid value');
+            return;
+        }
+        
+        if(!confirm('Update prices for ' + productIds.length + ' products?')) {
+            return;
+        }
+        
+        showProgress();
+        processBulkAction('price_update', productIds, 0, {
+            priceType: priceType,
+            priceValue: priceValue,
+            priceAction: priceAction
+        });
     }
     
-    // Full applyBulkAction implementation is defined below in the jQuery section with proper accumulator
+    // Bulk Update Stock
+    window.bulkUpdateStock = function() {
+        const productIds = getSelectedProductIds();
+        if(productIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+        
+        const stockValue = document.getElementById('stockValue').value;
+        
+        if(!stockValue || parseInt(stockValue) < 0) {
+            alert('Please enter a valid stock quantity');
+            return;
+        }
+        
+        if(!confirm('Update stock for ' + productIds.length + ' products?')) {
+            return;
+        }
+        
+        showProgress();
+        processBulkAction('stock_update', productIds, 0, {stockValue: stockValue});
+    }
+    
+    // Bulk Delete
+    window.bulkDelete = function() {
+        const productIds = getSelectedProductIds();
+        if(productIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+        
+        if(!confirm('Are you sure you want to delete ' + productIds.length + ' products? This action cannot be undone!')) {
+            return;
+        }
+        
+        showProgress();
+        processBulkAction('delete', productIds, 0, {});
+    }
+    
+    // Process bulk action in chunks
+    function processBulkAction(action, productIds, currentChunk, params) {
+        const chunkSize = 10;
+        const startIndex = currentChunk * chunkSize;
+        const endIndex = Math.min(startIndex + chunkSize, productIds.length);
+        const chunk = productIds.slice(startIndex, endIndex);
+        
+        // Initialize accumulator
+        if(!window.bulkResults) {
+            window.bulkResults = {success: 0, errors: 0};
+        }
+        
+        // Build request data
+        let data = 'action=b2b_bulk_action_products&nonce=<?= wp_create_nonce("b2b_bulk_products") ?>';
+        data += '&bulk_action=' + action;
+        data += '&product_ids=' + chunk.join(',');
+        
+        if(action === 'price_update') {
+            data += '&price_type=' + params.priceType;
+            data += '&price_value=' + params.priceValue;
+            data += '&price_action=' + params.priceAction;
+        } else if(action === 'stock_update') {
+            data += '&stock_value=' + params.stockValue;
+        }
+        
+        fetch('<?= admin_url('admin-ajax.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: data
+        })
+        .then(response => response.json())
+        .then(response => {
+            if(response.success && response.data.results) {
+                // Accumulate results
+                window.bulkResults.success += response.data.results.success ? response.data.results.success.length : 0;
+                window.bulkResults.errors += response.data.results.errors ? response.data.results.errors.length : 0;
+                
+                const totalProcessed = window.bulkResults.success + window.bulkResults.errors;
+                updateProgress(totalProcessed, productIds.length, window.bulkResults.success, window.bulkResults.errors);
+                
+                // Process next chunk or complete
+                if(endIndex < productIds.length) {
+                    processBulkAction(action, productIds, currentChunk + 1, params);
+                } else {
+                    delete window.bulkResults;
+                    completeProgress();
+                }
+            } else {
+                document.getElementById('bulkStatus').textContent = 'Error: ' + (response.data || 'Unknown error');
+            }
+        })
+        .catch(error => {
+            document.getElementById('bulkStatus').textContent = 'Error: ' + error;
+        });
+    }
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -7595,120 +7771,9 @@ add_action('wp_footer', function() {
             }
         };
         
-        // Connect checkboxes
-        $('.product-checkbox').on('change', window.updateBulkSelection);
+        // Connect checkboxes to update selection
+        $('.product-checkbox').on('change', updateBulkSelection);
         
-        // Apply Bulk Action (global function for onclick handler)
-        window._applyBulkActionImpl = function() {
-            const action = $('#bulkActionSelect').val();
-            if(!action) {
-                alert('Please select a bulk action');
-                return;
-            }
-            
-            const productIds = $('.product-checkbox:checked').map(function() {
-                return $(this).val();
-            }).get();
-            
-            if(productIds.length === 0) {
-                alert('No products selected');
-                return;
-            }
-            
-            // Show confirmation for delete
-            if(action === 'delete') {
-                if(!confirm(`Are you sure you want to delete ${productIds.length} products? This cannot be undone.`)) {
-                    return;
-                }
-            }
-            
-            // Get additional parameters based on action
-            let additionalParams = {};
-            if(action === 'price_update') {
-                const priceAction = prompt('Increase or Decrease? (enter: increase or decrease)');
-                if(!priceAction) return;
-                const priceValue = prompt('By how much? (enter number for percentage, or prefix with $ for fixed amount)');
-                if(!priceValue) return;
-                
-                additionalParams.price_action = priceAction;
-                additionalParams.price_value = parseFloat(priceValue.replace('$', ''));
-                additionalParams.price_type = priceValue.startsWith('$') ? 'fixed' : 'percentage';
-            } else if(action === 'add_category') {
-                const categoryId = prompt('Enter Category ID to add:');
-                if(!categoryId) return;
-                additionalParams.category_id = categoryId;
-            } else if(action === 'stock_update') {
-                const stockQty = prompt('Enter new stock quantity:');
-                if(!stockQty) return;
-                additionalParams.stock_qty = stockQty;
-            }
-            
-            // Reset bulk results accumulator for new operation
-            window.bulkResults = {success: [], errors: []};
-            
-            // Start bulk action
-            processBulkAction(action, productIds, 0, additionalParams);
-        };
-        
-        // Make it accessible via window.applyBulkAction
-        window.applyBulkAction = window._applyBulkActionImpl;
-        
-        function processBulkAction(action, productIds, chunk, additionalParams) {
-            $('#bulkProgress').show();
-            $('#bulkProgressBar').css('width', '0%').text('Processing...');
-            
-            $.ajax({
-                url: '<?= admin_url('admin-ajax.php') ?>',
-                method: 'POST',
-                data: {
-                    action: 'b2b_bulk_action_products',
-                    nonce: '<?= wp_create_nonce('b2b_ajax_nonce') ?>',
-                    bulk_action: action,
-                    product_ids: productIds,
-                    chunk: chunk,
-                    ...additionalParams
-                },
-                success: function(response) {
-                    if(response.success) {
-                        const progress = response.data.progress;
-                        $('#bulkProgressBar').css('width', progress + '%').text(progress + '%');
-                        
-                        // Accumulate results across chunks
-                        if(!window.bulkResults) {
-                            window.bulkResults = {success: [], errors: []};
-                        }
-                        
-                        // Safely concatenate results
-                        const successItems = response.data.results && response.data.results.success ? response.data.results.success : [];
-                        const errorItems = response.data.results && response.data.results.errors ? response.data.results.errors : [];
-                        
-                        window.bulkResults.success = window.bulkResults.success.concat(successItems);
-                        window.bulkResults.errors = window.bulkResults.errors.concat(errorItems);
-                        
-                        const totalProcessed = window.bulkResults.success.length + window.bulkResults.errors.length;
-                        $('#bulkStatus').html(`<strong>${totalProcessed}</strong> of <strong>${productIds.length}</strong> processed | <strong>${window.bulkResults.success.length}</strong> succeeded, <strong>${window.bulkResults.errors.length}</strong> errors`);
-                        
-                        if(response.data.has_more) {
-                            // Process next chunk
-                            processBulkAction(action, productIds, response.data.next_chunk, additionalParams);
-                        } else {
-                            // Completed
-                            $('#bulkProgressBar').css('background', '#10b981').text('Complete!');
-                            delete window.bulkResults; // Clear for next operation
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 2000);
-                        }
-                    } else {
-                        $('#bulkStatus').html('<strong>Error:</strong> ' + (response.data || 'Unknown error'));
-                    }
-                },
-                error: function(xhr, status, error) {
-                    $('#bulkStatus').html('<strong>AJAX Error:</strong> ' + error);
-                    console.error('Bulk action error:', error, xhr.responseText);
-                }
-            });
-        }
         <?php endif; ?>
     });
     </script>

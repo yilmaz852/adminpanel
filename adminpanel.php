@@ -1116,6 +1116,7 @@ function b2b_adm_header($title) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root{--primary:#0f172a;--accent:#3b82f6;--bg:#f3f4f6;--white:#ffffff;--border:#e5e7eb;--text:#1f2937}
         body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px}
@@ -1224,6 +1225,7 @@ function b2b_adm_header($title) {
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
             <a href="<?= home_url('/b2b-panel/reports') ?>" class="<?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="<?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>"><i class="fa-solid fa-clipboard-list"></i> Activity Log</a>
             
             <!-- Products Module with Submenu -->
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
@@ -1993,6 +1995,193 @@ add_action('template_redirect', function () {
         ?>
         </tbody></table>
     </div>
+
+    <!-- Chart.js Dashboard Widgets -->
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:30px;margin-top:30px;">
+        <div class="card">
+            <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-area" style="color:#3b82f6;margin-right:10px;"></i>Sales Trend (Last 30 Days)</h3>
+            <canvas id="salesTrendChart" height="80"></canvas>
+        </div>
+        <div class="card">
+            <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-pie" style="color:#f59e0b;margin-right:10px;"></i>Order Status</h3>
+            <canvas id="orderStatusChart"></canvas>
+        </div>
+    </div>
+    
+    <div class="card" style="margin-top:30px;">
+        <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
+        <canvas id="topProductsChart" height="60"></canvas>
+    </div>
+
+    <script>
+    // Sales Trend Chart Data
+    <?php
+    $sales_30days = $wpdb->get_results($wpdb->prepare("
+        SELECT DATE(p.post_date) as date, SUM(pm.meta_value) as revenue
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status = 'wc-completed'
+        AND pm.meta_key = '_order_total'
+        AND p.post_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        GROUP BY DATE(p.post_date)
+        ORDER BY date ASC
+    "));
+    
+    $dates = [];
+    $revenues = [];
+    foreach($sales_30days as $day) {
+        $dates[] = date('M d', strtotime($day->date));
+        $revenues[] = round($day->revenue, 2);
+    }
+    ?>
+    
+    // Sales Trend Chart
+    const salesCtx = document.getElementById('salesTrendChart').getContext('2d');
+    new Chart(salesCtx, {
+        type: 'line',
+        data: {
+            labels: <?= json_encode($dates) ?>,
+            datasets: [{
+                label: 'Daily Sales ($)',
+                data: <?= json_encode($revenues) ?>,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // Order Status Pie Chart Data
+    <?php
+    $status_counts = [];
+    foreach($wh_stats as $stat) {
+        if($stat['count'] > 0) {
+            $status_counts[$stat['label']] = $stat['count'];
+        }
+    }
+    ?>
+    
+    const orderCtx = document.getElementById('orderStatusChart').getContext('2d');
+    new Chart(orderCtx, {
+        type: 'doughnut',
+        data: {
+            labels: <?= json_encode(array_keys($status_counts)) ?>,
+            datasets: [{
+                data: <?= json_encode(array_values($status_counts)) ?>,
+                backgroundColor: [
+                    '#10b981',
+                    '#3b82f6',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#8b5cf6',
+                    '#ec4899'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    
+    // Top Products Bar Chart
+    <?php
+    $top_products = $wpdb->get_results("
+        SELECT 
+            p.post_title as name,
+            SUM(oi.order_item_qty * oim.meta_value) as revenue
+        FROM {$wpdb->prefix}woocommerce_order_items oi
+        INNER JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim ON oi.order_item_id = oim.order_item_id AND oim.meta_key = '_line_total'
+        INNER JOIN {$wpdb->posts} p ON p.ID = (SELECT meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id = oi.order_item_id AND meta_key = '_product_id' LIMIT 1)
+        WHERE oi.order_item_type = 'line_item'
+        GROUP BY p.ID
+        ORDER BY revenue DESC
+        LIMIT 5
+    ");
+    
+    $product_names = [];
+    $product_revenues = [];
+    foreach($top_products as $prod) {
+        $product_names[] = $prod->name;
+        $product_revenues[] = round($prod->revenue, 2);
+    }
+    ?>
+    
+    const prodCtx = document.getElementById('topProductsChart').getContext('2d');
+    new Chart(prodCtx, {
+        type: 'bar',
+        data: {
+            labels: <?= json_encode($product_names) ?>,
+            datasets: [{
+                label: 'Revenue ($)',
+                data: <?= json_encode($product_revenues) ?>,
+                backgroundColor: [
+                    '#10b981',
+                    '#3b82f6',
+                    '#f59e0b',
+                    '#8b5cf6',
+                    '#ec4899'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            indexAxis: 'y',
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.x.toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    </script>
 
     <?php b2b_adm_footer(); exit;
 });
@@ -7179,4 +7368,183 @@ add_action('wp_ajax_b2b_bulk_action_orders', function() {
         'next_chunk' => $chunk + 1,
         'progress' => min(100, round((($chunk + 1) * $chunk_size / count($order_ids)) * 100))
     ]);
+});
+
+/* =====================================================
+   DASHBOARD WIDGETS WITH CHART.JS & UI UPDATES
+===================================================== */
+
+// Update Dashboard with Chart.js Widgets
+add_action('template_redirect', function () {
+    $page = get_query_var('b2b_adm_page');
+    if ($page !== 'dashboard') return;
+    
+    // This hook runs before the dashboard renders
+    // We'll modify the dashboard rendering directly in the header
+}, 5); // Priority 5 to run before main dashboard
+
+// Enhance sidebar menu with Activity Log link
+add_filter('b2b_sidebar_menu_items', function($items) {
+    // Add Activity Log after Reports
+    $new_items = [];
+    foreach($items as $key => $item) {
+        $new_items[$key] = $item;
+        if($key === 'reports') {
+            $new_items['activity_log'] = [
+                'label' => 'Activity Log',
+                'icon' => 'fa-solid fa-clipboard-list',
+                'url' => home_url('/b2b-panel/activity-log'),
+                'page' => 'activity_log'
+            ];
+        }
+    }
+    return $new_items;
+});
+
+// Add Bulk Actions UI to Products Page (Inject via JavaScript)
+add_action('wp_footer', function() {
+    $page = get_query_var('b2b_adm_page');
+    if($page !== 'products' && $page !== 'customers' && $page !== 'orders') return;
+    ?>
+    <script>
+    // Inject Bulk Actions UI
+    jQuery(document).ready(function($) {
+        <?php if($page == 'products'): ?>
+        // Products Bulk Actions
+        const prodTable = $('#prodTable tbody');
+        
+        // Add checkbox column
+        $('#prodTable thead tr').prepend('<th><input type="checkbox" id="selectAllProducts"></th>');
+        $('#prodTable tbody tr').each(function() {
+            const productId = $(this).data('product-id');
+            if(productId) {
+                $(this).prepend('<td><input type="checkbox" class="bulk-checkbox" value="'+productId+'"></td>');
+            }
+        });
+        
+        // Select All functionality
+        $('#selectAllProducts').on('change', function() {
+            $('.bulk-checkbox').prop('checked', $(this).prop('checked'));
+            updateBulkBar();
+        });
+        
+        $('.bulk-checkbox').on('change', updateBulkBar);
+        
+        // Add Bulk Actions Bar
+        $('.page-header').after(`
+            <div id="bulkActionsBar" style="display:none;background:#f0f9ff;border:2px solid #3b82f6;border-radius:8px;padding:15px;margin-bottom:20px;">
+                <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+                    <strong style="color:#1e40af;"><span id="selectedCount">0</span> items selected</strong>
+                    <select id="bulkActionSelect" style="margin:0;padding:8px;">
+                        <option value="">Choose Bulk Action...</option>
+                        <option value="delete">Delete Selected</option>
+                        <option value="price_update">Update Prices</option>
+                        <option value="category_add">Add Category</option>
+                        <option value="stock_update">Update Stock</option>
+                    </select>
+                    <button id="applyBulkAction" class="primary" style="padding:8px 20px;">Apply</button>
+                    <button onclick="$('.bulk-checkbox').prop('checked', false); updateBulkBar();" class="secondary">Clear Selection</button>
+                </div>
+                <div id="bulkProgress" style="display:none;margin-top:15px;">
+                    <div style="background:#e5e7eb;height:30px;border-radius:6px;overflow:hidden;">
+                        <div id="bulkProgressBar" style="background:#10b981;height:100%;width:0%;transition:width 0.3s;display:flex;align-items:center;justify-content:center;color:white;font-weight:600;font-size:12px;"></div>
+                    </div>
+                    <div id="bulkStatus" style="margin-top:10px;font-size:13px;color:#6b7280;"></div>
+                </div>
+            </div>
+        `);
+        
+        function updateBulkBar() {
+            const checked = $('.bulk-checkbox:checked').length;
+            $('#selectedCount').text(checked);
+            $('#bulkActionsBar').toggle(checked > 0);
+        }
+        
+        $('#applyBulkAction').on('click', function() {
+            const action = $('#bulkActionSelect').val();
+            if(!action) {
+                alert('Please select a bulk action');
+                return;
+            }
+            
+            const productIds = $('.bulk-checkbox:checked').map(function() {
+                return $(this).val();
+            }).get();
+            
+            if(productIds.length === 0) {
+                alert('No products selected');
+                return;
+            }
+            
+            // Show confirmation for delete
+            if(action === 'delete') {
+                if(!confirm(`Are you sure you want to delete ${productIds.length} products? This cannot be undone.`)) {
+                    return;
+                }
+            }
+            
+            // Get additional parameters based on action
+            let additionalParams = {};
+            if(action === 'price_update') {
+                const priceAction = prompt('Increase or Decrease? (enter: increase or decrease)');
+                if(!priceAction) return;
+                const priceValue = prompt('By how much? (enter number for percentage, or prefix with $ for fixed amount)');
+                if(!priceValue) return;
+                
+                additionalParams.price_action = priceAction;
+                additionalParams.price_value = parseFloat(priceValue.replace('$', ''));
+                additionalParams.price_type = priceValue.startsWith('$') ? 'fixed' : 'percentage';
+            } else if(action === 'category_add') {
+                const categoryId = prompt('Enter Category ID to add:');
+                if(!categoryId) return;
+                additionalParams.category_id = categoryId;
+            } else if(action === 'stock_update') {
+                const stockQty = prompt('Enter new stock quantity:');
+                if(!stockQty) return;
+                additionalParams.stock_qty = stockQty;
+            }
+            
+            // Start bulk action
+            processBulkAction(action, productIds, 0, additionalParams);
+        });
+        
+        function processBulkAction(action, productIds, chunk, additionalParams) {
+            $('#bulkProgress').show();
+            $('#bulkProgressBar').css('width', '0%').text('Processing...');
+            
+            $.ajax({
+                url: '<?= admin_url('admin-ajax.php') ?>',
+                method: 'POST',
+                data: {
+                    action: 'b2b_bulk_action_products',
+                    nonce: '<?= wp_create_nonce('b2b_ajax_nonce') ?>',
+                    bulk_action: action,
+                    product_ids: productIds,
+                    chunk: chunk,
+                    ...additionalParams
+                },
+                success: function(response) {
+                    if(response.success) {
+                        const progress = response.data.progress;
+                        $('#bulkProgressBar').css('width', progress + '%').text(progress + '%');
+                        $('#bulkStatus').html(`<strong>${response.data.results.success.length}</strong> succeeded, <strong>${response.data.results.errors.length}</strong> errors`);
+                        
+                        if(response.data.has_more) {
+                            // Process next chunk
+                            processBulkAction(action, productIds, response.data.next_chunk, additionalParams);
+                        } else {
+                            // Completed
+                            $('#bulkProgressBar').css('background', '#10b981').text('Complete!');
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 2000);
+                        }
+                    }
+                }
+            });
+        }
+        <?php endif; ?>
+    });
+    </script>
+    <?php
 });

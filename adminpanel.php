@@ -3179,21 +3179,29 @@ add_action('template_redirect', function () {
         updateBulkSelection();
     }
     
-    function selectAllProducts() {
+    window.selectAllProducts = function() {
         document.querySelectorAll('.product-checkbox').forEach(cb => {
             cb.checked = true;
         });
-        updateBulkSelection();
+        window.updateBulkSelection();
     }
     
-    function deselectAllProducts() {
+    window.deselectAllProducts = function() {
         document.querySelectorAll('.product-checkbox').forEach(cb => {
             cb.checked = false;
         });
-        updateBulkSelection();
+        window.updateBulkSelection();
     }
     
-    // applyBulkAction function is now defined below in the jQuery section with proper accumulator
+    window.applyBulkAction = function() {
+        // Call the full implementation below - this is a forward reference
+        // The actual implementation is in the jQuery section below
+        if(window._applyBulkActionImpl) {
+            window._applyBulkActionImpl();
+        }
+    }
+    
+    // Full applyBulkAction implementation is defined below in the jQuery section with proper accumulator
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -7591,7 +7599,7 @@ add_action('wp_footer', function() {
         $('.product-checkbox').on('change', window.updateBulkSelection);
         
         // Apply Bulk Action (global function for onclick handler)
-        window.applyBulkAction = function() {
+        window._applyBulkActionImpl = function() {
             const action = $('#bulkActionSelect').val();
             if(!action) {
                 alert('Please select a bulk action');
@@ -7625,7 +7633,7 @@ add_action('wp_footer', function() {
                 additionalParams.price_action = priceAction;
                 additionalParams.price_value = parseFloat(priceValue.replace('$', ''));
                 additionalParams.price_type = priceValue.startsWith('$') ? 'fixed' : 'percentage';
-            } else if(action === 'category_add') {
+            } else if(action === 'add_category') {
                 const categoryId = prompt('Enter Category ID to add:');
                 if(!categoryId) return;
                 additionalParams.category_id = categoryId;
@@ -7640,7 +7648,10 @@ add_action('wp_footer', function() {
             
             // Start bulk action
             processBulkAction(action, productIds, 0, additionalParams);
-        }; // End of applyBulkAction function
+        };
+        
+        // Make it accessible via window.applyBulkAction
+        window.applyBulkAction = window._applyBulkActionImpl;
         
         function processBulkAction(action, productIds, chunk, additionalParams) {
             $('#bulkProgress').show();

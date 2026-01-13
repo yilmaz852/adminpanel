@@ -68,9 +68,12 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/support-ticket/?$', 'index.php?b2b_adm_page=support-ticket', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    if (!get_option('b2b_rewrite_v18_support')) {
+    // Fixed version that ensures support module rewrites are properly registered
+    if (!get_option('b2b_rewrite_v19_support_fixed')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v18_support', true);
+        update_option('b2b_rewrite_v19_support_fixed', true);
+        // Clean up old option
+        delete_option('b2b_rewrite_v18_support');
     }
 });
 
@@ -1331,6 +1334,9 @@ function b2b_adm_header($title) {
 
     <div class="main">
     <script>
+    // Define ajaxurl for AJAX requests (not available in front-end by default)
+    var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+    
     function toggleSubmenu(el) {
         el.classList.toggle('active');
         el.nextElementSibling.classList.toggle('active');

@@ -9269,10 +9269,28 @@ add_action('init', function () {
     add_rewrite_rule('^sales-panel/commissions/?$', 'index.php?sales_panel=commissions', 'top');
     add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
 
-    // Flush rewrite rules once
-    if (!get_option('sales_agent_flush_v1')) {
+    // Flush rewrite rules and refresh capabilities once
+    if (!get_option('sales_agent_flush_v2')) {
         flush_rewrite_rules();
-        update_option('sales_agent_flush_v1', true);
+        
+        // Force refresh of role capabilities
+        $roles_to_update = ['sales_agent', 'sales_manager', 'administrator'];
+        foreach ($roles_to_update as $role_name) {
+            $role = get_role($role_name);
+            if ($role) {
+                // Remove and re-add to ensure capability is properly set
+                $role->remove_cap('view_sales_panel');
+                $role->remove_cap('switch_to_customer');
+                $role->remove_cap('create_sales_order');
+                
+                $role->add_cap('view_sales_panel');
+                $role->add_cap('switch_to_customer');
+                $role->add_cap('create_sales_order');
+            }
+        }
+        
+        update_option('sales_agent_flush_v2', true);
+        delete_option('sales_agent_flush_v1'); // Clean up old marker
     }
 }, 20); // Run after main b2b panel init
 
@@ -9477,8 +9495,17 @@ function sa_render_login_page() {
         $user = wp_signon($creds, false);
         
         if (!is_wp_error($user)) {
-            // Check if user has sales panel access
-            if (current_user_can('view_sales_panel')) {
+            // Set current user and refresh to get latest capabilities
+            wp_set_current_user($user->ID);
+            
+            // Check if user has sales panel access or is sales agent/manager
+            $user_roles = (array) $user->roles;
+            $has_access = current_user_can('view_sales_panel') || 
+                          in_array('sales_agent', $user_roles) || 
+                          in_array('sales_manager', $user_roles) ||
+                          in_array('administrator', $user_roles);
+            
+            if ($has_access) {
                 wp_redirect(home_url('/sales-panel'));
                 exit;
             } else {

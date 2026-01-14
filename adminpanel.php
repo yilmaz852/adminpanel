@@ -9361,57 +9361,343 @@ add_action('after_setup_theme', function () {
 });
 
 /**
- * PLACEHOLDER FUNCTIONS FOR SALES PANEL PAGES
- * These will be implemented in subsequent phases
+ * PHASE 3: SALES PANEL PAGES - HELPER FUNCTIONS
+ */
+
+// Helper: Get safe home URL
+function get_home_url_safe($path = '') {
+    return untrailingslashit(get_option('home')) . $path;
+}
+
+// Helper: Get full address for user
+function sa_get_full_address($uid, $type = 'billing') {
+    $addr1 = get_user_meta($uid, $type.'_address_1', true);
+    $addr2 = get_user_meta($uid, $type.'_address_2', true);
+    $city  = get_user_meta($uid, $type.'_city', true);
+    $state = get_user_meta($uid, $type.'_state', true);
+    $post  = get_user_meta($uid, $type.'_postcode', true);
+    $country = get_user_meta($uid, $type.'_country', true);
+    $full = []; 
+    if($addr1) $full[] = $addr1; 
+    if($addr2) $full[] = $addr2;
+    if($city || $state || $post) $full[] = trim("$city $state $post");
+    if($country) $full[] = $country;
+    return !empty($full) ? implode('<br>', $full) : '<span style="color:#94a3b8;font-style:italic">Not Set</span>';
+}
+
+// Helper: Get refund IDs for an order
+function sa_get_refund_ids($parent_order_id) {
+    global $wpdb; 
+    return $wpdb->get_col($wpdb->prepare("SELECT ID FROM {$wpdb->posts} WHERE post_type = 'shop_order_refund' AND post_parent = %d", $parent_order_id)) ?: [];
+}
+
+// Helper: Get refund item totals
+function sa_get_refund_item_totals($refund_id) {
+    global $wpdb;
+    $results = $wpdb->get_results($wpdb->prepare("SELECT meta_key, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id IN (SELECT order_item_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_id = %d)", $refund_id), ARRAY_A);
+    $subtotal = 0; 
+    foreach ($results as $meta) { 
+        if ($meta['meta_key'] === '_line_subtotal') $subtotal += floatval($meta['meta_value']); 
+    }
+    return ['subtotal' => $subtotal];
+}
+
+// Helper: Get dashboard summary for agent
+function sa_get_dashboard_summary($agent_id, $alert_days) {
+    global $wpdb;
+    
+    // Get agent's customers
+    $customer_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+        $agent_id
+    ));
+    
+    if (empty($customer_ids)) {
+        return [
+            'total_customers' => 0,
+            'total_orders' => 0,
+            'total_sales' => 0,
+            'stale_customers' => 0,
+            'recent_orders' => []
+        ];
+    }
+    
+    // Get orders for these customers
+    $placeholders = implode(',', array_fill(0, count($customer_ids), '%d'));
+    $orders = wc_get_orders([
+        'customer' => $customer_ids,
+        'limit' => -1,
+        'status' => ['completed', 'processing']
+    ]);
+    
+    $total_sales = 0;
+    foreach ($orders as $order) {
+        $total_sales += $order->get_total();
+    }
+    
+    // Find stale customers (no orders in X days)
+    $stale_date = date('Y-m-d H:i:s', strtotime("-{$alert_days} days"));
+    $stale_count = 0;
+    
+    foreach ($customer_ids as $cust_id) {
+        $last_order = wc_get_orders([
+            'customer' => $cust_id,
+            'limit' => 1,
+            'orderby' => 'date',
+            'order' => 'DESC'
+        ]);
+        
+        if (empty($last_order) || $last_order[0]->get_date_created() < new DateTime($stale_date)) {
+            $stale_count++;
+        }
+    }
+    
+    return [
+        'total_customers' => count($customer_ids),
+        'total_orders' => count($orders),
+        'total_sales' => $total_sales,
+        'stale_customers' => $stale_count,
+        'recent_orders' => array_slice($orders, 0, 10)
+    ];
+}
+
+/**
+ * PHASE 3: SALES PANEL PAGE RENDERERS
  */
 
 function sa_render_login_page() {
-    echo '<h1>Sales Login Page - Coming Soon</h1>';
-    echo '<p>This page will be implemented in Phase 3.</p>';
+    // Handle login
+    if (isset($_POST['sa_login'])) {
+        $creds = [
+            'user_login' => sanitize_text_field($_POST['username']),
+            'user_password' => $_POST['password'],
+            'remember' => isset($_POST['remember'])
+        ];
+        
+        $user = wp_signon($creds, false);
+        
+        if (!is_wp_error($user)) {
+            // Check if user has sales panel access
+            if (current_user_can('view_sales_panel')) {
+                wp_redirect(home_url('/sales-panel'));
+                exit;
+            } else {
+                wp_logout();
+                $error = 'You do not have access to the sales panel.';
+            }
+        } else {
+            $error = 'Invalid username or password.';
+        }
+    }
+    
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Login</title>
+        <style>
+            * { margin:0; padding:0; box-sizing:border-box; }
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; align-items: center; justify-content: center; }
+            .login-box { background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 100%; max-width: 400px; padding: 40px; }
+            .login-box h1 { font-size: 28px; margin-bottom: 10px; color: #1f2937; }
+            .login-box p { color: #6b7280; margin-bottom: 30px; }
+            .form-group { margin-bottom: 20px; }
+            .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px; }
+            .form-group input { width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: border 0.3s; }
+            .form-group input:focus { outline: none; border-color: #667eea; }
+            .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+            .remember input { width: auto; }
+            .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
+            .btn:hover { transform: translateY(-2px); }
+            .error { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="login-box">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <p>Sales Agent Login</p>
+            
+            <?php if (isset($error)): ?>
+            <div class="error"><?= esc_html($error) ?></div>
+            <?php endif; ?>
+            
+            <form method="post">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" name="username" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" required>
+                </div>
+                
+                <div class="remember">
+                    <input type="checkbox" name="remember" id="remember">
+                    <label for="remember" style="margin: 0; font-weight: 400;">Remember me</label>
+                </div>
+                
+                <button type="submit" name="sa_login" class="btn">Login</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 function sa_render_dashboard_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Dashboard - Coming Soon</h1>';
-    echo '<p>This page will be implemented in Phase 3.</p>';
-    echo '<p>User: ' . wp_get_current_user()->display_name . '</p>';
+    
+    $user = wp_get_current_user();
+    $is_manager = in_array('sales_manager', $user->roles);
+    $alert_days = get_option('sales_stale_days', 15);
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get dashboard data
+    $summary = sa_get_dashboard_summary($user->ID, $alert_days);
+    
+    // Sales Panel Header
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Dashboard</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+            .header h1 { font-size: 24px; }
+            .header .user { display: flex; align-items: center; gap: 15px; }
+            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
+            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
+            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+            .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
+            .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
+            .stat-card.warning { border-left: 4px solid #f59e0b; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+            .btn:hover { background: #5568d3; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <div class="user">
+                <span><?= esc_html($user->display_name) ?></span>
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+            </div>
+        </div>
+        
+        <div class="nav">
+            <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active">Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+        </div>
+        
+        <div class="container">
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Total Customers</h3>
+                    <div class="value"><?= $summary['total_customers'] ?></div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Orders</h3>
+                    <div class="value"><?= $summary['total_orders'] ?></div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Sales</h3>
+                    <div class="value"><?= wc_price($summary['total_sales']) ?></div>
+                </div>
+                <div class="stat-card warning">
+                    <h3>⚠️ Stale Customers</h3>
+                    <div class="value"><?= $summary['stale_customers'] ?></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Recent Orders</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($summary['recent_orders'] as $order): 
+                            $customer = get_userdata($order->get_customer_id());
+                        ?>
+                        <tr>
+                            <td>#<?= $order->get_id() ?></td>
+                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                            <td><?= $order->get_date_created()->format('Y-m-d') ?></td>
+                            <td><?= $order->get_formatted_order_total() ?></td>
+                            <td><?= ucfirst($order->get_status()) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 function sa_render_customers_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Customers - Coming Soon</h1>';
+    echo '<h1>Sales Customers - Implementation in progress</h1>';
+    echo '<p>This page will display the customer list with ability to create orders.</p>';
 }
 
 function sa_render_customer_detail_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Customer Detail - Coming Soon</h1>';
+    echo '<h1>Customer Detail - Implementation in progress</h1>';
 }
 
 function sa_render_orders_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Orders - Coming Soon</h1>';
+    echo '<h1>Sales Orders - Implementation in progress</h1>';
 }
 
 function sa_render_commissions_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Commissions - Coming Soon</h1>';
+    echo '<h1>Sales Commissions - Implementation in progress</h1>';
 }
 
 function sa_render_new_order_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>New Order - Coming Soon</h1>';
+    echo '<h1>New Order - Implementation in progress</h1>';
 }
 
 /**

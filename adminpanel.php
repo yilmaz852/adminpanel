@@ -9378,7 +9378,7 @@ add_action('template_redirect', function () {
                 $order->update_meta_data('_sales_agent_name', $agent->display_name);
                 
                 if ($po_number) {
-                    $order->update_meta_data('billing_busines_name', $po_number);
+                    $order->update_meta_data('billing_business_name', $po_number);
                 }
                 
                 if ($order_note) {
@@ -10437,8 +10437,10 @@ function sa_get_refund_ids($order_id) {
 function sa_get_refund_item_totals($refund_id) {
     global $wpdb;
     $results = $wpdb->get_results($wpdb->prepare(
-        "SELECT meta_key, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta 
-        WHERE order_item_id IN (SELECT order_item_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_id = %d)", 
+        "SELECT oim.meta_key, oim.meta_value 
+        FROM {$wpdb->prefix}woocommerce_order_itemmeta oim 
+        INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON oim.order_item_id = oi.order_item_id 
+        WHERE oi.order_id = %d", 
         $refund_id
     ), ARRAY_A);
     $subtotal = 0;
@@ -10924,10 +10926,16 @@ function sa_search_products_callback() {
         $stock_msg = is_numeric($stock) ? " | Stock: $stock" : "";
         $display_text = $p->get_name() . $sku . ' - ' . $currency . $final_price . $stock_msg;
         
+        // Get assembly data
+        $has_assembly = get_post_meta($pid, '_assembly_enabled', true) === 'yes';
+        $assembly_price = $has_assembly ? floatval(get_post_meta($pid, '_assembly_price', true)) : 0;
+        
         $results[] = [
             'id' => $pid, 
             'text' => $display_text, 
-            'price' => $final_price
+            'price' => $final_price,
+            'has_assembly' => $has_assembly,
+            'assembly_price' => $assembly_price
         ];
     }
     
@@ -11134,8 +11142,15 @@ add_action('init', function () {
             wp_die('Access denied to this customer');
         }
         
-        // Store agent ID in cookie to switch back
-        setcookie('sa_switch_back', $agent_id, time() + 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        // Create secure token
+        $token = wp_hash($agent_id . $target_id . time());
+        $switch_data = $agent_id . '|' . $token;
+        
+        // Store agent ID with token in cookie
+        setcookie('sa_switch_back', $switch_data, time() + 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        
+        // Also store in user meta as backup verification
+        update_user_meta($target_id, '_sa_switch_token', $token);
         
         // Switch to customer
         wp_destroy_current_session();
@@ -11150,10 +11165,27 @@ add_action('init', function () {
     // Switch back to agent
     if (isset($_GET['switch_back']) && isset($_COOKIE['sa_switch_back'])) {
         check_admin_referer('switch_back');
-        $agent_id = intval($_COOKIE['sa_switch_back']);
         
-        // Clear cookie
+        // Parse cookie data
+        $cookie_parts = explode('|', $_COOKIE['sa_switch_back']);
+        if (count($cookie_parts) !== 2) {
+            wp_die('Invalid session data');
+        }
+        
+        $agent_id = intval($cookie_parts[0]);
+        $stored_token = $cookie_parts[1];
+        
+        // Verify token
+        $current_user_id = get_current_user_id();
+        $expected_token = get_user_meta($current_user_id, '_sa_switch_token', true);
+        
+        if ($stored_token !== $expected_token) {
+            wp_die('Invalid session token');
+        }
+        
+        // Clean up
         setcookie('sa_switch_back', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        delete_user_meta($current_user_id, '_sa_switch_token');
         
         // Switch back to agent
         wp_destroy_current_session();

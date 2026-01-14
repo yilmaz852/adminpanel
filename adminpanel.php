@@ -9809,3 +9809,224 @@ add_action('template_redirect', function () {
 });
 
 // End of Sales Agent System Phase 2
+
+/**
+ * PHASE 4: AJAX HANDLERS
+ * Add AJAX functionality for sales panel
+ */
+
+// AJAX: Search products
+add_action('wp_ajax_sa_search_products', 'sa_search_products_callback');
+function sa_search_products_callback() {
+    if (!current_user_can('view_sales_panel')) wp_die();
+    
+    $term = sanitize_text_field($_GET['term'] ?? '');
+    $cid = isset($_GET['customer_id']) ? intval($_GET['customer_id']) : 0;
+    
+    $old_user = get_current_user_id();
+    if ($cid > 0) wp_set_current_user($cid);
+
+    $results = [];
+    $products = wc_get_products([
+        'limit' => 30, 
+        'status' => 'publish', 
+        's' => $term, 
+        'return' => 'ids', 
+        'orderby' => 'title', 
+        'order' => 'ASC'
+    ]);
+
+    foreach ($products as $pid) {
+        wp_cache_delete($pid, 'post_meta'); 
+        $p = wc_get_product($pid); 
+        if(!$p || $p->is_type('variable')) continue;
+
+        $price_html = $p->get_price_html();
+        $clean_text = strip_tags(html_entity_decode($price_html));
+        preg_match_all('/[0-9]+(?:\.[0-9]+)?/', $clean_text, $matches);
+        $found_prices = $matches[0] ?? [];
+        $final_price = !empty($found_prices) ? min($found_prices) : $p->get_price();
+        if ($p->get_price() > 0 && $p->get_price() < $final_price) $final_price = $p->get_price();
+
+        $sku = $p->get_sku() ? ' (' . $p->get_sku() . ')' : '';
+        $currency = get_woocommerce_currency_symbol();
+        $stock = $p->get_stock_quantity();
+        $stock_msg = is_numeric($stock) ? " | Stock: $stock" : "";
+        $display_text = $p->get_name() . $sku . ' - ' . $currency . $final_price . $stock_msg;
+        
+        $results[] = [
+            'id' => $pid, 
+            'text' => $display_text, 
+            'price' => $final_price
+        ];
+    }
+    
+    wp_set_current_user($old_user);
+    wp_send_json($results);
+}
+
+// AJAX: Get order details
+add_action('wp_ajax_sa_get_order_details', 'sa_get_order_details_callback');
+function sa_get_order_details_callback() {
+    if (!current_user_can('view_sales_panel')) wp_die();
+    
+    $order_id = intval($_GET['order_id'] ?? 0);
+    $order = wc_get_order($order_id);
+    
+    if (!$order) {
+        wp_send_json_error('Order not found');
+    }
+    
+    $items = [];
+    foreach ($order->get_items() as $item) {
+        $items[] = [
+            'name' => $item->get_name(),
+            'qty' => $item->get_quantity(),
+            'total' => wc_price($item->get_total())
+        ];
+    }
+    
+    $data = [
+        'id' => $order->get_id(),
+        'date' => $order->get_date_created()->date('d.m.Y'),
+        'status' => ucfirst($order->get_status()),
+        'total' => $order->get_formatted_order_total(),
+        'items' => $items,
+        'billing' => $order->get_formatted_billing_address(),
+        'shipping' => $order->get_formatted_shipping_address() ?: 'Same as billing',
+        'notes' => $order->get_customer_note()
+    ];
+    
+    wp_send_json_success($data);
+}
+
+// AJAX: Get unpaid orders for customer
+add_action('wp_ajax_sa_get_unpaid_orders', 'sa_get_unpaid_orders_callback');
+function sa_get_unpaid_orders_callback() {
+    if (!current_user_can('view_sales_panel')) wp_die();
+    
+    $cid = intval($_GET['customer_id'] ?? 0);
+    
+    $unpaid_statuses = ['pending', 'on-hold', 'failed'];
+    
+    $orders = wc_get_orders([
+        'customer_id' => $cid,
+        'status' => $unpaid_statuses,
+        'limit' => -1,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    if (empty($orders)) {
+        wp_send_json_success('<div style="padding:20px;text-align:center;color:#10b981">No unpaid orders.</div>');
+    }
+    
+    $html = '<table style="width:100%;border-collapse:collapse;margin-top:10px">
+        <thead><tr style="background:#fff7ed;color:#9a3412">
+        <th style="padding:10px;text-align:left">Order</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th style="text-align:right">Total</th>
+        </tr></thead><tbody>';
+    
+    $total_unpaid = 0;
+    
+    foreach ($orders as $o) {
+        $html .= '<tr>
+            <td style="padding:10px;border-bottom:1px solid #eee">#'.$o->get_id().'</td>
+            <td style="padding:10px;border-bottom:1px solid #eee">'.$o->get_date_created()->date('d.m.Y').'</td>
+            <td style="padding:10px;border-bottom:1px solid #eee">'.ucfirst($o->get_status()).'</td>
+            <td style="padding:10px;border-bottom:1px solid #eee;text-align:right;font-weight:bold">'.$o->get_formatted_order_total().'</td>
+        </tr>';
+        $total_unpaid += $o->get_total();
+    }
+    
+    $html .= '<tr><td colspan="3" style="padding:10px;text-align:right;font-weight:bold">Total Unpaid:</td>
+        <td style="padding:10px;text-align:right;font-weight:bold;color:#dc2626">'.wc_price($total_unpaid).'</td></tr>';
+    $html .= '</tbody></table>';
+    
+    wp_send_json_success($html);
+}
+
+// User Profile: Add hierarchy fields
+add_action('show_user_profile', 'sa_hierarchy_fields');
+add_action('edit_user_profile', 'sa_hierarchy_fields');
+
+function sa_hierarchy_fields($user) {
+    if (!current_user_can('manage_options')) return;
+    
+    $roles = (array) $user->roles;
+    
+    // If customer, show agent assignment
+    if (in_array('customer', $roles) || empty($roles)) {
+        $assigned_agent = get_user_meta($user->ID, 'bagli_agent_id', true);
+        $agents = get_users(['role__in' => ['sales_agent', 'sales_manager']]); 
+        ?>
+        <h3>Sales System</h3>
+        <table class="form-table">
+            <tr>
+                <th>Assigned Sales Agent</th>
+                <td>
+                    <select name="bagli_agent_id">
+                        <option value="">-- None --</option>
+                        <?php foreach ($agents as $a): ?>
+                        <option value="<?= $a->ID ?>" <?= selected($assigned_agent, $a->ID, false) ?>>
+                            <?= esc_html($a->display_name) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <?php
+    }
+
+    // If sales agent, show manager assignment
+    if (in_array('sales_agent', $roles)) {
+        $assigned_manager = get_user_meta($user->ID, 'bagli_manager_id', true);
+        $managers = get_users(['role' => 'sales_manager']);
+        ?>
+        <h3>Sales System Hierarchy</h3>
+        <table class="form-table">
+            <tr>
+                <th>Reports to Manager</th>
+                <td>
+                    <select name="bagli_manager_id">
+                        <option value="">-- None --</option>
+                        <?php foreach ($managers as $m): ?>
+                        <option value="<?= $m->ID ?>" <?= selected($assigned_manager, $m->ID, false) ?>>
+                            <?= esc_html($m->display_name) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <?php
+    }
+}
+
+add_action('personal_options_update', 'sa_hierarchy_save');
+add_action('edit_user_profile_update', 'sa_hierarchy_save');
+
+function sa_hierarchy_save($user_id) {
+    if (!current_user_can('manage_options')) return;
+    
+    if (isset($_POST['bagli_agent_id'])) {
+        update_user_meta($user_id, 'bagli_agent_id', sanitize_text_field($_POST['bagli_agent_id']));
+    }
+    
+    if (isset($_POST['bagli_manager_id'])) {
+        update_user_meta($user_id, 'bagli_manager_id', sanitize_text_field($_POST['bagli_manager_id']));
+    }
+}
+
+// Add sales agent name to order meta in admin
+add_action('woocommerce_admin_order_data_after_order_details', function($order){
+    $agent = $order->get_meta('_sales_agent_name');
+    if($agent) {
+        echo '<p class="form-field form-field-wide"><strong>Sales Agent:</strong> ' . esc_html($agent) . '</p>';
+    }
+});
+
+// End of Sales Agent System Phase 4

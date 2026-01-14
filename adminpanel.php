@@ -9318,6 +9318,143 @@ add_action('template_redirect', function () {
             }
         }
         
+        // Handle order creation form submission
+        if ($sales_panel === 'new-order' && isset($_POST['sa_create_order'])) {
+            $customer_id = intval($_POST['customer_id']);
+            
+            // Verify nonce
+            if (!wp_verify_nonce($_POST['sa_order_nonce'], 'sa_create_order_' . $customer_id)) {
+                wp_die('Security check failed');
+            }
+            
+            // Verify agent has access
+            $agent = wp_get_current_user();
+            if (!current_user_can('administrator')) {
+                $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+                if ($assigned_agent != $agent->ID) {
+                    wp_die('Access denied to this customer');
+                }
+            }
+            
+            // Process order creation
+            $products = $_POST['products'] ?? [];
+            $qtys = $_POST['qtys'] ?? [];
+            $prices = $_POST['prices'] ?? [];
+            $assemblies = $_POST['assembly_selected'] ?? [];
+            $assembly_costs = $_POST['assembly_costs'] ?? [];
+            $fee_amount = floatval($_POST['extra_fee'] ?? 0);
+            $fee_name = sanitize_text_field($_POST['extra_fee_name'] ?? 'Service Fee');
+            $payment_method = sanitize_text_field($_POST['payment_method'] ?? 'bacs');
+            $order_note = sanitize_textarea_field($_POST['order_note'] ?? '');
+            $shipping_cost = floatval($_POST['shipping_cost'] ?? 0);
+            $po_number = sanitize_text_field($_POST['po_number'] ?? '');
+            
+            if (!empty($products)) {
+                // Switch to customer context for pricing
+                $old_user = get_current_user_id();
+                wp_set_current_user($customer_id);
+                
+                // Create order
+                $order = wc_create_order(['customer_id' => $customer_id]);
+                $cust = new WC_Customer($customer_id);
+                
+                // Set addresses
+                $billing = [
+                    'first_name' => $cust->get_billing_first_name() ?: $cust->get_first_name(),
+                    'last_name' => $cust->get_billing_last_name() ?: $cust->get_last_name(),
+                    'email' => $cust->get_billing_email() ?: $cust->get_email(),
+                    'phone' => $cust->get_billing_phone(),
+                    'address_1' => $cust->get_billing_address_1(),
+                    'city' => $cust->get_billing_city(),
+                    'state' => $cust->get_billing_state(),
+                    'postcode' => $cust->get_billing_postcode(),
+                    'country' => $cust->get_billing_country()
+                ];
+                $order->set_address($billing, 'billing');
+                $order->set_address($billing, 'shipping');
+                
+                // Set agent meta
+                $order->update_meta_data('_sales_agent_id', $agent->ID);
+                $order->update_meta_data('_sales_agent_name', $agent->display_name);
+                
+                if ($po_number) {
+                    $order->update_meta_data('billing_busines_name', $po_number);
+                }
+                
+                if ($order_note) {
+                    $order->set_customer_note($order_note);
+                }
+                
+                $order->set_payment_method($payment_method);
+                
+                // Add products
+                $total_assembly_fee = 0;
+                foreach ($products as $k => $pid) {
+                    $qty = intval($qtys[$k]);
+                    $unit_price = isset($prices[$k]) ? floatval($prices[$k]) : 0;
+                    
+                    if ($qty > 0 && $pid && $unit_price > 0) {
+                        $prod = wc_get_product($pid);
+                        $item_id = $order->add_product($prod, $qty, [
+                            'subtotal' => $unit_price * $qty,
+                            'total' => $unit_price * $qty
+                        ]);
+                        
+                        $item = $order->get_item($item_id);
+                        if ($item) {
+                            $item->set_subtotal($unit_price * $qty);
+                            $item->set_total($unit_price * $qty);
+                            $item->save();
+                        }
+                        
+                        // Check assembly
+                        if (isset($assemblies[$k]) && $assemblies[$k] == 1) {
+                            $cost_per_item = floatval($assembly_costs[$k]);
+                            $total_assembly_fee += ($cost_per_item * $qty);
+                        }
+                    }
+                }
+                
+                // Add assembly fee
+                if ($total_assembly_fee > 0) {
+                    $fee_assembly = new WC_Order_Item_Fee();
+                    $fee_assembly->set_name('Assembly Fee');
+                    $fee_assembly->set_amount($total_assembly_fee);
+                    $fee_assembly->set_total($total_assembly_fee);
+                    $order->add_item($fee_assembly);
+                }
+                
+                // Add extra fee
+                if ($fee_amount > 0) {
+                    $item_fee = new WC_Order_Item_Fee();
+                    $item_fee->set_name($fee_name);
+                    $item_fee->set_amount($fee_amount);
+                    $item_fee->set_total($fee_amount);
+                    $order->add_item($item_fee);
+                }
+                
+                // Add shipping
+                if ($shipping_cost > 0) {
+                    $item_ship = new WC_Order_Item_Shipping();
+                    $item_ship->set_method_title('Manual Shipping');
+                    $item_ship->set_total($shipping_cost);
+                    $order->add_item($item_ship);
+                }
+                
+                // Calculate totals and save
+                $order->calculate_totals();
+                $order->update_status('pending', 'Created by Agent: ' . $agent->display_name);
+                $order->save();
+                
+                // Switch back to agent
+                wp_set_current_user($old_user);
+                
+                // Redirect to orders page
+                wp_redirect(home_url('/sales-panel/orders'));
+                exit;
+            }
+        }
+        
         // Route to appropriate page
         if ($sales_login) {
             sa_render_login_page();
@@ -10180,6 +10317,45 @@ function sa_render_commissions_page() {
     <?php
 }
 
+// Helper function: Get formatted address
+function sa_get_full_address($user_id, $type = 'billing') {
+    $prefix = $type == 'billing' ? 'billing_' : 'shipping_';
+    $address = [
+        get_user_meta($user_id, $prefix . 'address_1', true),
+        get_user_meta($user_id, $prefix . 'city', true),
+        get_user_meta($user_id, $prefix . 'state', true),
+        get_user_meta($user_id, $prefix . 'postcode', true),
+        get_user_meta($user_id, $prefix . 'country', true)
+    ];
+    $filtered = array_filter($address);
+    return !empty($filtered) ? implode(', ', $filtered) : 'No address';
+}
+
+// Helper function: Get refund IDs for an order
+function sa_get_refund_ids($order_id) {
+    $order = wc_get_order($order_id);
+    if (!$order) return [];
+    $refunds = $order->get_refunds();
+    return array_map(function($r) { return $r->get_id(); }, $refunds);
+}
+
+// Helper function: Get refund item totals
+function sa_get_refund_item_totals($refund_id) {
+    global $wpdb;
+    $results = $wpdb->get_results($wpdb->prepare(
+        "SELECT meta_key, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta 
+        WHERE order_item_id IN (SELECT order_item_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_id = %d)", 
+        $refund_id
+    ), ARRAY_A);
+    $subtotal = 0;
+    foreach ($results as $meta) {
+        if ($meta['meta_key'] === '_line_subtotal') {
+            $subtotal += floatval($meta['meta_value']);
+        }
+    }
+    return ['subtotal' => $subtotal];
+}
+
 function sa_render_new_order_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
@@ -10202,6 +10378,10 @@ function sa_render_new_order_page() {
     }
     
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $wc_cust = new WC_Customer($customer_id);
+    $b_addr = sa_get_full_address($customer_id, 'billing');
+    $s_addr = sa_get_full_address($customer_id, 'shipping');
+    $gateways = WC()->payment_gateways->get_available_payment_gateways();
     
     ?>
     <!DOCTYPE html>
@@ -10212,6 +10392,9 @@ function sa_render_new_order_page() {
         <title><?= esc_html($panel_title) ?> - New Order</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
@@ -10228,7 +10411,23 @@ function sa_render_new_order_page() {
             .btn:hover { background: #5568d3; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
-            .alert { padding: 15px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; margin-bottom: 20px; color: #92400e; }
+            .btn-danger { background: #ef4444; color: white; }
+            .btn-warning { background: #f59e0b; color: white; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .customer-widgets { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 20px 0; }
+            .widget-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; }
+            .widget-card h3 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; color: #6b7280; font-weight: 700; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; }
+            .order-table input { width: 80px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .totals-area { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-box { width: 350px; background: #f9fafb; padding: 20px; border-radius: 8px; }
+            .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
+            .total-row.final { font-weight: 700; font-size: 18px; border-top: 1px solid #d1d5db; padding-top: 10px; margin-top: 10px; color: #667eea; }
+            .select2-container .select2-selection--single { height: 38px; border-color: #d1d5db; display: flex; align-items: center; }
+            textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px; }
+            input[type="text"], input[type="number"], select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
         </style>
     </head>
     <body>
@@ -10253,18 +10452,215 @@ function sa_render_new_order_page() {
             </div>
             
             <div class="card">
-                <h2>Create New Order for <?= esc_html($customer->display_name) ?></h2>
-                
-                <div class="alert">
-                    <strong><i class="fa-solid fa-info-circle"></i> Order Creation</strong><br>
-                    Advanced order creation interface with product search will be available in a future update. 
-                    For now, please use WooCommerce admin or contact administrator to create orders.
+                <h2><i class="fa-solid fa-cart-shopping"></i> New Order: <?= esc_html($customer->display_name) ?></h2>
+                <div class="customer-widgets">
+                    <div class="widget-card"><h3>Customer</h3><strong><?= $customer->display_name ?></strong><br><small><?= $customer->user_email ?></small></div>
+                    <div class="widget-card"><h3>Billing Address</h3><?= $b_addr ?></div>
+                    <div class="widget-card"><h3>Shipping Address</h3><?= $s_addr ?></div>
                 </div>
                 
-                <p style="color: #6b7280;">Customer: <strong><?= esc_html($customer->display_name) ?></strong></p>
-                <p style="color: #6b7280;">Email: <strong><?= esc_html($customer->user_email) ?></strong></p>
+                <form method="post" id="orderForm" action="">
+                    <input type="hidden" name="sa_create_order" value="1">
+                    <input type="hidden" name="customer_id" id="customer_id" value="<?= $customer_id ?>">
+                    <?php wp_nonce_field('sa_create_order_' . $customer_id, 'sa_order_nonce'); ?>
+                    
+                    <div style="margin-bottom:20px;">
+                        <label style="font-weight:600;display:block;margin-bottom:5px">Job Name (PO Number)</label>
+                        <input type="text" name="po_number" class="form-control" placeholder="Enter PO Number" style="width:100%">
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="order-table">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:300px">Product</th>
+                                    <th style="width:120px">Unit Price</th>
+                                    <th style="width:80px">Qty</th>
+                                    <th style="width:100px">Assembly</th>
+                                    <th style="width:120px">Total</th>
+                                    <th style="width:50px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="product-rows"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="margin-top:15px;display:flex;justify-content:space-between;align-items:center;">
+                        <button type="button" class="btn btn-light" id="add-row"><i class="fa-solid fa-plus"></i> Add Product</button>
+                        <button type="button" class="btn btn-warning" id="toggle-global-assembly"><i class="fa-solid fa-tools"></i> Apply Assembly to All</button>
+                    </div>
+
+                    <div class="totals-area">
+                        <div class="totals-box">
+                            <div class="total-row"><span>Subtotal:</span><span id="subtotal">0.00</span></div>
+                            <div class="total-row" style="color:#e11d48;font-weight:600"><span>Assembly Fee:</span><span id="assembly_display">0.00</span></div>
+                            <div class="total-row" style="align-items:center">
+                                <span>Shipping:</span>
+                                <input type="number" name="shipping_cost" id="shipping_cost" step="0.01" value="0" style="width:80px;text-align:right">
+                            </div>
+                            <div class="total-row" style="align-items:center">
+                                <span>Extra Fee:</span>
+                                <input type="number" name="extra_fee" id="extra_fee" step="0.01" value="0" style="width:80px;text-align:right">
+                            </div>
+                            <div class="total-row">
+                                <input type="text" name="extra_fee_name" value="Service Fee" placeholder="Fee Name" style="width:100%;font-size:12px;padding:5px">
+                            </div>
+                            <div class="total-row final"><span>Grand Total:</span><span id="grandtotal">0.00</span></div>
+                            <hr style="margin:15px 0;border:0;border-top:1px solid #ddd">
+                            <div style="margin-bottom:10px">
+                                <label style="font-size:12px;font-weight:600">Payment Method</label>
+                                <select name="payment_method" style="width:100%;padding:8px">
+                                    <?php foreach($gateways as $id => $gateway): ?>
+                                        <option value="<?= esc_attr($id) ?>"><?= esc_html($gateway->get_title()) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div style="margin-bottom:10px">
+                                <label style="font-size:12px;font-weight:600">Order Note</label>
+                                <textarea name="order_note" rows="2"></textarea>
+                            </div>
+                            <button class="btn btn-primary" style="width:100%;justify-content:center"><i class="fa-solid fa-check"></i> Create Order</button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            const customerId = $('#customer_id').val();
+            const mergeEnabled = '<?= get_option('sales_merge_products') ? 1 : 0 ?>';
+
+            function initSelect2(el) {
+                $(el).select2({
+                    ajax: {
+                        url: '<?= admin_url('admin-ajax.php') ?>',
+                        dataType: 'json',
+                        delay: 250,
+                        data: function(params) {
+                            return {
+                                action: 'sa_search_products',
+                                term: params.term,
+                                customer_id: customerId
+                            };
+                        },
+                        processResults: function(data) {
+                            return { results: data };
+                        }
+                    },
+                    placeholder: 'Search product...',
+                    minimumInputLength: 2
+                });
+            }
+
+            $('#add-row').click(function() {
+                let html = `<tr class="item-row">
+                    <td><select name="products[]" class="product-search" style="width:100%" required><option value="">Search...</option></select></td>
+                    <td><input type="text" name="prices[]" class="price-display" style="width:100px" value="0.00"></td>
+                    <td><input type="number" name="qtys[]" class="item-qty" value="1" min="1"></td>
+                    <td style="text-align:center">
+                        <input type="hidden" name="assembly_costs[]" class="assembly-cost" value="0">
+                        <input type="checkbox" name="assembly_selected[]" value="1" class="assembly-check" disabled>
+                        <span class="assembly-label" style="font-size:11px;display:block"></span>
+                    </td>
+                    <td class="item-total">0.00</td>
+                    <td><button type="button" class="btn btn-danger remove-row" style="padding:5px 10px"><i class="fa-solid fa-trash"></i></button></td>
+                </tr>`;
+                $('#product-rows').append(html);
+                initSelect2($('#product-rows tr:last .product-search'));
+            });
+
+            $(document).on('select2:select', '.product-search', function(e) {
+                let d = e.params.data;
+                let currentRow = $(this).closest('tr');
+                
+                // Merge products if enabled
+                if (mergeEnabled === '1') {
+                    let found = false;
+                    $('.product-search').not($(this)).each(function() {
+                        if ($(this).val() == d.id) {
+                            let targetRow = $(this).closest('tr');
+                            let oldQty = parseInt(targetRow.find('.item-qty').val()) || 1;
+                            targetRow.find('.item-qty').val(oldQty + 1).trigger('input');
+                            currentRow.remove();
+                            found = true;
+                            return false;
+                        }
+                    });
+                    if (found) return;
+                }
+                
+                currentRow.find('.price-display').val(parseFloat(d.price).toFixed(2));
+                let check = currentRow.find('.assembly-check');
+                let label = currentRow.find('.assembly-label');
+                let costInput = currentRow.find('.assembly-cost');
+                
+                if(d.has_assembly) {
+                    check.prop('disabled', false);
+                    costInput.val(d.assembly_price);
+                    label.text('+$' + d.assembly_price);
+                } else {
+                    check.prop('disabled', true).prop('checked', false);
+                    costInput.val(0);
+                    label.text('-');
+                }
+                calcRow(currentRow);
+            });
+            
+            $('#toggle-global-assembly').click(function() {
+                let allChecked = $('.assembly-check:not(:disabled):checked').length === $('.assembly-check:not(:disabled)').length;
+                $('.assembly-check:not(:disabled)').prop('checked', !allChecked);
+                calcTotals();
+            });
+
+            $(document).on('input', '.item-qty, #extra_fee, #shipping_cost, .price-display, .assembly-check', function() {
+                calcTotals();
+            });
+            
+            $(document).on('change keyup', '.item-qty, .price-display', function() {
+                calcRow($(this).closest('tr'));
+            });
+            
+            $(document).on('click', '.remove-row', function() {
+                $(this).closest('tr').remove();
+                calcTotals();
+            });
+
+            // Add first row on load
+            $('#add-row').click();
+
+            function calcRow(row) {
+                let p = parseFloat(row.find('.price-display').val()) || 0;
+                let q = parseInt(row.find('.item-qty').val()) || 1;
+                let assemblyCost = 0;
+                if(row.find('.assembly-check').is(':checked')) {
+                    assemblyCost = parseFloat(row.find('.assembly-cost').val()) || 0;
+                }
+                let total = (p * q) + (assemblyCost * q);
+                row.find('.item-total').text(total.toFixed(2));
+                calcTotals();
+            }
+
+            function calcTotals() {
+                let subtotal = 0, totalAssembly = 0;
+                $('.item-row').each(function() {
+                    let p = parseFloat($(this).find('.price-display').val()) || 0;
+                    let q = parseInt($(this).find('.item-qty').val()) || 1;
+                    let a = 0;
+                    if($(this).find('.assembly-check').is(':checked')) {
+                        a = parseFloat($(this).find('.assembly-cost').val()) || 0;
+                    }
+                    subtotal += (p * q);
+                    totalAssembly += (a * q);
+                });
+                let f = parseFloat($('#extra_fee').val()) || 0;
+                let sh = parseFloat($('#shipping_cost').val()) || 0;
+                $('#subtotal').text(subtotal.toFixed(2));
+                $('#assembly_display').text(totalAssembly.toFixed(2));
+                $('#grandtotal').text((subtotal + totalAssembly + f + sh).toFixed(2));
+            }
+        });
+        </script>
     </body>
     </html>
     <?php

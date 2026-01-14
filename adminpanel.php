@@ -62,6 +62,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/tax-exemption/?$', 'index.php?b2b_adm_page=settings_tax', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
+    add_rewrite_rule('^b2b-panel/settings/sales-agent/?$', 'index.php?b2b_adm_page=settings_sales_agent', 'top');
     
     // Support Module
     add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
@@ -1312,14 +1313,14 @@ function b2b_adm_header($title) {
             </div>
             
             <!-- Settings Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','sales_agent'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','sales_agent'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent'])?'active':'' ?>">
                 <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
                 <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
                 <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
-                <a href="<?= home_url('/b2b-panel/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
+                <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
             
             <!-- Support Tickets Module -->
@@ -9413,4 +9414,112 @@ function sa_render_new_order_page() {
     echo '<h1>New Order - Coming Soon</h1>';
 }
 
-// End of Sales Agent System Phase 1
+/**
+ * PHASE 2: SETTINGS INTEGRATION
+ * Add sales agent settings page in admin panel
+ */
+
+// Settings Page Template Redirect
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_sales_agent') return;
+    b2b_adm_guard();
+    
+    // Handle settings save
+    $message = '';
+    if(isset($_POST['save_sales_settings'])) {
+        update_option('sales_panel_enabled', isset($_POST['sales_panel_enabled']) ? 1 : 0);
+        update_option('sales_panel_title', sanitize_text_field($_POST['sales_panel_title']));
+        update_option('sales_commission_rate', floatval($_POST['sales_commission_rate']));
+        update_option('sales_stale_days', intval($_POST['sales_stale_days']));
+        update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Sales Agent settings saved.</div>';
+    }
+    
+    $panel_enabled = get_option('sales_panel_enabled', 1);
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $commission_rate = get_option('sales_commission_rate', 3);
+    $stale_days = get_option('sales_stale_days', 15);
+    $merge_products = get_option('sales_merge_products', 0);
+    
+    b2b_adm_header('Sales Agent Settings');
+    ?>
+    <div class="page-header"><h1 class="page-title">Sales Agent System Settings</h1></div>
+    
+    <?= $message ?>
+    
+    <div class="card">
+        <form method="post" style="max-width:700px;">
+            <h3 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-toggle-on"></i> General</h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_panel_enabled" value="1" <?= checked($panel_enabled, 1) ?>>
+                    <span style="font-weight:600;">Enable Sales Agent Panel</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Allow sales agents and managers to access their dedicated panel</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Panel Title</label>
+                <input type="text" name="sales_panel_title" value="<?= esc_attr($panel_title) ?>" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;" placeholder="Agent Panel">
+                <small style="color:#6b7280;">Displayed in the sales panel header</small>
+            </div>
+            
+            <hr style="margin:30px 0;border:none;border-top:1px solid #e5e7eb;">
+            
+            <h3 style="color:#1e40af;"><i class="fa-solid fa-percent"></i> Commission & Sales</h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Commission Rate (%)</label>
+                <input type="number" step="0.01" min="0" max="100" name="sales_commission_rate" value="<?= esc_attr($commission_rate) ?>" style="width:200px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;">Default commission percentage for sales agents</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Stale Customer Alert (Days)</label>
+                <input type="number" min="1" max="365" name="sales_stale_days" value="<?= esc_attr($stale_days) ?>" style="width:200px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;">Show alert if customer hasn't placed order in this many days</small>
+            </div>
+            
+            <hr style="margin:30px 0;border:none;border-top:1px solid #e5e7eb;">
+            
+            <h3 style="color:#1e40af;"><i class="fa-solid fa-sliders"></i> Advanced</h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_merge_products" value="1" <?= checked($merge_products, 1) ?>>
+                    <span style="font-weight:600;">Merge Duplicate Products</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Automatically combine duplicate product entries in order creation</small>
+            </div>
+            
+            <div style="padding:15px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;">
+                <h4 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> About Sales Agent System</h4>
+                <ul style="color:#1e40af;margin:0;">
+                    <li><strong>Sales Agents:</strong> Can view their assigned customers, create orders, and track commissions</li>
+                    <li><strong>Sales Managers:</strong> Can view all agents and their performance metrics</li>
+                    <li><strong>Role Assignment:</strong> Assign roles to users via WordPress Users page</li>
+                    <li><strong>Customer Assignment:</strong> Link customers to agents in user profile</li>
+                </ul>
+            </div>
+            
+            <div style="padding:15px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;margin-bottom:20px;">
+                <h4 style="margin-top:0;color:#92400e;"><i class="fa-solid fa-lightbulb"></i> Quick Start</h4>
+                <ol style="color:#92400e;margin:0;">
+                    <li>Enable the sales panel above</li>
+                    <li>Go to Users → Add New to create sales agents</li>
+                    <li>Assign "Sales Agent" or "Sales Manager" role</li>
+                    <li>Link customers to agents in user profiles</li>
+                    <li>Agents can login at <code>/sales-login</code></li>
+                </ol>
+            </div>
+            
+            <button type="submit" name="save_sales_settings" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+// End of Sales Agent System Phase 2

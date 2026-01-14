@@ -10412,46 +10412,6 @@ function sa_render_commissions_page() {
 }
 
 // Helper function: Get formatted address
-function sa_get_full_address($user_id, $type = 'billing') {
-    $prefix = $type == 'billing' ? 'billing_' : 'shipping_';
-    $address = [
-        get_user_meta($user_id, $prefix . 'address_1', true),
-        get_user_meta($user_id, $prefix . 'city', true),
-        get_user_meta($user_id, $prefix . 'state', true),
-        get_user_meta($user_id, $prefix . 'postcode', true),
-        get_user_meta($user_id, $prefix . 'country', true)
-    ];
-    $filtered = array_filter($address);
-    return !empty($filtered) ? implode(', ', $filtered) : 'No address';
-}
-
-// Helper function: Get refund IDs for an order
-function sa_get_refund_ids($order_id) {
-    $order = wc_get_order($order_id);
-    if (!$order) return [];
-    $refunds = $order->get_refunds();
-    return array_map(function($r) { return $r->get_id(); }, $refunds);
-}
-
-// Helper function: Get refund item totals
-function sa_get_refund_item_totals($refund_id) {
-    global $wpdb;
-    $results = $wpdb->get_results($wpdb->prepare(
-        "SELECT oim.meta_key, oim.meta_value 
-        FROM {$wpdb->prefix}woocommerce_order_itemmeta oim 
-        INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON oim.order_item_id = oi.order_item_id 
-        WHERE oi.order_id = %d", 
-        $refund_id
-    ), ARRAY_A);
-    $subtotal = 0;
-    foreach ($results as $meta) {
-        if ($meta['meta_key'] === '_line_subtotal') {
-            $subtotal += floatval($meta['meta_value']);
-        }
-    }
-    return ['subtotal' => $subtotal];
-}
-
 function sa_render_new_order_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');

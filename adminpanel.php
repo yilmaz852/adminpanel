@@ -9695,36 +9695,579 @@ function sa_render_customers_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Customers - Implementation in progress</h1>';
-    echo '<p>This page will display the customer list with ability to create orders.</p>';
+    
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get agent's customers
+    global $wpdb;
+    $agent_id = $user->ID;
+    $customer_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+        $agent_id
+    ));
+    
+    $customers = [];
+    if (!empty($customer_ids)) {
+        $customers = get_users(['include' => $customer_ids]);
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Customers</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+            .header h1 { font-size: 24px; }
+            .header .user { display: flex; align-items: center; gap: 15px; }
+            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
+            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
+            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+            .btn:hover { background: #5568d3; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <div class="user">
+                <span><?= esc_html($user->display_name) ?></span>
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+            </div>
+        </div>
+        
+        <div class="nav">
+            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+        </div>
+        
+        <div class="container">
+            <div class="card">
+                <h2>My Customers</h2>
+                <?php if (empty($customers)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No customers assigned yet.</p>
+                <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Customer Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Company</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($customers as $customer): 
+                            $phone = get_user_meta($customer->ID, 'billing_phone', true);
+                            $company = get_user_meta($customer->ID, 'billing_company', true);
+                        ?>
+                        <tr>
+                            <td><?= esc_html($customer->display_name) ?></td>
+                            <td><?= esc_html($customer->user_email) ?></td>
+                            <td><?= $phone ? esc_html($phone) : '-' ?></td>
+                            <td><?= $company ? esc_html($company) : '-' ?></td>
+                            <td>
+                                <a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" class="btn">View</a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 function sa_render_customer_detail_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Customer Detail - Implementation in progress</h1>';
+    
+    $customer_id = intval(get_query_var('customer_id'));
+    $customer = get_userdata($customer_id);
+    
+    if (!$customer) {
+        wp_die('Customer not found');
+    }
+    
+    // Verify agent has access to this customer
+    $user = wp_get_current_user();
+    if (!current_user_can('administrator')) {
+        $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        if ($assigned_agent != $user->ID) {
+            wp_die('Access denied to this customer');
+        }
+    }
+    
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get customer orders
+    $orders = wc_get_orders([
+        'customer_id' => $customer_id,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Customer Detail</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+            .header h1 { font-size: 24px; }
+            .header .user { display: flex; align-items: center; gap: 15px; }
+            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
+            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
+            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
+            .info-item { padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+            .info-item label { font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .info-item div { margin-top: 5px; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+            .btn:hover { background: #5568d3; }
+            .btn-secondary { background: #6b7280; }
+            .btn-secondary:hover { background: #4b5563; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <div class="user">
+                <span><?= esc_html($user->display_name) ?></span>
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+            </div>
+        </div>
+        
+        <div class="nav">
+            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+        </div>
+        
+        <div class="container">
+            <div style="margin-bottom: 20px;">
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
+            </div>
+            
+            <div class="card">
+                <h2>Customer Information</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Name</label>
+                        <div><?= esc_html($customer->display_name) ?></div>
+                    </div>
+                    <div class="info-item">
+                        <label>Email</label>
+                        <div><?= esc_html($customer->user_email) ?></div>
+                    </div>
+                    <div class="info-item">
+                        <label>Phone</label>
+                        <div><?= esc_html(get_user_meta($customer_id, 'billing_phone', true) ?: '-') ?></div>
+                    </div>
+                    <div class="info-item">
+                        <label>Company</label>
+                        <div><?= esc_html(get_user_meta($customer_id, 'billing_company', true) ?: '-') ?></div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <a href="<?= home_url('/sales-panel/new-order/' . $customer_id) ?>" class="btn"><i class="fa-solid fa-plus"></i> Create New Order</a>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Recent Orders</h2>
+                <?php if (empty($orders)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
+                <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($orders as $order): ?>
+                        <tr>
+                            <td>#<?= $order->get_id() ?></td>
+                            <td><?= $order->get_date_created()->format('Y-m-d H:i') ?></td>
+                            <td><?= $order->get_formatted_order_total() ?></td>
+                            <td><?= ucfirst($order->get_status()) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 function sa_render_orders_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Orders - Implementation in progress</h1>';
+    
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get agent's customers
+    global $wpdb;
+    $agent_id = $user->ID;
+    $customer_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+        $agent_id
+    ));
+    
+    $orders = [];
+    if (!empty($customer_ids)) {
+        $orders = wc_get_orders([
+            'customer' => $customer_ids,
+            'limit' => 50,
+            'orderby' => 'date',
+            'order' => 'DESC'
+        ]);
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Orders</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+            .header h1 { font-size: 24px; }
+            .header .user { display: flex; align-items: center; gap: 15px; }
+            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
+            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
+            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <div class="user">
+                <span><?= esc_html($user->display_name) ?></span>
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+            </div>
+        </div>
+        
+        <div class="nav">
+            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>" class="active">Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+        </div>
+        
+        <div class="container">
+            <div class="card">
+                <h2>All Orders</h2>
+                <?php if (empty($orders)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
+                <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($orders as $order): 
+                            $customer = get_userdata($order->get_customer_id());
+                        ?>
+                        <tr>
+                            <td>#<?= $order->get_id() ?></td>
+                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                            <td><?= $order->get_date_created()->format('Y-m-d H:i') ?></td>
+                            <td><?= $order->get_formatted_order_total() ?></td>
+                            <td><?= ucfirst($order->get_status()) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 function sa_render_commissions_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>Sales Commissions - Implementation in progress</h1>';
+    
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $commission_rate = get_option('sales_commission_rate', 3);
+    
+    // Get agent's customers
+    global $wpdb;
+    $agent_id = $user->ID;
+    $customer_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+        $agent_id
+    ));
+    
+    $orders = [];
+    $total_commission = 0;
+    
+    if (!empty($customer_ids)) {
+        $orders = wc_get_orders([
+            'customer' => $customer_ids,
+            'limit' => -1,
+            'status' => ['completed', 'processing']
+        ]);
+        
+        foreach ($orders as $order) {
+            $total_commission += ($order->get_total() * $commission_rate / 100);
+        }
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Commissions</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+            .header h1 { font-size: 24px; }
+            .header .user { display: flex; align-items: center; gap: 15px; }
+            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
+            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
+            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+            .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
+            .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <div class="user">
+                <span><?= esc_html($user->display_name) ?></span>
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+            </div>
+        </div>
+        
+        <div class="nav">
+            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>" class="active">Commissions</a>
+        </div>
+        
+        <div class="container">
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Commission Rate</h3>
+                    <div class="value"><?= number_format($commission_rate, 2) ?>%</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Orders</h3>
+                    <div class="value"><?= count($orders) ?></div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Commission</h3>
+                    <div class="value"><?= wc_price($total_commission) ?></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Commission Details</h2>
+                <?php if (empty($orders)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
+                <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Order Total</th>
+                            <th>Commission (<?= $commission_rate ?>%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($orders as $order): 
+                            $customer = get_userdata($order->get_customer_id());
+                            $commission = $order->get_total() * $commission_rate / 100;
+                        ?>
+                        <tr>
+                            <td>#<?= $order->get_id() ?></td>
+                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                            <td><?= $order->get_date_created()->format('Y-m-d') ?></td>
+                            <td><?= $order->get_formatted_order_total() ?></td>
+                            <td style="font-weight: bold; color: #10b981;"><?= wc_price($commission) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 function sa_render_new_order_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
     }
-    echo '<h1>New Order - Implementation in progress</h1>';
+    
+    $customer_id = intval(get_query_var('customer_id'));
+    $customer = get_userdata($customer_id);
+    
+    if (!$customer) {
+        wp_die('Customer not found');
+    }
+    
+    // Verify agent has access to this customer
+    $user = wp_get_current_user();
+    if (!current_user_can('administrator')) {
+        $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        if ($assigned_agent != $user->ID) {
+            wp_die('Access denied to this customer');
+        }
+    }
+    
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - New Order</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
+            .header h1 { font-size: 24px; }
+            .header .user { display: flex; align-items: center; gap: 15px; }
+            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
+            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
+            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
+            .btn:hover { background: #5568d3; }
+            .btn-secondary { background: #6b7280; }
+            .btn-secondary:hover { background: #4b5563; }
+            .alert { padding: 15px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; margin-bottom: 20px; color: #92400e; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><?= esc_html($panel_title) ?></h1>
+            <div class="user">
+                <span><?= esc_html($user->display_name) ?></span>
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+            </div>
+        </div>
+        
+        <div class="nav">
+            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+        </div>
+        
+        <div class="container">
+            <div style="margin-bottom: 20px;">
+                <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
+            </div>
+            
+            <div class="card">
+                <h2>Create New Order for <?= esc_html($customer->display_name) ?></h2>
+                
+                <div class="alert">
+                    <strong><i class="fa-solid fa-info-circle"></i> Order Creation</strong><br>
+                    Advanced order creation interface with product search will be available in a future update. 
+                    For now, please use WooCommerce admin or contact administrator to create orders.
+                </div>
+                
+                <p style="color: #6b7280;">Customer: <strong><?= esc_html($customer->display_name) ?></strong></p>
+                <p style="color: #6b7280;">Email: <strong><?= esc_html($customer->user_email) ?></strong></p>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }
 
 /**

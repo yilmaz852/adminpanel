@@ -9823,6 +9823,16 @@ function sa_search_products_callback() {
     $term = sanitize_text_field($_GET['term'] ?? '');
     $cid = isset($_GET['customer_id']) ? intval($_GET['customer_id']) : 0;
     
+    // Security: Verify agent has access to this customer
+    if ($cid > 0 && !current_user_can('administrator')) {
+        $agent_id = get_current_user_id();
+        $customer_agent = get_user_meta($cid, 'bagli_agent_id', true);
+        
+        if ($customer_agent != $agent_id) {
+            wp_send_json_error('Access denied to this customer');
+        }
+    }
+    
     $old_user = get_current_user_id();
     if ($cid > 0) wp_set_current_user($cid);
 
@@ -9877,6 +9887,17 @@ function sa_get_order_details_callback() {
         wp_send_json_error('Order not found');
     }
     
+    // Security: Verify agent has access to this order's customer
+    if (!current_user_can('administrator')) {
+        $agent_id = get_current_user_id();
+        $customer_id = $order->get_customer_id();
+        $customer_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        
+        if ($customer_agent != $agent_id) {
+            wp_send_json_error('Access denied to this order');
+        }
+    }
+    
     $items = [];
     foreach ($order->get_items() as $item) {
         $items[] = [
@@ -9906,6 +9927,16 @@ function sa_get_unpaid_orders_callback() {
     if (!current_user_can('view_sales_panel')) wp_die();
     
     $cid = intval($_GET['customer_id'] ?? 0);
+    
+    // Security: Verify agent has access to this customer
+    if ($cid > 0 && !current_user_can('administrator')) {
+        $agent_id = get_current_user_id();
+        $customer_agent = get_user_meta($cid, 'bagli_agent_id', true);
+        
+        if ($customer_agent != $agent_id) {
+            wp_send_json_error('Access denied to this customer');
+        }
+    }
     
     $unpaid_statuses = ['pending', 'on-hold', 'failed'];
     

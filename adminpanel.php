@@ -9226,3 +9226,191 @@ function b2b_page_view_support_ticket() {
 }
 
 // End of B2B Support Ticket Module - Menu items added directly in sidebar HTML above
+
+/* =====================================================
+   SALES AGENT SYSTEM INTEGRATION (V1.0)
+===================================================== */
+
+/**
+ * PHASE 1: ROLES & ROUTING
+ * Add sales agent/manager roles and URL routing
+ */
+
+// Add sales agent roles and capabilities in init
+add_action('init', function () {
+    // Create sales agent roles if they don't exist
+    if (!get_role('sales_agent')) {
+        add_role('sales_agent', 'Sales Agent', ['read' => true]);
+    }
+    
+    if (!get_role('sales_manager')) {
+        add_role('sales_manager', 'Sales Manager', ['read' => true]);
+    }
+
+    // Add capabilities to sales roles and administrator
+    $roles = ['sales_agent', 'sales_manager', 'administrator'];
+    foreach ($roles as $role_name) {
+        $role = get_role($role_name);
+        if ($role) {
+            $role->add_cap('view_sales_panel');
+            $role->add_cap('switch_to_customer');
+            $role->add_cap('create_sales_order');
+        }
+    }
+
+    // Add sales panel URL rewrite rules
+    add_rewrite_rule('^sales-login/?$', 'index.php?sales_login=1', 'top');
+    add_rewrite_rule('^sales-panel/?$', 'index.php?sales_panel=dashboard', 'top');
+    add_rewrite_rule('^sales-panel/dashboard/?$', 'index.php?sales_panel=dashboard', 'top');
+    add_rewrite_rule('^sales-panel/customers/?$', 'index.php?sales_panel=customers', 'top');
+    add_rewrite_rule('^sales-panel/customer/([0-9]+)/?$', 'index.php?sales_panel=customer_detail&customer_id=$matches[1]', 'top');
+    add_rewrite_rule('^sales-panel/orders/?$', 'index.php?sales_panel=orders', 'top');
+    add_rewrite_rule('^sales-panel/commissions/?$', 'index.php?sales_panel=commissions', 'top');
+    add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
+
+    // Flush rewrite rules once
+    if (!get_option('sales_agent_flush_v1')) {
+        flush_rewrite_rules();
+        update_option('sales_agent_flush_v1', true);
+    }
+}, 20); // Run after main b2b panel init
+
+// Add query vars for sales panel
+add_filter('query_vars', function ($vars) {
+    $vars[] = 'sales_login';
+    $vars[] = 'sales_panel';
+    $vars[] = 'customer_id';
+    return $vars;
+}, 20);
+
+// Role-based redirect logic
+add_action('template_redirect', function () {
+    $sales_login = get_query_var('sales_login');
+    $sales_panel = get_query_var('sales_panel');
+    
+    // If accessing sales panel pages
+    if ($sales_login || $sales_panel) {
+        // Check if user has sales panel access
+        if (!current_user_can('view_sales_panel')) {
+            // Redirect non-authorized users to sales login
+            if (!$sales_login) {
+                wp_redirect(home_url('/sales-login'));
+                exit;
+            }
+        }
+        
+        // Route to appropriate page
+        if ($sales_login) {
+            sa_render_login_page();
+            exit;
+        }
+        
+        if ($sales_panel) {
+            switch ($sales_panel) {
+                case 'dashboard':
+                    sa_render_dashboard_page();
+                    break;
+                case 'customers':
+                    sa_render_customers_page();
+                    break;
+                case 'customer_detail':
+                    sa_render_customer_detail_page();
+                    break;
+                case 'orders':
+                    sa_render_orders_page();
+                    break;
+                case 'commissions':
+                    sa_render_commissions_page();
+                    break;
+                case 'new-order':
+                    sa_render_new_order_page();
+                    break;
+                default:
+                    sa_render_dashboard_page();
+            }
+            exit;
+        }
+    }
+}, 25);
+
+// Redirect sales agents to their panel (not admin dashboard)
+add_action('admin_init', function () {
+    if (defined('DOING_AJAX') && DOING_AJAX) return;
+    
+    $user = wp_get_current_user();
+    $roles = (array) $user->roles;
+    
+    // If user is sales agent or sales manager (but not admin), redirect to sales panel
+    if ((in_array('sales_agent', $roles) || in_array('sales_manager', $roles)) 
+        && !in_array('administrator', $roles)) {
+        wp_redirect(home_url('/sales-panel'));
+        exit;
+    }
+});
+
+// Hide admin bar for sales agents
+add_action('after_setup_theme', function () {
+    $user = wp_get_current_user();
+    $roles = (array) $user->roles;
+    
+    if ((in_array('sales_agent', $roles) || in_array('sales_manager', $roles)) 
+        && !in_array('administrator', $roles)) {
+        show_admin_bar(false);
+    }
+});
+
+/**
+ * PLACEHOLDER FUNCTIONS FOR SALES PANEL PAGES
+ * These will be implemented in subsequent phases
+ */
+
+function sa_render_login_page() {
+    echo '<h1>Sales Login Page - Coming Soon</h1>';
+    echo '<p>This page will be implemented in Phase 3.</p>';
+}
+
+function sa_render_dashboard_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    echo '<h1>Sales Dashboard - Coming Soon</h1>';
+    echo '<p>This page will be implemented in Phase 3.</p>';
+    echo '<p>User: ' . wp_get_current_user()->display_name . '</p>';
+}
+
+function sa_render_customers_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    echo '<h1>Sales Customers - Coming Soon</h1>';
+}
+
+function sa_render_customer_detail_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    echo '<h1>Customer Detail - Coming Soon</h1>';
+}
+
+function sa_render_orders_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    echo '<h1>Sales Orders - Coming Soon</h1>';
+}
+
+function sa_render_commissions_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    echo '<h1>Sales Commissions - Coming Soon</h1>';
+}
+
+function sa_render_new_order_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    echo '<h1>New Order - Coming Soon</h1>';
+}
+
+// End of Sales Agent System Phase 1

@@ -9624,89 +9624,180 @@ function sa_render_login_page() {
     // Handle login
     if (isset($_POST['sa_login'])) {
         $creds = [
-            'user_login' => sanitize_text_field($_POST['username']),
-            'user_password' => $_POST['password'],
-            'remember' => isset($_POST['remember'])
+            'user_login' => sanitize_text_field($_POST['log']),
+            'user_password' => $_POST['pwd'],
+            'remember' => true
         ];
         
-        $user = wp_signon($creds, false);
+        $user = wp_signon($creds, is_ssl());
         
         if (!is_wp_error($user)) {
-            // Set current user and refresh to get latest capabilities
-            wp_set_current_user($user->ID);
-            
-            // Check if user has sales panel access or is sales agent/manager
-            $user_roles = (array) $user->roles;
-            $has_access = current_user_can('view_sales_panel') || 
-                          in_array('sales_agent', $user_roles) || 
-                          in_array('sales_manager', $user_roles) ||
-                          in_array('administrator', $user_roles);
-            
-            if ($has_access) {
-                wp_redirect(home_url('/sales-panel'));
-                exit;
-            } else {
-                wp_logout();
-                $error = 'You do not have access to the sales panel.';
-            }
+            wp_redirect(home_url('/sales-panel'));
+            exit;
         } else {
-            $error = 'Invalid username or password.';
+            $err = 'Invalid username or password.';
         }
     }
     
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
     ?>
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title><?= esc_html($panel_title) ?> - Login</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Agent Login | Sales Panel</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
-            * { margin:0; padding:0; box-sizing:border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; align-items: center; justify-content: center; }
-            .login-box { background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 100%; max-width: 400px; padding: 40px; }
-            .login-box h1 { font-size: 28px; margin-bottom: 10px; color: #1f2937; }
-            .login-box p { color: #6b7280; margin-bottom: 30px; }
-            .form-group { margin-bottom: 20px; }
-            .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px; }
-            .form-group input { width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: border 0.3s; }
-            .form-group input:focus { outline: none; border-color: #667eea; }
-            .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
-            .remember input { width: auto; }
-            .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
-            .btn:hover { transform: translateY(-2px); }
-            .error { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+            :root {
+                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                --primary: #10b981; /* Sales Green */
+                --glass: rgba(255, 255, 255, 0.05);
+                --border: rgba(255, 255, 255, 0.1);
+                --text: #ffffff;
+                --text-muted: #94a3b8;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            body {
+                font-family: 'Outfit', sans-serif;
+                background: var(--bg-gradient);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+            }
+
+            /* Background FX */
+            .bg-shape {
+                position: absolute;
+                border-radius: 50%;
+                filter: blur(80px);
+                z-index: -1;
+                opacity: 0.4;
+            }
+            .shape-1 { width: 300px; height: 300px; background: var(--primary); top: -50px; left: -50px; }
+            .shape-2 { width: 250px; height: 250px; background: #059669; bottom: -50px; right: -50px; }
+
+            /* Login Card */
+            .login-card {
+                background: var(--glass);
+                border: 1px solid var(--border);
+                padding: 40px 30px;
+                border-radius: 20px;
+                width: 100%;
+                max-width: 360px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                text-align: center;
+            }
+
+            .icon-box {
+                width: 60px;
+                height: 60px;
+                background: rgba(16, 185, 129, 0.1);
+                color: var(--primary);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                margin: 0 auto 20px;
+                border: 1px solid rgba(16, 185, 129, 0.3);
+            }
+
+            h2 { font-size: 1.5rem; margin-bottom: 5px; font-weight: 700; }
+            p.sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 30px; }
+
+            /* Inputs */
+            .input-group { margin-bottom: 15px; text-align: left; }
+            label { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 5px; margin-left: 5px;}
+            
+            input {
+                width: 100%;
+                padding: 12px 15px;
+                background: rgba(0, 0, 0, 0.2);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                color: #fff;
+                font-family: inherit;
+                font-size: 0.95rem;
+                transition: 0.3s;
+            }
+            input:focus {
+                outline: none;
+                border-color: var(--primary);
+                background: rgba(0, 0, 0, 0.3);
+                box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            }
+            input::placeholder { color: rgba(255, 255, 255, 0.3); }
+
+            /* Button */
+            button {
+                width: 100%;
+                padding: 12px;
+                margin-top: 10px;
+                background: var(--primary);
+                color: #fff;
+                border: none;
+                border-radius: 10px;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: 0.3s;
+                font-family: inherit;
+            }
+            button:hover {
+                background: #059669;
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            }
+
+            .error-msg {
+                background: rgba(239, 68, 68, 0.1);
+                color: #fca5a5;
+                padding: 10px;
+                border-radius: 8px;
+                font-size: 0.85rem;
+                margin-bottom: 20px;
+                border: 1px solid rgba(239, 68, 68, 0.2);
+            }
         </style>
     </head>
     <body>
-        <div class="login-box">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <p>Sales Agent Login</p>
+
+        <div class="bg-shape shape-1"></div>
+        <div class="bg-shape shape-2"></div>
+
+        <form method="post" class="login-card">
+            <input type="hidden" name="sa_login" value="1">
             
-            <?php if (isset($error)): ?>
-            <div class="error"><?= esc_html($error) ?></div>
+            <div class="icon-box">
+                <i class="fa-solid fa-chart-pie"></i>
+            </div>
+            <h2>Agent Portal</h2>
+            <p class="sub">Log in to track your sales and customers.</p>
+
+            <?php if(isset($err)): ?>
+                <div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> <?= $err ?></div>
             <?php endif; ?>
-            
-            <form method="post">
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" name="username" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" name="password" required>
-                </div>
-                
-                <div class="remember">
-                    <input type="checkbox" name="remember" id="remember">
-                    <label for="remember" style="margin: 0; font-weight: 400;">Remember me</label>
-                </div>
-                
-                <button type="submit" name="sa_login" class="btn">Login</button>
-            </form>
-        </div>
+
+            <div class="input-group">
+                <label>Username / Email</label>
+                <input type="text" name="log" placeholder="agent@company.com" required autocomplete="off">
+            </div>
+
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" name="pwd" placeholder="••••••••" required>
+            </div>
+
+            <button type="submit">Login <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
+        </form>
+
     </body>
     </html>
     <?php

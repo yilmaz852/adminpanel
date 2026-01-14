@@ -9895,17 +9895,40 @@ function sa_render_customers_page() {
         
         <div class="container">
             <div class="card">
-                <h2>My Customers</h2>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                    <h2 style="margin:0;">My Customers</h2>
+                    <div style="position:relative;">
+                        <button class="btn btn-light" onclick="toggleColumnDropdown()" style="padding:8px 12px;">
+                            <i class="fa-solid fa-columns"></i> Columns
+                        </button>
+                        <div id="columnDropdown" style="display:none;position:absolute;top:100%;right:0;background:white;border:1px solid #e5e7eb;box-shadow:0 4px 6px rgba(0,0,0,0.1);border-radius:8px;padding:10px;min-width:150px;z-index:10;margin-top:5px;">
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-email', this)"> Email
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-phone', this)"> Phone
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-company', this)"> Company
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-spent', this)"> Total Spent
+                            </label>
+                        </div>
+                    </div>
+                </div>
                 <?php if (empty($customers)): ?>
                     <p style="color: #6b7280; padding: 20px; text-align: center;">No customers assigned yet.</p>
                 <?php else: ?>
+                <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
                             <th>Customer Name</th>
-                            <th>Email</th>
-                            <th>Phone</th>
-                            <th>Company</th>
+                            <th class="col-email">Email</th>
+                            <th class="col-phone">Phone</th>
+                            <th class="col-company">Company</th>
+                            <th class="col-spent">Total Spent</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -9913,22 +9936,93 @@ function sa_render_customers_page() {
                         <?php foreach ($customers as $customer): 
                             $phone = get_user_meta($customer->ID, 'billing_phone', true);
                             $company = get_user_meta($customer->ID, 'billing_company', true);
+                            $spent = wc_get_customer_total_spent($customer->ID);
+                            $order_url = home_url('/sales-panel/new-order/' . $customer->ID);
+                            $switch_url = wp_nonce_url(add_query_arg('switch_customer', $customer->ID, home_url()), 'switch_customer');
                         ?>
                         <tr>
-                            <td><?= esc_html($customer->display_name) ?></td>
-                            <td><?= esc_html($customer->user_email) ?></td>
-                            <td><?= $phone ? esc_html($phone) : '-' ?></td>
-                            <td><?= $company ? esc_html($company) : '-' ?></td>
-                            <td>
-                                <a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" class="btn">View</a>
+                            <td><strong><a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#667eea;text-decoration:none;"><?= esc_html($customer->display_name) ?></a></strong></td>
+                            <td class="col-email"><?= esc_html($customer->user_email) ?></td>
+                            <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
+                            <td class="col-company"><?= $company ? esc_html($company) : '-' ?></td>
+                            <td class="col-spent"><strong><?= wc_price($spent) ?></strong></td>
+                            <td style="white-space:nowrap;">
+                                <a href="<?= $order_url ?>" class="btn" title="Create Order" style="background:#10b981;margin-right:5px;">
+                                    <i class="fa-solid fa-plus"></i> Order
+                                </a>
+                                <button class="btn btn-warning" onclick="openUnpaidModal(<?= $customer->ID ?>)" title="View Unpaid Orders" style="margin-right:5px;">
+                                    <i class="fa-solid fa-file-invoice-dollar"></i> Unpaid
+                                </button>
+                                <a href="<?= $switch_url ?>" class="btn" title="Login as Customer" style="background:#f59e0b;">
+                                    <i class="fa-solid fa-right-to-bracket"></i> Login
+                                </a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
                 <?php endif; ?>
             </div>
         </div>
+        
+        <!-- Unpaid Orders Modal -->
+        <div id="unpaidModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+            <div style="background:white;margin:5% auto;padding:20px;width:90%;max-width:700px;border-radius:12px;position:relative;">
+                <span onclick="document.getElementById('unpaidModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+                <h2 style="margin:0 0 20px 0;">Unpaid Orders</h2>
+                <div id="unpaid-body">Loading...</div>
+            </div>
+        </div>
+        
+        <script>
+        function toggleColumnDropdown() {
+            const dropdown = document.getElementById('columnDropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        function toggleColumn(className, checkbox) {
+            const elements = document.getElementsByClassName(className);
+            for (let el of elements) {
+                el.style.display = checkbox.checked ? '' : 'none';
+            }
+        }
+        
+        function openUnpaidModal(customerId) {
+            document.getElementById('unpaidModal').style.display = 'block';
+            document.getElementById('unpaid-body').innerHTML = 'Loading...';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>?action=sa_get_unpaid_orders&customer_id=' + customerId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('unpaid-body').innerHTML = data.data;
+                    } else {
+                        document.getElementById('unpaid-body').innerHTML = 'Error loading data.';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('unpaid-body').innerHTML = 'Error: ' + error;
+                });
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('unpaidModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('columnDropdown');
+            const target = event.target;
+            if (!target.closest('.btn-light') && dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            }
+        });
+        </script>
     </body>
     </html>
     <?php
@@ -11023,6 +11117,62 @@ add_action('woocommerce_admin_order_data_after_order_details', function($order){
     $agent = $order->get_meta('_sales_agent_name');
     if($agent) {
         echo '<p class="form-field form-field-wide"><strong>Sales Agent:</strong> ' . esc_html($agent) . '</p>';
+    }
+});
+
+// Customer Switch Functionality
+add_action('init', function () {
+    // Switch to customer
+    if (isset($_GET['switch_customer']) && current_user_can('switch_to_customer')) {
+        check_admin_referer('switch_customer');
+        $target_id = intval($_GET['switch_customer']);
+        $agent_id = get_current_user_id();
+        
+        // Verify agent has access to this customer
+        $assigned_agent = get_user_meta($target_id, 'bagli_agent_id', true);
+        if ($assigned_agent != $agent_id && !current_user_can('administrator')) {
+            wp_die('Access denied to this customer');
+        }
+        
+        // Store agent ID in cookie to switch back
+        setcookie('sa_switch_back', $agent_id, time() + 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        
+        // Switch to customer
+        wp_destroy_current_session();
+        wp_clear_auth_cookie();
+        wp_set_current_user($target_id);
+        wp_set_auth_cookie($target_id);
+        
+        wp_redirect(home_url());
+        exit;
+    }
+    
+    // Switch back to agent
+    if (isset($_GET['switch_back']) && isset($_COOKIE['sa_switch_back'])) {
+        check_admin_referer('switch_back');
+        $agent_id = intval($_COOKIE['sa_switch_back']);
+        
+        // Clear cookie
+        setcookie('sa_switch_back', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        
+        // Switch back to agent
+        wp_destroy_current_session();
+        wp_clear_auth_cookie();
+        wp_set_current_user($agent_id);
+        wp_set_auth_cookie($agent_id);
+        
+        wp_redirect(home_url('/sales-panel'));
+        exit;
+    }
+}, 5);
+
+// Display "Back to Panel" button when switched
+add_action('wp_footer', function () {
+    if (is_user_logged_in() && isset($_COOKIE['sa_switch_back'])) {
+        $switch_back_url = wp_nonce_url(add_query_arg('switch_back', '1', home_url()), 'switch_back');
+        echo '<a href="' . esc_url($switch_back_url) . '" style="position:fixed;bottom:20px;right:20px;background:#000;color:#fff;padding:15px 20px;border-radius:30px;z-index:9999;box-shadow:0 4px 10px rgba(0,0,0,0.3);text-decoration:none;font-weight:600;font-family:Inter,sans-serif;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Sales Panel
+        </a>';
     }
 });
 

@@ -9318,6 +9318,143 @@ add_action('template_redirect', function () {
             }
         }
         
+        // Handle order creation form submission
+        if ($sales_panel === 'new-order' && isset($_POST['sa_create_order'])) {
+            $customer_id = intval($_POST['customer_id']);
+            
+            // Verify nonce
+            if (!wp_verify_nonce($_POST['sa_order_nonce'], 'sa_create_order_' . $customer_id)) {
+                wp_die('Security check failed');
+            }
+            
+            // Verify agent has access
+            $agent = wp_get_current_user();
+            if (!current_user_can('administrator')) {
+                $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+                if ($assigned_agent != $agent->ID) {
+                    wp_die('Access denied to this customer');
+                }
+            }
+            
+            // Process order creation
+            $products = $_POST['products'] ?? [];
+            $qtys = $_POST['qtys'] ?? [];
+            $prices = $_POST['prices'] ?? [];
+            $assemblies = $_POST['assembly_selected'] ?? [];
+            $assembly_costs = $_POST['assembly_costs'] ?? [];
+            $fee_amount = floatval($_POST['extra_fee'] ?? 0);
+            $fee_name = sanitize_text_field($_POST['extra_fee_name'] ?? 'Service Fee');
+            $payment_method = sanitize_text_field($_POST['payment_method'] ?? 'bacs');
+            $order_note = sanitize_textarea_field($_POST['order_note'] ?? '');
+            $shipping_cost = floatval($_POST['shipping_cost'] ?? 0);
+            $po_number = sanitize_text_field($_POST['po_number'] ?? '');
+            
+            if (!empty($products)) {
+                // Switch to customer context for pricing
+                $old_user = get_current_user_id();
+                wp_set_current_user($customer_id);
+                
+                // Create order
+                $order = wc_create_order(['customer_id' => $customer_id]);
+                $cust = new WC_Customer($customer_id);
+                
+                // Set addresses
+                $billing = [
+                    'first_name' => $cust->get_billing_first_name() ?: $cust->get_first_name(),
+                    'last_name' => $cust->get_billing_last_name() ?: $cust->get_last_name(),
+                    'email' => $cust->get_billing_email() ?: $cust->get_email(),
+                    'phone' => $cust->get_billing_phone(),
+                    'address_1' => $cust->get_billing_address_1(),
+                    'city' => $cust->get_billing_city(),
+                    'state' => $cust->get_billing_state(),
+                    'postcode' => $cust->get_billing_postcode(),
+                    'country' => $cust->get_billing_country()
+                ];
+                $order->set_address($billing, 'billing');
+                $order->set_address($billing, 'shipping');
+                
+                // Set agent meta
+                $order->update_meta_data('_sales_agent_id', $agent->ID);
+                $order->update_meta_data('_sales_agent_name', $agent->display_name);
+                
+                if ($po_number) {
+                    $order->update_meta_data('billing_business_name', $po_number);
+                }
+                
+                if ($order_note) {
+                    $order->set_customer_note($order_note);
+                }
+                
+                $order->set_payment_method($payment_method);
+                
+                // Add products
+                $total_assembly_fee = 0;
+                foreach ($products as $k => $pid) {
+                    $qty = intval($qtys[$k]);
+                    $unit_price = isset($prices[$k]) ? floatval($prices[$k]) : 0;
+                    
+                    if ($qty > 0 && $pid && $unit_price > 0) {
+                        $prod = wc_get_product($pid);
+                        $item_id = $order->add_product($prod, $qty, [
+                            'subtotal' => $unit_price * $qty,
+                            'total' => $unit_price * $qty
+                        ]);
+                        
+                        $item = $order->get_item($item_id);
+                        if ($item) {
+                            $item->set_subtotal($unit_price * $qty);
+                            $item->set_total($unit_price * $qty);
+                            $item->save();
+                        }
+                        
+                        // Check assembly
+                        if (isset($assemblies[$k]) && $assemblies[$k] == 1) {
+                            $cost_per_item = floatval($assembly_costs[$k]);
+                            $total_assembly_fee += ($cost_per_item * $qty);
+                        }
+                    }
+                }
+                
+                // Add assembly fee
+                if ($total_assembly_fee > 0) {
+                    $fee_assembly = new WC_Order_Item_Fee();
+                    $fee_assembly->set_name('Assembly Fee');
+                    $fee_assembly->set_amount($total_assembly_fee);
+                    $fee_assembly->set_total($total_assembly_fee);
+                    $order->add_item($fee_assembly);
+                }
+                
+                // Add extra fee
+                if ($fee_amount > 0) {
+                    $item_fee = new WC_Order_Item_Fee();
+                    $item_fee->set_name($fee_name);
+                    $item_fee->set_amount($fee_amount);
+                    $item_fee->set_total($fee_amount);
+                    $order->add_item($item_fee);
+                }
+                
+                // Add shipping
+                if ($shipping_cost > 0) {
+                    $item_ship = new WC_Order_Item_Shipping();
+                    $item_ship->set_method_title('Manual Shipping');
+                    $item_ship->set_total($shipping_cost);
+                    $order->add_item($item_ship);
+                }
+                
+                // Calculate totals and save
+                $order->calculate_totals();
+                $order->update_status('pending', 'Created by Agent: ' . $agent->display_name);
+                $order->save();
+                
+                // Switch back to agent
+                wp_set_current_user($old_user);
+                
+                // Redirect to orders page
+                wp_redirect(home_url('/sales-panel/orders'));
+                exit;
+            }
+        }
+        
         // Route to appropriate page
         if ($sales_login) {
             sa_render_login_page();
@@ -9487,89 +9624,180 @@ function sa_render_login_page() {
     // Handle login
     if (isset($_POST['sa_login'])) {
         $creds = [
-            'user_login' => sanitize_text_field($_POST['username']),
-            'user_password' => $_POST['password'],
-            'remember' => isset($_POST['remember'])
+            'user_login' => sanitize_text_field($_POST['log']),
+            'user_password' => $_POST['pwd'],
+            'remember' => true
         ];
         
-        $user = wp_signon($creds, false);
+        $user = wp_signon($creds, is_ssl());
         
         if (!is_wp_error($user)) {
-            // Set current user and refresh to get latest capabilities
-            wp_set_current_user($user->ID);
-            
-            // Check if user has sales panel access or is sales agent/manager
-            $user_roles = (array) $user->roles;
-            $has_access = current_user_can('view_sales_panel') || 
-                          in_array('sales_agent', $user_roles) || 
-                          in_array('sales_manager', $user_roles) ||
-                          in_array('administrator', $user_roles);
-            
-            if ($has_access) {
-                wp_redirect(home_url('/sales-panel'));
-                exit;
-            } else {
-                wp_logout();
-                $error = 'You do not have access to the sales panel.';
-            }
+            wp_redirect(home_url('/sales-panel'));
+            exit;
         } else {
-            $error = 'Invalid username or password.';
+            $err = 'Invalid username or password.';
         }
     }
     
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
     ?>
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title><?= esc_html($panel_title) ?> - Login</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Agent Login | Sales Panel</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
-            * { margin:0; padding:0; box-sizing:border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100vh; display: flex; align-items: center; justify-content: center; }
-            .login-box { background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 100%; max-width: 400px; padding: 40px; }
-            .login-box h1 { font-size: 28px; margin-bottom: 10px; color: #1f2937; }
-            .login-box p { color: #6b7280; margin-bottom: 30px; }
-            .form-group { margin-bottom: 20px; }
-            .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #374151; font-size: 14px; }
-            .form-group input { width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: border 0.3s; }
-            .form-group input:focus { outline: none; border-color: #667eea; }
-            .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
-            .remember input { width: auto; }
-            .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
-            .btn:hover { transform: translateY(-2px); }
-            .error { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+            :root {
+                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                --primary: #10b981; /* Sales Green */
+                --glass: rgba(255, 255, 255, 0.05);
+                --border: rgba(255, 255, 255, 0.1);
+                --text: #ffffff;
+                --text-muted: #94a3b8;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            body {
+                font-family: 'Outfit', sans-serif;
+                background: var(--bg-gradient);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+            }
+
+            /* Background FX */
+            .bg-shape {
+                position: absolute;
+                border-radius: 50%;
+                filter: blur(80px);
+                z-index: -1;
+                opacity: 0.4;
+            }
+            .shape-1 { width: 300px; height: 300px; background: var(--primary); top: -50px; left: -50px; }
+            .shape-2 { width: 250px; height: 250px; background: #059669; bottom: -50px; right: -50px; }
+
+            /* Login Card */
+            .login-card {
+                background: var(--glass);
+                border: 1px solid var(--border);
+                padding: 40px 30px;
+                border-radius: 20px;
+                width: 100%;
+                max-width: 360px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                text-align: center;
+            }
+
+            .icon-box {
+                width: 60px;
+                height: 60px;
+                background: rgba(16, 185, 129, 0.1);
+                color: var(--primary);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                margin: 0 auto 20px;
+                border: 1px solid rgba(16, 185, 129, 0.3);
+            }
+
+            h2 { font-size: 1.5rem; margin-bottom: 5px; font-weight: 700; }
+            p.sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 30px; }
+
+            /* Inputs */
+            .input-group { margin-bottom: 15px; text-align: left; }
+            label { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 5px; margin-left: 5px;}
+            
+            input {
+                width: 100%;
+                padding: 12px 15px;
+                background: rgba(0, 0, 0, 0.2);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                color: #fff;
+                font-family: inherit;
+                font-size: 0.95rem;
+                transition: 0.3s;
+            }
+            input:focus {
+                outline: none;
+                border-color: var(--primary);
+                background: rgba(0, 0, 0, 0.3);
+                box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            }
+            input::placeholder { color: rgba(255, 255, 255, 0.3); }
+
+            /* Button */
+            button {
+                width: 100%;
+                padding: 12px;
+                margin-top: 10px;
+                background: var(--primary);
+                color: #fff;
+                border: none;
+                border-radius: 10px;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: 0.3s;
+                font-family: inherit;
+            }
+            button:hover {
+                background: #059669;
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            }
+
+            .error-msg {
+                background: rgba(239, 68, 68, 0.1);
+                color: #fca5a5;
+                padding: 10px;
+                border-radius: 8px;
+                font-size: 0.85rem;
+                margin-bottom: 20px;
+                border: 1px solid rgba(239, 68, 68, 0.2);
+            }
         </style>
     </head>
     <body>
-        <div class="login-box">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <p>Sales Agent Login</p>
+
+        <div class="bg-shape shape-1"></div>
+        <div class="bg-shape shape-2"></div>
+
+        <form method="post" class="login-card">
+            <input type="hidden" name="sa_login" value="1">
             
-            <?php if (isset($error)): ?>
-            <div class="error"><?= esc_html($error) ?></div>
+            <div class="icon-box">
+                <i class="fa-solid fa-chart-pie"></i>
+            </div>
+            <h2>Agent Portal</h2>
+            <p class="sub">Log in to track your sales and customers.</p>
+
+            <?php if(isset($err)): ?>
+                <div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> <?= $err ?></div>
             <?php endif; ?>
-            
-            <form method="post">
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" name="username" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" name="password" required>
-                </div>
-                
-                <div class="remember">
-                    <input type="checkbox" name="remember" id="remember">
-                    <label for="remember" style="margin: 0; font-weight: 400;">Remember me</label>
-                </div>
-                
-                <button type="submit" name="sa_login" class="btn">Login</button>
-            </form>
-        </div>
+
+            <div class="input-group">
+                <label>Username / Email</label>
+                <input type="text" name="log" placeholder="agent@company.com" required autocomplete="off">
+            </div>
+
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" name="pwd" placeholder="••••••••" required>
+            </div>
+
+            <button type="submit">Login <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
+        </form>
+
     </body>
     </html>
     <?php
@@ -9588,7 +9816,7 @@ function sa_render_dashboard_page() {
     // Get dashboard data
     $summary = sa_get_dashboard_summary($user->ID, $alert_days);
     
-    // Sales Panel Header
+    // Sales Panel with Sidebar Navigation
     ?>
     <!DOCTYPE html>
     <html>
@@ -9600,14 +9828,27 @@ function sa_render_dashboard_page() {
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
+            
+            /* Sidebar Styles */
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
+            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
+            .sidebar-nav { padding: 20px 0; }
+            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
+            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar-nav a.active { background: #4f46e5; color: white; }
+            .sidebar-nav a i { width: 20px; margin-right: 12px; }
+            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+            
+            /* Mobile Toggle */
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            
+            /* Main Content */
+            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
+            
+            /* Dashboard Cards */
             .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
             .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
             .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
@@ -9618,27 +9859,51 @@ function sa_render_dashboard_page() {
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
-            .btn:hover { background: #5568d3; }
+            
+            /* Mobile Responsive */
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main-content { margin-left: 0; padding: 80px 20px 20px; }
+            }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+        <!-- Mobile Toggle Button -->
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><?= esc_html($panel_title) ?></h1>
+                <div class="user-name"><?= esc_html($user->display_name) ?></div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="<?= home_url('/sales-panel/customers') ?>">
+                    <i class="fa-solid fa-users"></i> My Customers
+                </a>
+                <a href="<?= home_url('/sales-panel/orders') ?>">
+                    <i class="fa-solid fa-shopping-cart"></i> Orders
+                </a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>">
+                    <i class="fa-solid fa-dollar-sign"></i> Reports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
+                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
+                </a>
             </div>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
-        </div>
-        
-        <div class="container">
+        <!-- Main Content -->
+        <div class="main-content">
             <div class="stats">
                 <div class="stat-card">
                     <h3>Total Customers</h3>
@@ -9698,14 +9963,37 @@ function sa_render_customers_page() {
     
     $user = wp_get_current_user();
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $is_manager = in_array('sales_manager', (array) $user->roles);
     
     // Get agent's customers
     global $wpdb;
     $agent_id = $user->ID;
-    $customer_ids = $wpdb->get_col($wpdb->prepare(
-        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
-        $agent_id
-    ));
+    
+    // If sales manager, get all customers from subordinate agents
+    if ($is_manager) {
+        // Get all sales agents who have this manager assigned
+        $agent_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_manager_id' AND meta_value = %d",
+            $agent_id
+        ));
+        
+        // If there are subordinate agents, get their customers
+        if (!empty($agent_ids)) {
+            $placeholders = implode(',', array_fill(0, count($agent_ids), '%d'));
+            $customer_ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value IN ($placeholders)",
+                ...$agent_ids
+            ));
+        } else {
+            $customer_ids = [];
+        }
+    } else {
+        // Regular agent - get only their own customers
+        $customer_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+            $agent_id
+        ));
+    }
     
     $customers = [];
     if (!empty($customer_ids)) {
@@ -9717,58 +10005,102 @@ function sa_render_customers_page() {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Customers</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .table-responsive { overflow-x: auto; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
-            .btn:hover { background: #5568d3; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+            .btn-success { background: #10b981; color: #fff; }
+            .btn-warning { background: #f59e0b; color: #fff; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .col-toggle { position: relative; display: inline-block; }
+            .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+            .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; }
+            .col-dropdown.show { display: block; }
+            .col-dropdown label { display: block; padding: 5px 0; cursor: pointer; }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
-            </div>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
-        </div>
-        
-        <div class="container">
+        <div class="main">
             <div class="card">
-                <h2>My Customers</h2>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                    <h2 style="margin:0;">My Customers</h2>
+                    <div style="position:relative;">
+                        <button class="btn btn-light" onclick="toggleColumnDropdown()" style="padding:8px 12px;">
+                            <i class="fa-solid fa-columns"></i> Columns
+                        </button>
+                        <div id="columnDropdown" style="display:none;position:absolute;top:100%;right:0;background:white;border:1px solid #e5e7eb;box-shadow:0 4px 6px rgba(0,0,0,0.1);border-radius:8px;padding:10px;min-width:150px;z-index:10;margin-top:5px;">
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-email', this)"> Email
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-phone', this)"> Phone
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-company', this)"> Company
+                            </label>
+                            <?php if ($is_manager): ?>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-agent', this)"> Assigned Agent
+                            </label>
+                            <?php endif; ?>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-spent', this)"> Total Spent
+                            </label>
+                        </div>
+                    </div>
+                </div>
                 <?php if (empty($customers)): ?>
                     <p style="color: #6b7280; padding: 20px; text-align: center;">No customers assigned yet.</p>
                 <?php else: ?>
+                <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
                             <th>Customer Name</th>
-                            <th>Email</th>
-                            <th>Phone</th>
-                            <th>Company</th>
+                            <th class="col-email">Email</th>
+                            <th class="col-phone">Phone</th>
+                            <th class="col-company">Company</th>
+                            <?php if ($is_manager): ?>
+                            <th class="col-agent">Assigned Agent</th>
+                            <?php endif; ?>
+                            <th class="col-spent">Total Spent</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -9776,22 +10108,101 @@ function sa_render_customers_page() {
                         <?php foreach ($customers as $customer): 
                             $phone = get_user_meta($customer->ID, 'billing_phone', true);
                             $company = get_user_meta($customer->ID, 'billing_company', true);
+                            $spent = wc_get_customer_total_spent($customer->ID);
+                            $assigned_agent_id = get_user_meta($customer->ID, 'bagli_agent_id', true);
+                            $agent_name = $assigned_agent_id ? get_userdata($assigned_agent_id)->display_name : '-';
+                            $order_url = home_url('/sales-panel/new-order/' . $customer->ID);
+                            $switch_url = wp_nonce_url(add_query_arg('switch_customer', $customer->ID, home_url()), 'switch_customer');
                         ?>
                         <tr>
-                            <td><?= esc_html($customer->display_name) ?></td>
-                            <td><?= esc_html($customer->user_email) ?></td>
-                            <td><?= $phone ? esc_html($phone) : '-' ?></td>
-                            <td><?= $company ? esc_html($company) : '-' ?></td>
                             <td>
-                                <a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" class="btn">View</a>
+                                <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
+                                <strong><a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;"><?= esc_html($customer->display_name) ?></a></strong>
+                            </td>
+                            <td class="col-email"><?= esc_html($customer->user_email) ?></td>
+                            <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
+                            <td class="col-company"><?= $company ? esc_html($company) : '-' ?></td>
+                            <?php if ($is_manager): ?>
+                            <td class="col-agent"><strong style="color:#4f46e5;"><?= esc_html($agent_name) ?></strong></td>
+                            <?php endif; ?>
+                            <td class="col-spent"><strong><?= wc_price($spent) ?></strong></td>
+                            <td style="white-space:nowrap;">
+                                <a href="<?= $order_url ?>" class="btn" title="Create Order" style="background:#10b981;margin-right:5px;">
+                                    <i class="fa-solid fa-plus"></i> Order
+                                </a>
+                                <button class="btn btn-warning" onclick="openUnpaidModal(<?= $customer->ID ?>)" title="View Unpaid Orders" style="margin-right:5px;">
+                                    <i class="fa-solid fa-file-invoice-dollar"></i> Unpaid
+                                </button>
+                                <a href="<?= $switch_url ?>" class="btn" title="Login as Customer" style="background:#6366f1;">
+                                    <i class="fa-solid fa-right-to-bracket"></i> Login
+                                </a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
                 <?php endif; ?>
             </div>
         </div>
+        
+        <!-- Unpaid Orders Modal -->
+        <div id="unpaidModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+            <div style="background:white;margin:5% auto;padding:20px;width:90%;max-width:700px;border-radius:12px;position:relative;">
+                <span onclick="document.getElementById('unpaidModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+                <h2 style="margin:0 0 20px 0;">Unpaid Orders</h2>
+                <div id="unpaid-body">Loading...</div>
+            </div>
+        </div>
+        
+        <script>
+        function toggleColumnDropdown() {
+            const dropdown = document.getElementById('columnDropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        function toggleColumn(className, checkbox) {
+            const elements = document.getElementsByClassName(className);
+            for (let el of elements) {
+                el.style.display = checkbox.checked ? '' : 'none';
+            }
+        }
+        
+        function openUnpaidModal(customerId) {
+            document.getElementById('unpaidModal').style.display = 'block';
+            document.getElementById('unpaid-body').innerHTML = 'Loading...';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>?action=sa_get_unpaid_orders&customer_id=' + customerId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('unpaid-body').innerHTML = data.data;
+                    } else {
+                        document.getElementById('unpaid-body').innerHTML = 'Error loading data.';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('unpaid-body').innerHTML = 'Error: ' + error;
+                });
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('unpaidModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('columnDropdown');
+            const target = event.target;
+            if (!target.closest('.btn-light') && dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            }
+        });
+        </script>
     </body>
     </html>
     <?php
@@ -9839,14 +10250,26 @@ function sa_render_customer_detail_page() {
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
+            
+            /* Sidebar Styles */
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
+            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
+            .sidebar-nav { padding: 20px 0; }
+            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
+            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar-nav a.active { background: #4f46e5; color: white; }
+            .sidebar-nav a i { width: 20px; margin-right: 12px; }
+            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+            
+            /* Mobile Toggle */
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            
+            /* Main Content */
+            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
+            .container { max-width: 1400px; margin: 0 auto; }
             .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
             .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
@@ -9856,28 +10279,55 @@ function sa_render_customer_detail_page() {
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
-            .btn:hover { background: #5568d3; }
+            .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+            .btn:hover { background: #059669; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
+            
+            /* Mobile Responsive */
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main-content { margin-left: 0; padding: 80px 20px 20px; }
+            }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+        <!-- Mobile Toggle Button -->
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><?= esc_html($panel_title) ?></h1>
+                <div class="user-name"><?= esc_html($user->display_name) ?></div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
+                    <i class="fa-solid fa-users"></i> My Customers
+                </a>
+                <a href="<?= home_url('/sales-panel/orders') ?>">
+                    <i class="fa-solid fa-shopping-cart"></i> Orders
+                </a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>">
+                    <i class="fa-solid fa-dollar-sign"></i> Reports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
+                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
+                </a>
             </div>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
-        </div>
-        
+        <!-- Main Content -->
+        <div class="main-content">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
@@ -9937,6 +10387,7 @@ function sa_render_customer_detail_page() {
                 <?php endif; ?>
             </div>
         </div>
+        </div>
     </body>
     </html>
     <?php
@@ -9958,91 +10409,291 @@ function sa_render_orders_page() {
         $agent_id
     ));
     
-    $orders = [];
-    if (!empty($customer_ids)) {
-        $orders = wc_get_orders([
-            'customer' => $customer_ids,
-            'limit' => 50,
-            'orderby' => 'date',
-            'order' => 'DESC'
-        ]);
+    // Filters
+    $paged = isset($_GET['paged']) ? absint($_GET['paged']) : 1;
+    $per_page = 20;
+    $filters = [
+        'date_after' => $_GET['start_date'] ?? '',
+        'date_before' => $_GET['end_date'] ?? '',
+        'customer' => intval($_GET['filter_customer'] ?? 0)
+    ];
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+    
+    // Build query
+    $query_ids = !empty($customer_ids) ? $customer_ids : [0];
+    if ($filters['customer'] && in_array($filters['customer'], $customer_ids)) {
+        $query_ids = [$filters['customer']];
     }
+    
+    $args = [
+        'customer' => $query_ids,
+        'limit' => $per_page,
+        'page' => $paged,
+        'paginate' => true,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ];
+    
+    if ($filters['date_after']) $args['date_after'] = $filters['date_after'];
+    if ($filters['date_before']) $args['date_before'] = $filters['date_before'];
+    if ($status_filter) $args['status'] = $status_filter;
+    
+    $results = wc_get_orders($args);
+    $orders = $results->orders;
+    $total_pages = $results->max_num_pages;
     
     ?>
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Orders</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .table-responsive { overflow-x: auto; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .btn-warning { background: #f59e0b; color: #fff; }
+            .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+            .badge.completed { background: #dcfce7; color: #166534; }
+            .badge.processing { background: #dbeafe; color: #1e40af; }
+            .badge.pending { background: #fef9c3; color: #854d0e; }
+            .badge.on-hold { background: #fef3c7; color: #92400e; }
+            .badge.cancelled { background: #fee2e2; color: #991b1b; }
+            .badge.failed { background: #fee2e2; color: #991b1b; }
+            .filters-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+            .form-group { flex: 1; min-width: 150px; }
+            .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
+            .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
+            .col-toggle { position: relative; display: inline-block; }
+            .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+            .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; margin-top: 5px; }
+            .col-dropdown.show { display: block; }
+            .col-dropdown label { display: block; padding: 5px 0; cursor: pointer; }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
-            </div>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>" class="active"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>" class="active">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
-        </div>
-        
-        <div class="container">
+        <div class="main">
             <div class="card">
-                <h2>All Orders</h2>
+                <form method="get" class="filters-form">
+                    <input type="hidden" name="sales_panel" value="orders">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" value="<?= esc_attr($filters['date_after']) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" value="<?= esc_attr($filters['date_before']) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Customer</label>
+                        <select name="filter_customer">
+                            <option value="">All Customers</option>
+                            <?php foreach ($customer_ids as $cid): 
+                                $c = get_userdata($cid);
+                                if ($c):
+                            ?>
+                                <option value="<?= $cid ?>" <?= selected($filters['customer'], $cid, false) ?>><?= esc_html($c->display_name) ?></option>
+                            <?php endif; endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="">All Statuses</option>
+                            <?php foreach (wc_get_order_statuses() as $key => $label): ?>
+                                <option value="<?= esc_attr(str_replace('wc-', '', $key)) ?>" <?= selected($status_filter, str_replace('wc-', '', $key), false) ?>><?= esc_html($label) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="btn" style="height: 42px;">Filter</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+                    <h2 style="margin:0;">Orders</h2>
+                    <div class="col-toggle">
+                        <button class="col-toggle-btn" onclick="document.querySelector('.col-dropdown').classList.toggle('show')">
+                            Columns <i class="fa fa-caret-down"></i>
+                        </button>
+                        <div class="col-dropdown">
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-date', this)"> Date</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-po', this)"> PO Number</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-note', this)"> Note</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-status', this)"> Status</label>
+                        </div>
+                    </div>
+                </div>
                 <?php if (empty($orders)): ?>
-                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders found.</p>
                 <?php else: ?>
+                <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
-                            <th>Order #</th>
+                            <th>Order</th>
+                            <th class="col-date">Date</th>
                             <th>Customer</th>
-                            <th>Date</th>
+                            <th class="col-po">PO Number</th>
+                            <th class="col-note">Note</th>
+                            <th class="col-status">Status</th>
                             <th>Total</th>
-                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($orders as $order): 
                             $customer = get_userdata($order->get_customer_id());
+                            $po_number = $order->get_meta('billing_business_name') ?: '-';
+                            $note = $order->get_customer_note();
+                            $note_display = $note ? (mb_strlen($note) > 30 ? mb_substr($note, 0, 30) . '...' : $note) : '-';
+                            
+                            // PDF packing slip link
+                            $pdf_link = '';
+                            if (class_exists('WPO_WCPDF')) {
+                                $nonce = wp_create_nonce('generate_wpo_wcpdf');
+                                $pdf_url = admin_url("admin-ajax.php?action=generate_wpo_wcpdf&document_type=packing-slip&order_ids={$order->get_id()}&_wpnonce={$nonce}");
+                                $pdf_link = '<a href="' . esc_url($pdf_url) . '" class="btn btn-warning" target="_blank" style="padding:8px;margin-left:5px" title="Packing Slip"><i class="fa-solid fa-file-pdf"></i></a>';
+                            }
                         ?>
                         <tr>
-                            <td>#<?= $order->get_id() ?></td>
+                            <td><strong>#<?= $order->get_id() ?></strong></td>
+                            <td class="col-date"><?= $order->get_date_created()->format('d.m.Y') ?></td>
                             <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
-                            <td><?= $order->get_date_created()->format('Y-m-d H:i') ?></td>
-                            <td><?= $order->get_formatted_order_total() ?></td>
-                            <td><?= ucfirst($order->get_status()) ?></td>
+                            <td class="col-po"><?= esc_html($po_number) ?></td>
+                            <td class="col-note" title="<?= esc_attr($note) ?>"><?= esc_html($note_display) ?></td>
+                            <td class="col-status"><span class="badge <?= $order->get_status() ?>"><?= ucfirst($order->get_status()) ?></span></td>
+                            <td><strong><?= $order->get_formatted_order_total() ?></strong></td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-light" onclick="openOrderModal(<?= $order->get_id() ?>)" title="View Details">
+                                    <i class="fa-regular fa-eye"></i> View
+                                </button>
+                                <?= $pdf_link ?>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
+                
+                <?php if ($total_pages > 1): ?>
+                <div class="pagination">
+                    <?php if ($paged > 1): ?>
+                        <a href="?sales_panel=orders&paged=<?= $paged - 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Prev</a>
+                    <?php endif; ?>
+                    <span class="current">Page <?= $paged ?> of <?= $total_pages ?></span>
+                    <?php if ($paged < $total_pages): ?>
+                        <a href="?sales_panel=orders&paged=<?= $paged + 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Next</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
+        
+        <!-- Order Details Modal -->
+        <div id="orderModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+            <div style="background:white;margin:5% auto;padding:20px;width:90%;max-width:800px;border-radius:12px;position:relative;">
+                <span onclick="document.getElementById('orderModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+                <h2 id="modal-title" style="margin:0 0 20px 0;">Order Details</h2>
+                <div id="modal-body">Loading...</div>
+            </div>
+        </div>
+        
+        <script>
+        function toggleColumn(className, checkbox) {
+            const elements = document.getElementsByClassName(className);
+            for (let el of elements) {
+                el.style.display = checkbox.checked ? '' : 'none';
+            }
+        }
+        
+        function openOrderModal(orderId) {
+            document.getElementById('orderModal').style.display = 'block';
+            document.getElementById('modal-body').innerHTML = 'Loading...';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>?action=sa_get_order_details&order_id=' + orderId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const d = data.data;
+                        let items = '<table style="width:100%;border-collapse:collapse;margin-top:10px"><tr><th>Item</th><th>Qty</th><th>Total</th></tr>';
+                        d.items.forEach(i => items += `<tr><td>${i.name}</td><td>${i.qty}</td><td>${i.total}</td></tr>`);
+                        items += '</table>';
+                        
+                        document.getElementById('modal-body').innerHTML = `
+                            <div><strong>PO Number:</strong> ${d.po}</div>
+                            <div><strong>Status:</strong> ${d.status} <span style="float:right">${d.date}</span></div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px">
+                                <div style="background:#f9fafb;padding:10px;font-size:12px"><strong>Billing:</strong><br>${d.billing}</div>
+                                <div style="background:#f9fafb;padding:10px;font-size:12px"><strong>Shipping:</strong><br>${d.shipping}</div>
+                            </div>
+                            ${items}
+                            <h3 style="text-align:right;margin-top:10px">${d.total}</h3>
+                            ${d.notes ? '<div style="background:#fffbeb;padding:10px;margin-top:10px;font-style:italic">Note: ' + d.notes + '</div>' : ''}
+                        `;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('modal-body').innerHTML = 'Error loading order details.';
+                });
+        }
+        
+        window.onclick = function(event) {
+            const modal = document.getElementById('orderModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        document.addEventListener('click', function(event) {
+            const dropdown = document.querySelector('.col-dropdown');
+            const button = document.querySelector('.col-toggle-btn');
+            if (dropdown && button && !event.target.closest('.col-toggle')) {
+                dropdown.classList.remove('show');
+            }
+        });
+        </script>
     </body>
     </html>
     <?php
@@ -10055,131 +10706,250 @@ function sa_render_commissions_page() {
     
     $user = wp_get_current_user();
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
-    $commission_rate = get_option('sales_commission_rate', 3);
-    
-    // Get agent's customers
-    global $wpdb;
     $agent_id = $user->ID;
-    $customer_ids = $wpdb->get_col($wpdb->prepare(
-        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
-        $agent_id
-    ));
     
-    $orders = [];
-    $total_commission = 0;
-    
-    if (!empty($customer_ids)) {
-        $orders = wc_get_orders([
-            'customer' => $customer_ids,
-            'limit' => -1,
-            'status' => ['completed', 'processing']
-        ]);
-        
-        foreach ($orders as $order) {
-            $total_commission += ($order->get_total() * $commission_rate / 100);
-        }
-    }
+    // Filters
+    $start_date = $_GET['start_date'] ?? '2020-01-01';
+    $end_date = $_GET['end_date'] ?? date('Y-m-d');
+    $excluded = $_GET['exclude_status'] ?? [];
+    $paged_comm = isset($_GET['paged']) ? absint($_GET['paged']) : 1;
+    $per_page = 20;
     
     ?>
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title><?= esc_html($panel_title) ?> - Commissions</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Reports</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
-            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-            .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
-            .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .report-grid { grid-template-columns: 1fr !important; }
+            }
             .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            .card h3 { margin-bottom: 20px; color: #1f2937; font-size: 20px; }
+            .report-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
+            .report-card { padding: 20px; border-radius: 12px; color: #fff; text-align: center; }
+            .report-card strong { font-size: 14px; display: block; margin-bottom: 10px; opacity: 0.9; }
+            .report-card div { font-size: 24px; font-weight: bold; margin-top: 5px; }
+            .bg-gross { background: #4f46e5; }
+            .bg-refund { background: #f59e0b; }
+            .bg-net { background: #10b981; }
+            .bg-comm { background: #ec4899; }
+            .filters-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+            .form-group { flex: 1; min-width: 150px; }
+            .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
+            .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; background: var(--primary); color: #fff; }
+            .btn:hover { opacity: 0.9; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>" class="active"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div class="card">
+                <h3>Reports</h3>
+                <form method="get" class="filters-form">
+                    <input type="hidden" name="sales_panel" value="commissions">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" value="<?= esc_attr($start_date) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" value="<?= esc_attr($end_date) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Exclude Status</label>
+                        <select name="exclude_status[]" multiple style="height:42px">
+                            <?php foreach (wc_get_order_statuses() as $k => $v): ?>
+                                <option value="<?= esc_attr($k) ?>" <?= in_array($k, $excluded) ? 'selected' : '' ?>><?= esc_html($v) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="btn" style="height:42px">Generate</button>
+                </form>
             </div>
-        </div>
-        
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>" class="active">Commissions</a>
-        </div>
-        
-        <div class="container">
-            <div class="stats">
-                <div class="stat-card">
-                    <h3>Commission Rate</h3>
-                    <div class="value"><?= number_format($commission_rate, 2) ?>%</div>
+            
+            <?php
+            // Get agent's customers
+            global $wpdb;
+            $agent_customers = get_users(['meta_key' => 'bagli_agent_id', 'meta_value' => $agent_id, 'fields' => 'ID']);
+            $customer_ids = !empty($agent_customers) ? $agent_customers : [0];
+            
+            // Build query args
+            $base_args = [
+                'post_type' => 'shop_order',
+                'post_status' => array_diff(array_keys(wc_get_order_statuses()), $excluded),
+                'date_query' => [[
+                    'after' => $start_date . ' 00:00:00',
+                    'before' => $end_date . ' 23:59:59',
+                    'inclusive' => true
+                ]],
+                'meta_query' => [
+                    'relation' => 'OR',
+                    ['key' => '_sales_agent_id', 'value' => $agent_id],
+                    ['key' => '_customer_user', 'value' => $customer_ids, 'compare' => 'IN']
+                ],
+                'fields' => 'ids',
+                'posts_per_page' => -1
+            ];
+            
+            $all_ids = get_posts($base_args);
+            $gross = 0;
+            $refund = 0;
+            $net = 0;
+            $comm = 0;
+            $rate = (float) get_option('sales_commission_rate', 3);
+            
+            // Calculate totals
+            foreach ($all_ids as $oid) {
+                $o = wc_get_order($oid);
+                if (!$o) continue;
+                
+                $gross += $o->get_total();
+                $i_sub = floatval($o->get_subtotal());
+                $r_sub = 0;
+                
+                foreach (sa_get_refund_ids($oid) as $rid) {
+                    $r_sub += abs(floatval(sa_get_refund_item_totals($rid)['subtotal']));
+                }
+                
+                $n_item = max(0, $i_sub - $r_sub);
+                $refund += $o->get_total_refunded();
+                $net += $n_item;
+                $comm += ($n_item * ($rate / 100));
+            }
+            ?>
+            
+            <div class="report-grid">
+                <div class="report-card bg-gross">
+                    <strong>Gross Sales</strong>
+                    <div><?= wc_price($gross) ?></div>
                 </div>
-                <div class="stat-card">
-                    <h3>Total Orders</h3>
-                    <div class="value"><?= count($orders) ?></div>
+                <div class="report-card bg-refund">
+                    <strong>Refunds</strong>
+                    <div><?= wc_price($refund) ?></div>
                 </div>
-                <div class="stat-card">
-                    <h3>Total Commission</h3>
-                    <div class="value"><?= wc_price($total_commission) ?></div>
+                <div class="report-card bg-net">
+                    <strong>Net Item Subtotal</strong>
+                    <div><?= wc_price($net) ?></div>
+                </div>
+                <div class="report-card bg-comm">
+                    <strong>Commission (<?= $rate ?>%)</strong>
+                    <div><?= wc_price($comm) ?></div>
                 </div>
             </div>
             
+            <?php
+            $total_orders = count($all_ids);
+            $max_pages_comm = ceil($total_orders / $per_page);
+            $paged_ids = array_slice($all_ids, ($paged_comm - 1) * $per_page, $per_page);
+            
+            if ($paged_ids):
+            ?>
             <div class="card">
-                <h2>Commission Details</h2>
-                <?php if (empty($orders)): ?>
-                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
-                <?php else: ?>
+                <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
-                            <th>Order #</th>
-                            <th>Customer</th>
+                            <th>Order</th>
                             <th>Date</th>
-                            <th>Order Total</th>
-                            <th>Commission (<?= $commission_rate ?>%)</th>
+                            <th>Customer</th>
+                            <th>Status</th>
+                            <th>Gross</th>
+                            <th>Refund</th>
+                            <th>Net Item</th>
+                            <th>Comm</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($orders as $order): 
-                            $customer = get_userdata($order->get_customer_id());
-                            $commission = $order->get_total() * $commission_rate / 100;
+                        <?php foreach ($paged_ids as $oid):
+                            $o = wc_get_order($oid);
+                            $i_sub = floatval($o->get_subtotal());
+                            $r_sub = 0;
+                            
+                            foreach (sa_get_refund_ids($oid) as $rid) {
+                                $r_data = sa_get_refund_item_totals($rid);
+                                $r_sub += abs(floatval($r_data['subtotal']));
+                            }
+                            
+                            $n_item = max(0, $i_sub - $r_sub);
+                            $row_comm = $n_item * ($rate / 100);
+                            $c_name = $o->get_billing_first_name() . ' ' . $o->get_billing_last_name();
                         ?>
                         <tr>
-                            <td>#<?= $order->get_id() ?></td>
-                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
-                            <td><?= $order->get_date_created()->format('Y-m-d') ?></td>
-                            <td><?= $order->get_formatted_order_total() ?></td>
-                            <td style="font-weight: bold; color: #10b981;"><?= wc_price($commission) ?></td>
+                            <td>#<?= $o->get_id() ?></td>
+                            <td><?= $o->get_date_created()->date('d.m.Y') ?></td>
+                            <td><?= esc_html($c_name) ?></td>
+                            <td><?= ucfirst($o->get_status()) ?></td>
+                            <td><?= $o->get_formatted_order_total() ?></td>
+                            <td style="color:#dc2626"><?= wc_price($o->get_total_refunded()) ?></td>
+                            <td><?= wc_price($n_item) ?></td>
+                            <td style="font-weight:bold;color:#ec4899"><?= wc_price($row_comm) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
+                
+                <?php if ($max_pages_comm > 1): ?>
+                <div class="pagination">
+                    <?php if ($paged_comm > 1): ?>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm - 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Prev</a>
+                    <?php endif; ?>
+                    <span class="current">Page <?= $paged_comm ?> / <?= $max_pages_comm ?></span>
+                    <?php if ($paged_comm < $max_pages_comm): ?>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm + 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Next</a>
+                    <?php endif; ?>
+                </div>
                 <?php endif; ?>
             </div>
+            <?php else: ?>
+            <div class="card">
+                <p style="color: #6b7280; padding: 20px; text-align: center;">No records found.</p>
+            </div>
+            <?php endif; ?>
         </div>
     </body>
     </html>
     <?php
 }
 
+// Helper function: Get formatted address
 function sa_render_new_order_page() {
     if (!current_user_can('view_sales_panel')) {
         wp_die('Access denied');
@@ -10202,6 +10972,10 @@ function sa_render_new_order_page() {
     }
     
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $wc_cust = new WC_Customer($customer_id);
+    $b_addr = sa_get_full_address($customer_id, 'billing');
+    $s_addr = sa_get_full_address($customer_id, 'shipping');
+    $gateways = WC()->payment_gateways->get_available_payment_gateways();
     
     ?>
     <!DOCTYPE html>
@@ -10212,58 +10986,315 @@ function sa_render_new_order_page() {
         <title><?= esc_html($panel_title) ?> - New Order</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
+            
+            /* Sidebar Styles */
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
+            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
+            .sidebar-nav { padding: 20px 0; }
+            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
+            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar-nav a.active { background: #4f46e5; color: white; }
+            .sidebar-nav a i { width: 20px; margin-right: 12px; }
+            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+            
+            /* Mobile Toggle */
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            
+            /* Main Content */
+            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
+            .container { max-width: 1400px; margin: 0 auto; }
             .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
-            .btn:hover { background: #5568d3; }
+            .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
+            .btn:hover { background: #059669; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
-            .alert { padding: 15px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; margin-bottom: 20px; color: #92400e; }
+            .btn-danger { background: #ef4444; color: white; }
+            .btn-warning { background: #f59e0b; color: white; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .customer-widgets { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 20px 0; }
+            .widget-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; }
+            .widget-card h3 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; color: #6b7280; font-weight: 700; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; }
+            .order-table input { width: 80px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .totals-area { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-box { width: 350px; background: #f9fafb; padding: 20px; border-radius: 8px; }
+            .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
+            .total-row.final { font-weight: 700; font-size: 18px; border-top: 1px solid #d1d5db; padding-top: 10px; margin-top: 10px; color: #4f46e5; }
+            .select2-container .select2-selection--single { height: 38px; border-color: #d1d5db; display: flex; align-items: center; }
+            textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px; }
+            input[type="text"], input[type="number"], select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            
+            /* Mobile Responsive */
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main-content { margin-left: 0; padding: 80px 20px 20px; }
+            }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+        <!-- Mobile Toggle Button -->
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><?= esc_html($panel_title) ?></h1>
+                <div class="user-name"><?= esc_html($user->display_name) ?></div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
+                    <i class="fa-solid fa-users"></i> My Customers
+                </a>
+                <a href="<?= home_url('/sales-panel/orders') ?>">
+                    <i class="fa-solid fa-shopping-cart"></i> Orders
+                </a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>">
+                    <i class="fa-solid fa-dollar-sign"></i> Reports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
+                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
+                </a>
             </div>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
-        </div>
-        
+        <!-- Main Content -->
+        <div class="main-content">
+        <div class="container">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
             </div>
             
             <div class="card">
-                <h2>Create New Order for <?= esc_html($customer->display_name) ?></h2>
-                
-                <div class="alert">
-                    <strong><i class="fa-solid fa-info-circle"></i> Order Creation</strong><br>
-                    Advanced order creation interface with product search will be available in a future update. 
-                    For now, please use WooCommerce admin or contact administrator to create orders.
+                <h2><i class="fa-solid fa-cart-shopping"></i> New Order: <?= esc_html($customer->display_name) ?></h2>
+                <div class="customer-widgets">
+                    <div class="widget-card"><h3>Customer</h3><strong><?= $customer->display_name ?></strong><br><small><?= $customer->user_email ?></small></div>
+                    <div class="widget-card"><h3>Billing Address</h3><?= $b_addr ?></div>
+                    <div class="widget-card"><h3>Shipping Address</h3><?= $s_addr ?></div>
                 </div>
                 
-                <p style="color: #6b7280;">Customer: <strong><?= esc_html($customer->display_name) ?></strong></p>
-                <p style="color: #6b7280;">Email: <strong><?= esc_html($customer->user_email) ?></strong></p>
+                <form method="post" id="orderForm" action="">
+                    <input type="hidden" name="sa_create_order" value="1">
+                    <input type="hidden" name="customer_id" id="customer_id" value="<?= $customer_id ?>">
+                    <?php wp_nonce_field('sa_create_order_' . $customer_id, 'sa_order_nonce'); ?>
+                    
+                    <div style="margin-bottom:20px;">
+                        <label style="font-weight:600;display:block;margin-bottom:5px">Job Name (PO Number)</label>
+                        <input type="text" name="po_number" class="form-control" placeholder="Enter PO Number" style="width:100%">
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="order-table">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:300px">Product</th>
+                                    <th style="width:120px">Unit Price</th>
+                                    <th style="width:80px">Qty</th>
+                                    <th style="width:100px">Assembly</th>
+                                    <th style="width:120px">Total</th>
+                                    <th style="width:50px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="product-rows"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="margin-top:15px;display:flex;justify-content:space-between;align-items:center;">
+                        <button type="button" class="btn btn-light" id="add-row"><i class="fa-solid fa-plus"></i> Add Product</button>
+                        <button type="button" class="btn btn-warning" id="toggle-global-assembly"><i class="fa-solid fa-tools"></i> Apply Assembly to All</button>
+                    </div>
+
+                    <div class="totals-area">
+                        <div class="totals-box">
+                            <div class="total-row"><span>Subtotal:</span><span id="subtotal">0.00</span></div>
+                            <div class="total-row" style="color:#e11d48;font-weight:600"><span>Assembly Fee:</span><span id="assembly_display">0.00</span></div>
+                            <div class="total-row" style="align-items:center">
+                                <span>Shipping:</span>
+                                <input type="number" name="shipping_cost" id="shipping_cost" step="0.01" value="0" style="width:80px;text-align:right">
+                            </div>
+                            <div class="total-row" style="align-items:center">
+                                <span>Extra Fee:</span>
+                                <input type="number" name="extra_fee" id="extra_fee" step="0.01" value="0" style="width:80px;text-align:right">
+                            </div>
+                            <div class="total-row">
+                                <input type="text" name="extra_fee_name" value="Service Fee" placeholder="Fee Name" style="width:100%;font-size:12px;padding:5px">
+                            </div>
+                            <div class="total-row final"><span>Grand Total:</span><span id="grandtotal">0.00</span></div>
+                            <hr style="margin:15px 0;border:0;border-top:1px solid #ddd">
+                            <div style="margin-bottom:10px">
+                                <label style="font-size:12px;font-weight:600">Payment Method</label>
+                                <select name="payment_method" style="width:100%;padding:8px">
+                                    <?php foreach($gateways as $id => $gateway): ?>
+                                        <option value="<?= esc_attr($id) ?>"><?= esc_html($gateway->get_title()) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div style="margin-bottom:10px">
+                                <label style="font-size:12px;font-weight:600">Order Note</label>
+                                <textarea name="order_note" rows="2"></textarea>
+                            </div>
+                            <button class="btn btn-primary" style="width:100%;justify-content:center"><i class="fa-solid fa-check"></i> Create Order</button>
+                        </div>
+                    </div>
+                </form>
             </div>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            const customerId = $('#customer_id').val();
+            const mergeEnabled = '<?= get_option('sales_merge_products') ? 1 : 0 ?>';
+
+            function initSelect2(el) {
+                $(el).select2({
+                    ajax: {
+                        url: '<?= admin_url('admin-ajax.php') ?>',
+                        dataType: 'json',
+                        delay: 250,
+                        data: function(params) {
+                            return {
+                                action: 'sa_search_products',
+                                term: params.term,
+                                customer_id: customerId
+                            };
+                        },
+                        processResults: function(data) {
+                            return { results: data };
+                        }
+                    },
+                    placeholder: 'Search product...',
+                    minimumInputLength: 2
+                });
+            }
+
+            $('#add-row').click(function() {
+                let html = `<tr class="item-row">
+                    <td><select name="products[]" class="product-search" style="width:100%" required><option value="">Search...</option></select></td>
+                    <td><input type="text" name="prices[]" class="price-display" style="width:100px" value="0.00"></td>
+                    <td><input type="number" name="qtys[]" class="item-qty" value="1" min="1"></td>
+                    <td style="text-align:center">
+                        <input type="hidden" name="assembly_costs[]" class="assembly-cost" value="0">
+                        <input type="checkbox" name="assembly_selected[]" value="1" class="assembly-check" disabled>
+                        <span class="assembly-label" style="font-size:11px;display:block"></span>
+                    </td>
+                    <td class="item-total">0.00</td>
+                    <td><button type="button" class="btn btn-danger remove-row" style="padding:5px 10px"><i class="fa-solid fa-trash"></i></button></td>
+                </tr>`;
+                $('#product-rows').append(html);
+                initSelect2($('#product-rows tr:last .product-search'));
+            });
+
+            $(document).on('select2:select', '.product-search', function(e) {
+                let d = e.params.data;
+                let currentRow = $(this).closest('tr');
+                
+                // Merge products if enabled
+                if (mergeEnabled === '1') {
+                    let found = false;
+                    $('.product-search').not($(this)).each(function() {
+                        if ($(this).val() == d.id) {
+                            let targetRow = $(this).closest('tr');
+                            let oldQty = parseInt(targetRow.find('.item-qty').val()) || 1;
+                            targetRow.find('.item-qty').val(oldQty + 1).trigger('input');
+                            currentRow.remove();
+                            found = true;
+                            return false;
+                        }
+                    });
+                    if (found) return;
+                }
+                
+                currentRow.find('.price-display').val(parseFloat(d.price).toFixed(2));
+                let check = currentRow.find('.assembly-check');
+                let label = currentRow.find('.assembly-label');
+                let costInput = currentRow.find('.assembly-cost');
+                
+                if(d.has_assembly) {
+                    check.prop('disabled', false);
+                    costInput.val(d.assembly_price);
+                    label.text('+$' + d.assembly_price);
+                } else {
+                    check.prop('disabled', true).prop('checked', false);
+                    costInput.val(0);
+                    label.text('-');
+                }
+                calcRow(currentRow);
+            });
+            
+            $('#toggle-global-assembly').click(function() {
+                let allChecked = $('.assembly-check:not(:disabled):checked').length === $('.assembly-check:not(:disabled)').length;
+                $('.assembly-check:not(:disabled)').prop('checked', !allChecked);
+                calcTotals();
+            });
+
+            $(document).on('input', '.item-qty, #extra_fee, #shipping_cost, .price-display, .assembly-check', function() {
+                calcTotals();
+            });
+            
+            $(document).on('change keyup', '.item-qty, .price-display', function() {
+                calcRow($(this).closest('tr'));
+            });
+            
+            $(document).on('click', '.remove-row', function() {
+                $(this).closest('tr').remove();
+                calcTotals();
+            });
+
+            // Add first row on load
+            $('#add-row').click();
+
+            function calcRow(row) {
+                let p = parseFloat(row.find('.price-display').val()) || 0;
+                let q = parseInt(row.find('.item-qty').val()) || 1;
+                let assemblyCost = 0;
+                if(row.find('.assembly-check').is(':checked')) {
+                    assemblyCost = parseFloat(row.find('.assembly-cost').val()) || 0;
+                }
+                let total = (p * q) + (assemblyCost * q);
+                row.find('.item-total').text(total.toFixed(2));
+                calcTotals();
+            }
+
+            function calcTotals() {
+                let subtotal = 0, totalAssembly = 0;
+                $('.item-row').each(function() {
+                    let p = parseFloat($(this).find('.price-display').val()) || 0;
+                    let q = parseInt($(this).find('.item-qty').val()) || 1;
+                    let a = 0;
+                    if($(this).find('.assembly-check').is(':checked')) {
+                        a = parseFloat($(this).find('.assembly-cost').val()) || 0;
+                    }
+                    subtotal += (p * q);
+                    totalAssembly += (a * q);
+                });
+                let f = parseFloat($('#extra_fee').val()) || 0;
+                let sh = parseFloat($('#shipping_cost').val()) || 0;
+                $('#subtotal').text(subtotal.toFixed(2));
+                $('#assembly_display').text(totalAssembly.toFixed(2));
+                $('#grandtotal').text((subtotal + totalAssembly + f + sh).toFixed(2));
+            }
+        });
+        </script>
         </div>
     </body>
     </html>
@@ -10434,10 +11465,16 @@ function sa_search_products_callback() {
         $stock_msg = is_numeric($stock) ? " | Stock: $stock" : "";
         $display_text = $p->get_name() . $sku . ' - ' . $currency . $final_price . $stock_msg;
         
+        // Get assembly data
+        $has_assembly = get_post_meta($pid, '_assembly_enabled', true) === 'yes';
+        $assembly_price = $has_assembly ? floatval(get_post_meta($pid, '_assembly_price', true)) : 0;
+        
         $results[] = [
             'id' => $pid, 
             'text' => $display_text, 
-            'price' => $final_price
+            'price' => $final_price,
+            'has_assembly' => $has_assembly,
+            'assembly_price' => $assembly_price
         ];
     }
     
@@ -10627,6 +11664,86 @@ add_action('woocommerce_admin_order_data_after_order_details', function($order){
     $agent = $order->get_meta('_sales_agent_name');
     if($agent) {
         echo '<p class="form-field form-field-wide"><strong>Sales Agent:</strong> ' . esc_html($agent) . '</p>';
+    }
+});
+
+// Customer Switch Functionality
+add_action('init', function () {
+    // Switch to customer
+    if (isset($_GET['switch_customer']) && current_user_can('switch_to_customer')) {
+        check_admin_referer('switch_customer');
+        $target_id = intval($_GET['switch_customer']);
+        $agent_id = get_current_user_id();
+        
+        // Verify agent has access to this customer
+        $assigned_agent = get_user_meta($target_id, 'bagli_agent_id', true);
+        if ($assigned_agent != $agent_id && !current_user_can('administrator')) {
+            wp_die('Access denied to this customer');
+        }
+        
+        // Create secure token
+        $token = wp_hash($agent_id . $target_id . time());
+        $switch_data = $agent_id . '|' . $token;
+        
+        // Store agent ID with token in cookie
+        setcookie('sa_switch_back', $switch_data, time() + 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        
+        // Also store in user meta as backup verification
+        update_user_meta($target_id, '_sa_switch_token', $token);
+        
+        // Switch to customer
+        wp_destroy_current_session();
+        wp_clear_auth_cookie();
+        wp_set_current_user($target_id);
+        wp_set_auth_cookie($target_id);
+        
+        wp_redirect(home_url());
+        exit;
+    }
+    
+    // Switch back to agent
+    if (isset($_GET['switch_back']) && isset($_COOKIE['sa_switch_back'])) {
+        check_admin_referer('switch_back');
+        
+        // Parse cookie data
+        $cookie_parts = explode('|', $_COOKIE['sa_switch_back']);
+        if (count($cookie_parts) !== 2) {
+            wp_die('Invalid session data');
+        }
+        
+        $agent_id = intval($cookie_parts[0]);
+        $stored_token = $cookie_parts[1];
+        
+        // Verify token
+        $current_user_id = get_current_user_id();
+        $expected_token = get_user_meta($current_user_id, '_sa_switch_token', true);
+        
+        if ($stored_token !== $expected_token) {
+            wp_die('Invalid session token');
+        }
+        
+        // Clean up
+        setcookie('sa_switch_back', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        delete_user_meta($current_user_id, '_sa_switch_token');
+        
+        // Switch back to agent
+        wp_destroy_current_session();
+        wp_clear_auth_cookie();
+        wp_set_current_user($agent_id);
+        wp_set_auth_cookie($agent_id);
+        
+        wp_redirect(home_url('/sales-panel'));
+        exit;
+    }
+}, 5);
+
+// Display "Back to Panel" button when switched
+add_action('wp_footer', function () {
+    if (is_user_logged_in() && isset($_COOKIE['sa_switch_back'])) {
+        $switch_back_url = wp_nonce_url(add_query_arg('switch_back', '1', home_url()), 'switch_back');
+        echo '<a href="' . esc_url($switch_back_url) . '" style="position:fixed;bottom:20px;right:20px;background:#000;color:#fff;padding:15px 20px;border-radius:30px;z-index:9999;box-shadow:0 4px 10px rgba(0,0,0,0.3);text-decoration:none;font-weight:600;font-family:Inter,sans-serif;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Sales Panel
+        </a>';
     }
 });
 

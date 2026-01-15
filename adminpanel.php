@@ -9926,6 +9926,7 @@ function sa_render_customers_page() {
     
     $user = wp_get_current_user();
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $is_manager = in_array('sales_manager', (array) $user->roles);
     
     // Get agent's customers
     global $wpdb;
@@ -9945,46 +9946,59 @@ function sa_render_customers_page() {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Customers</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .table-responsive { overflow-x: auto; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
-            .btn:hover { background: #5568d3; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+            .btn-success { background: #10b981; color: #fff; }
+            .btn-warning { background: #f59e0b; color: #fff; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .col-toggle { position: relative; display: inline-block; }
+            .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+            .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; }
+            .col-dropdown.show { display: block; }
+            .col-dropdown label { display: block; padding: 5px 0; cursor: pointer; }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
-            </div>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
-        </div>
-        
-        <div class="container">
+        <div class="main">
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
                     <h2 style="margin:0;">My Customers</h2>
@@ -10002,9 +10016,11 @@ function sa_render_customers_page() {
                             <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
                                 <input type="checkbox" checked onchange="toggleColumn('col-company', this)"> Company
                             </label>
+                            <?php if ($is_manager): ?>
                             <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
                                 <input type="checkbox" checked onchange="toggleColumn('col-agent', this)"> Assigned Agent
                             </label>
+                            <?php endif; ?>
                             <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
                                 <input type="checkbox" checked onchange="toggleColumn('col-spent', this)"> Total Spent
                             </label>
@@ -10022,7 +10038,9 @@ function sa_render_customers_page() {
                             <th class="col-email">Email</th>
                             <th class="col-phone">Phone</th>
                             <th class="col-company">Company</th>
+                            <?php if ($is_manager): ?>
                             <th class="col-agent">Assigned Agent</th>
+                            <?php endif; ?>
                             <th class="col-spent">Total Spent</th>
                             <th>Actions</th>
                         </tr>
@@ -10045,7 +10063,9 @@ function sa_render_customers_page() {
                             <td class="col-email"><?= esc_html($customer->user_email) ?></td>
                             <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
                             <td class="col-company"><?= $company ? esc_html($company) : '-' ?></td>
-                            <td class="col-agent"><strong style="color:#667eea;"><?= esc_html($agent_name) ?></strong></td>
+                            <?php if ($is_manager): ?>
+                            <td class="col-agent"><strong style="color:#4f46e5;"><?= esc_html($agent_name) ?></strong></td>
+                            <?php endif; ?>
                             <td class="col-spent"><strong><?= wc_price($spent) ?></strong></td>
                             <td style="white-space:nowrap;">
                                 <a href="<?= $order_url ?>" class="btn" title="Create Order" style="background:#10b981;margin-right:5px;">

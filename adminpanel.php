@@ -10111,7 +10111,7 @@ function sa_render_customers_page() {
                                 <button class="btn btn-warning" onclick="openUnpaidModal(<?= $customer->ID ?>)" title="View Unpaid Orders" style="margin-right:5px;">
                                     <i class="fa-solid fa-file-invoice-dollar"></i> Unpaid
                                 </button>
-                                <a href="<?= $switch_url ?>" class="btn" title="Login as Customer" style="background:#f59e0b;">
+                                <a href="<?= $switch_url ?>" class="btn" title="Login as Customer" style="background:#6366f1;">
                                     <i class="fa-solid fa-right-to-bracket"></i> Login
                                 </a>
                             </td>
@@ -10228,14 +10228,26 @@ function sa_render_customer_detail_page() {
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
+            
+            /* Sidebar Styles */
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
+            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
+            .sidebar-nav { padding: 20px 0; }
+            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
+            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar-nav a.active { background: #4f46e5; color: white; }
+            .sidebar-nav a i { width: 20px; margin-right: 12px; }
+            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+            
+            /* Mobile Toggle */
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            
+            /* Main Content */
+            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
+            .container { max-width: 1400px; margin: 0 auto; }
             .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
             .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
@@ -10245,28 +10257,55 @@ function sa_render_customer_detail_page() {
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
-            .btn:hover { background: #5568d3; }
+            .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+            .btn:hover { background: #059669; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
+            
+            /* Mobile Responsive */
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main-content { margin-left: 0; padding: 80px 20px 20px; }
+            }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+        <!-- Mobile Toggle Button -->
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><?= esc_html($panel_title) ?></h1>
+                <div class="user-name"><?= esc_html($user->display_name) ?></div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
+                    <i class="fa-solid fa-users"></i> My Customers
+                </a>
+                <a href="<?= home_url('/sales-panel/orders') ?>">
+                    <i class="fa-solid fa-shopping-cart"></i> Orders
+                </a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>">
+                    <i class="fa-solid fa-dollar-sign"></i> Reports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
+                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
+                </a>
             </div>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
-        </div>
-        
+        <!-- Main Content -->
+        <div class="main-content">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
@@ -10325,6 +10364,7 @@ function sa_render_customer_detail_page() {
                 </table>
                 <?php endif; ?>
             </div>
+        </div>
         </div>
     </body>
     </html>
@@ -10929,18 +10969,30 @@ function sa_render_new_order_page() {
         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }
-            .header h1 { font-size: 24px; }
-            .header .user { display: flex; align-items: center; gap: 15px; }
-            .nav { background: white; padding: 0 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
-            .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
+            
+            /* Sidebar Styles */
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
+            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
+            .sidebar-nav { padding: 20px 0; }
+            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
+            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar-nav a.active { background: #4f46e5; color: white; }
+            .sidebar-nav a i { width: 20px; margin-right: 12px; }
+            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+            
+            /* Mobile Toggle */
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            
+            /* Main Content */
+            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
+            .container { max-width: 1400px; margin: 0 auto; }
             .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
-            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
-            .btn:hover { background: #5568d3; }
+            .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
+            .btn:hover { background: #059669; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
             .btn-danger { background: #ef4444; color: white; }
@@ -10956,28 +11008,56 @@ function sa_render_new_order_page() {
             .totals-area { display: flex; justify-content: flex-end; margin-top: 20px; }
             .totals-box { width: 350px; background: #f9fafb; padding: 20px; border-radius: 8px; }
             .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
-            .total-row.final { font-weight: 700; font-size: 18px; border-top: 1px solid #d1d5db; padding-top: 10px; margin-top: 10px; color: #667eea; }
+            .total-row.final { font-weight: 700; font-size: 18px; border-top: 1px solid #d1d5db; padding-top: 10px; margin-top: 10px; color: #4f46e5; }
             .select2-container .select2-selection--single { height: 38px; border-color: #d1d5db; display: flex; align-items: center; }
             textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px; }
             input[type="text"], input[type="number"], select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            
+            /* Mobile Responsive */
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main-content { margin-left: 0; padding: 80px 20px 20px; }
+            }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1><?= esc_html($panel_title) ?></h1>
-            <div class="user">
-                <span><?= esc_html($user->display_name) ?></span>
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: white; text-decoration: none;"><i class="fa-solid fa-power-off"></i></a>
+        <!-- Mobile Toggle Button -->
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1><?= esc_html($panel_title) ?></h1>
+                <div class="user-name"><?= esc_html($user->display_name) ?></div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
+                    <i class="fa-solid fa-users"></i> My Customers
+                </a>
+                <a href="<?= home_url('/sales-panel/orders') ?>">
+                    <i class="fa-solid fa-shopping-cart"></i> Orders
+                </a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>">
+                    <i class="fa-solid fa-dollar-sign"></i> Reports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
+                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
+                </a>
             </div>
         </div>
         
-        <div class="nav">
-            <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
-        </div>
-        
+        <!-- Main Content -->
+        <div class="main-content">
+        <div class="container">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
@@ -11193,6 +11273,7 @@ function sa_render_new_order_page() {
             }
         });
         </script>
+        </div>
     </body>
     </html>
     <?php

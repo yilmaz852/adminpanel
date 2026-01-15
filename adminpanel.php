@@ -9863,7 +9863,7 @@ function sa_render_dashboard_page() {
             <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active">Dashboard</a>
             <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
         </div>
         
         <div class="container">
@@ -9981,7 +9981,7 @@ function sa_render_customers_page() {
             <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
             <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
         </div>
         
         <div class="container">
@@ -10003,6 +10003,9 @@ function sa_render_customers_page() {
                                 <input type="checkbox" checked onchange="toggleColumn('col-company', this)"> Company
                             </label>
                             <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-agent', this)"> Assigned Agent
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
                                 <input type="checkbox" checked onchange="toggleColumn('col-spent', this)"> Total Spent
                             </label>
                         </div>
@@ -10019,6 +10022,7 @@ function sa_render_customers_page() {
                             <th class="col-email">Email</th>
                             <th class="col-phone">Phone</th>
                             <th class="col-company">Company</th>
+                            <th class="col-agent">Assigned Agent</th>
                             <th class="col-spent">Total Spent</th>
                             <th>Actions</th>
                         </tr>
@@ -10028,6 +10032,8 @@ function sa_render_customers_page() {
                             $phone = get_user_meta($customer->ID, 'billing_phone', true);
                             $company = get_user_meta($customer->ID, 'billing_company', true);
                             $spent = wc_get_customer_total_spent($customer->ID);
+                            $assigned_agent_id = get_user_meta($customer->ID, 'bagli_agent_id', true);
+                            $agent_name = $assigned_agent_id ? get_userdata($assigned_agent_id)->display_name : '-';
                             $order_url = home_url('/sales-panel/new-order/' . $customer->ID);
                             $switch_url = wp_nonce_url(add_query_arg('switch_customer', $customer->ID, home_url()), 'switch_customer');
                         ?>
@@ -10036,6 +10042,7 @@ function sa_render_customers_page() {
                             <td class="col-email"><?= esc_html($customer->user_email) ?></td>
                             <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
                             <td class="col-company"><?= $company ? esc_html($company) : '-' ?></td>
+                            <td class="col-agent"><strong style="color:#667eea;"><?= esc_html($agent_name) ?></strong></td>
                             <td class="col-spent"><strong><?= wc_price($spent) ?></strong></td>
                             <td style="white-space:nowrap;">
                                 <a href="<?= $order_url ?>" class="btn" title="Create Order" style="background:#10b981;margin-right:5px;">
@@ -10197,7 +10204,7 @@ function sa_render_customer_detail_page() {
             <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
             <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
         </div>
         
         <div class="container">
@@ -10280,15 +10287,38 @@ function sa_render_orders_page() {
         $agent_id
     ));
     
-    $orders = [];
-    if (!empty($customer_ids)) {
-        $orders = wc_get_orders([
-            'customer' => $customer_ids,
-            'limit' => 50,
-            'orderby' => 'date',
-            'order' => 'DESC'
-        ]);
+    // Filters
+    $paged = isset($_GET['paged']) ? absint($_GET['paged']) : 1;
+    $per_page = 20;
+    $filters = [
+        'date_after' => $_GET['start_date'] ?? '',
+        'date_before' => $_GET['end_date'] ?? '',
+        'customer' => intval($_GET['filter_customer'] ?? 0)
+    ];
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+    
+    // Build query
+    $query_ids = !empty($customer_ids) ? $customer_ids : [0];
+    if ($filters['customer'] && in_array($filters['customer'], $customer_ids)) {
+        $query_ids = [$filters['customer']];
     }
+    
+    $args = [
+        'customer' => $query_ids,
+        'limit' => $per_page,
+        'page' => $paged,
+        'paginate' => true,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ];
+    
+    if ($filters['date_after']) $args['date_after'] = $filters['date_after'];
+    if ($filters['date_before']) $args['date_before'] = $filters['date_before'];
+    if ($status_filter) $args['status'] = $status_filter;
+    
+    $results = wc_get_orders($args);
+    $orders = $results->orders;
+    $total_pages = $results->max_num_pages;
     
     ?>
     <!DOCTYPE html>
@@ -10314,6 +10344,29 @@ function sa_render_orders_page() {
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .btn { display: inline-block; padding: 8px 16px; background: #667eea; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
+            .btn:hover { background: #5568d3; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .btn-warning { background: #f59e0b; color: white; }
+            .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+            .badge.completed { background: #dcfce7; color: #166534; }
+            .badge.processing { background: #dbeafe; color: #1e40af; }
+            .badge.pending { background: #fef9c3; color: #854d0e; }
+            .badge.on-hold { background: #fef3c7; color: #92400e; }
+            .badge.cancelled { background: #fee2e2; color: #991b1b; }
+            .badge.failed { background: #fee2e2; color: #991b1b; }
+            .filters-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+            .form-group { flex: 1; min-width: 150px; }
+            .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
+            .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: #667eea; color: #fff; border-color: #667eea; }
+            .col-toggle { position: relative; display: inline-block; }
+            .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+            .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; margin-top: 5px; }
+            .col-dropdown.show { display: block; }
+            .col-dropdown label { display: block; padding: 5px 0; cursor: pointer; }
         </style>
     </head>
     <body>
@@ -10329,42 +10382,191 @@ function sa_render_orders_page() {
             <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
             <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>" class="active">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
         </div>
         
         <div class="container">
             <div class="card">
-                <h2>All Orders</h2>
+                <form method="get" class="filters-form">
+                    <input type="hidden" name="sales_panel" value="orders">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" value="<?= esc_attr($filters['date_after']) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" value="<?= esc_attr($filters['date_before']) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Customer</label>
+                        <select name="filter_customer">
+                            <option value="">All Customers</option>
+                            <?php foreach ($customer_ids as $cid): 
+                                $c = get_userdata($cid);
+                                if ($c):
+                            ?>
+                                <option value="<?= $cid ?>" <?= selected($filters['customer'], $cid, false) ?>><?= esc_html($c->display_name) ?></option>
+                            <?php endif; endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="">All Statuses</option>
+                            <?php foreach (wc_get_order_statuses() as $key => $label): ?>
+                                <option value="<?= esc_attr(str_replace('wc-', '', $key)) ?>" <?= selected($status_filter, str_replace('wc-', '', $key), false) ?>><?= esc_html($label) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="btn" style="height: 42px;">Filter</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+                    <h2 style="margin:0;">Orders</h2>
+                    <div class="col-toggle">
+                        <button class="col-toggle-btn" onclick="document.querySelector('.col-dropdown').classList.toggle('show')">
+                            Columns <i class="fa fa-caret-down"></i>
+                        </button>
+                        <div class="col-dropdown">
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-date', this)"> Date</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-po', this)"> PO Number</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-note', this)"> Note</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-status', this)"> Status</label>
+                        </div>
+                    </div>
+                </div>
                 <?php if (empty($orders)): ?>
-                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders found.</p>
                 <?php else: ?>
+                <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
-                            <th>Order #</th>
+                            <th>Order</th>
+                            <th class="col-date">Date</th>
                             <th>Customer</th>
-                            <th>Date</th>
+                            <th class="col-po">PO Number</th>
+                            <th class="col-note">Note</th>
+                            <th class="col-status">Status</th>
                             <th>Total</th>
-                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($orders as $order): 
                             $customer = get_userdata($order->get_customer_id());
+                            $po_number = $order->get_meta('billing_business_name') ?: '-';
+                            $note = $order->get_customer_note();
+                            $note_display = $note ? (mb_strlen($note) > 30 ? mb_substr($note, 0, 30) . '...' : $note) : '-';
+                            
+                            // PDF packing slip link
+                            $pdf_link = '';
+                            if (class_exists('WPO_WCPDF')) {
+                                $nonce = wp_create_nonce('generate_wpo_wcpdf');
+                                $pdf_url = admin_url("admin-ajax.php?action=generate_wpo_wcpdf&document_type=packing-slip&order_ids={$order->get_id()}&_wpnonce={$nonce}");
+                                $pdf_link = '<a href="' . esc_url($pdf_url) . '" class="btn btn-warning" target="_blank" style="padding:8px;margin-left:5px" title="Packing Slip"><i class="fa-solid fa-file-pdf"></i></a>';
+                            }
                         ?>
                         <tr>
-                            <td>#<?= $order->get_id() ?></td>
+                            <td><strong>#<?= $order->get_id() ?></strong></td>
+                            <td class="col-date"><?= $order->get_date_created()->format('d.m.Y') ?></td>
                             <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
-                            <td><?= $order->get_date_created()->format('Y-m-d H:i') ?></td>
-                            <td><?= $order->get_formatted_order_total() ?></td>
-                            <td><?= ucfirst($order->get_status()) ?></td>
+                            <td class="col-po"><?= esc_html($po_number) ?></td>
+                            <td class="col-note" title="<?= esc_attr($note) ?>"><?= esc_html($note_display) ?></td>
+                            <td class="col-status"><span class="badge <?= $order->get_status() ?>"><?= ucfirst($order->get_status()) ?></span></td>
+                            <td><strong><?= $order->get_formatted_order_total() ?></strong></td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-light" onclick="openOrderModal(<?= $order->get_id() ?>)" title="View Details">
+                                    <i class="fa-regular fa-eye"></i> View
+                                </button>
+                                <?= $pdf_link ?>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
+                
+                <?php if ($total_pages > 1): ?>
+                <div class="pagination">
+                    <?php if ($paged > 1): ?>
+                        <a href="?sales_panel=orders&paged=<?= $paged - 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Prev</a>
+                    <?php endif; ?>
+                    <span class="current">Page <?= $paged ?> of <?= $total_pages ?></span>
+                    <?php if ($paged < $total_pages): ?>
+                        <a href="?sales_panel=orders&paged=<?= $paged + 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Next</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
+        
+        <!-- Order Details Modal -->
+        <div id="orderModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+            <div style="background:white;margin:5% auto;padding:20px;width:90%;max-width:800px;border-radius:12px;position:relative;">
+                <span onclick="document.getElementById('orderModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+                <h2 id="modal-title" style="margin:0 0 20px 0;">Order Details</h2>
+                <div id="modal-body">Loading...</div>
+            </div>
+        </div>
+        
+        <script>
+        function toggleColumn(className, checkbox) {
+            const elements = document.getElementsByClassName(className);
+            for (let el of elements) {
+                el.style.display = checkbox.checked ? '' : 'none';
+            }
+        }
+        
+        function openOrderModal(orderId) {
+            document.getElementById('orderModal').style.display = 'block';
+            document.getElementById('modal-body').innerHTML = 'Loading...';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>?action=sa_get_order_details&order_id=' + orderId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const d = data.data;
+                        let items = '<table style="width:100%;border-collapse:collapse;margin-top:10px"><tr><th>Item</th><th>Qty</th><th>Total</th></tr>';
+                        d.items.forEach(i => items += `<tr><td>${i.name}</td><td>${i.qty}</td><td>${i.total}</td></tr>`);
+                        items += '</table>';
+                        
+                        document.getElementById('modal-body').innerHTML = `
+                            <div><strong>PO Number:</strong> ${d.po}</div>
+                            <div><strong>Status:</strong> ${d.status} <span style="float:right">${d.date}</span></div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px">
+                                <div style="background:#f9fafb;padding:10px;font-size:12px"><strong>Billing:</strong><br>${d.billing}</div>
+                                <div style="background:#f9fafb;padding:10px;font-size:12px"><strong>Shipping:</strong><br>${d.shipping}</div>
+                            </div>
+                            ${items}
+                            <h3 style="text-align:right;margin-top:10px">${d.total}</h3>
+                            ${d.notes ? '<div style="background:#fffbeb;padding:10px;margin-top:10px;font-style:italic">Note: ' + d.notes + '</div>' : ''}
+                        `;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('modal-body').innerHTML = 'Error loading order details.';
+                });
+        }
+        
+        window.onclick = function(event) {
+            const modal = document.getElementById('orderModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        document.addEventListener('click', function(event) {
+            const dropdown = document.querySelector('.col-dropdown');
+            const button = document.querySelector('.col-toggle-btn');
+            if (dropdown && button && !event.target.closest('.col-toggle')) {
+                dropdown.classList.remove('show');
+            }
+        });
+        </script>
     </body>
     </html>
     <?php
@@ -10445,7 +10647,7 @@ function sa_render_commissions_page() {
             <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
             <a href="<?= home_url('/sales-panel/customers') ?>">Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>" class="active">Commissions</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>" class="active">Reports</a>
         </div>
         
         <div class="container">
@@ -10590,7 +10792,7 @@ function sa_render_new_order_page() {
             <a href="<?= home_url('/sales-panel/dashboard') ?>">Dashboard</a>
             <a href="<?= home_url('/sales-panel/customers') ?>" class="active">Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>">Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>">Commissions</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>">Reports</a>
         </div>
         
         <div class="container">

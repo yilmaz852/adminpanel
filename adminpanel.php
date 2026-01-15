@@ -11539,26 +11539,65 @@ function init_nmi_gateway_class() {
         }
         
         public function validate_fields() {
+            // Validate card number
             if (empty($_POST['nmi_card_number'])) {
                 wc_add_notice('Card number is required', 'error');
                 return false;
             }
+            
+            $card_number = preg_replace('/\s+/', '', $_POST['nmi_card_number']);
+            if (!preg_match('/^\d{13,19}$/', $card_number)) {
+                wc_add_notice('Invalid card number format. Must be 13-19 digits.', 'error');
+                return false;
+            }
+            
+            // Validate expiry date
             if (empty($_POST['nmi_card_expiry'])) {
                 wc_add_notice('Card expiry date is required', 'error');
                 return false;
             }
+            
+            $expiry = sanitize_text_field($_POST['nmi_card_expiry']);
+            if (!preg_match('/^\d{2}\/\d{2}$/', $expiry)) {
+                wc_add_notice('Invalid expiry date format. Use MM/YY.', 'error');
+                return false;
+            }
+            
+            // Check if date is in the future
+            list($month, $year) = explode('/', $expiry);
+            $exp_date = strtotime('20' . $year . '-' . $month . '-01');
+            if ($exp_date < strtotime('first day of this month')) {
+                wc_add_notice('Card has expired.', 'error');
+                return false;
+            }
+            
+            // Validate CVV
             if (empty($_POST['nmi_card_cvv'])) {
                 wc_add_notice('CVV is required', 'error');
                 return false;
             }
+            
+            $cvv = sanitize_text_field($_POST['nmi_card_cvv']);
+            if (!preg_match('/^\d{3,4}$/', $cvv)) {
+                wc_add_notice('Invalid CVV. Must be 3 or 4 digits.', 'error');
+                return false;
+            }
+            
             return true;
         }
         
         public function process_payment($order_id) {
             $order = wc_get_order($order_id);
             
-            // Get card details
-            $card_number = sanitize_text_field($_POST['nmi_card_number']);
+            // Verify nonce for CSRF protection
+            if (!isset($_POST['woocommerce-process-checkout-nonce']) || 
+                !wp_verify_nonce($_POST['woocommerce-process-checkout-nonce'], 'woocommerce-process_checkout')) {
+                wc_add_notice('Security verification failed', 'error');
+                return array('result' => 'fail');
+            }
+            
+            // Get card details (already validated in validate_fields)
+            $card_number = preg_replace('/\s+/', '', sanitize_text_field($_POST['nmi_card_number']));
             $card_expiry = sanitize_text_field($_POST['nmi_card_expiry']);
             $card_cvv = sanitize_text_field($_POST['nmi_card_cvv']);
             
@@ -11594,12 +11633,17 @@ function init_nmi_gateway_class() {
         }
         
         private function process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount) {
-            // Parse expiry date
+            // Parse expiry date (already validated as MM/YY format)
             list($exp_month, $exp_year) = explode('/', $card_expiry);
-            $exp_year = '20' . $exp_year; // Convert YY to YYYY
             
-            // Build API request
-            $api_url = $this->test_mode ? 'https://secure.nmi.com/api/transact.php' : 'https://secure.nmi.com/api/transact.php';
+            // Convert YY to YYYY (handle years correctly)
+            if (strlen($exp_year) === 2) {
+                $exp_year = '20' . $exp_year;
+            }
+            
+            // Build API request - NMI uses same endpoint for both test and production
+            // Test mode is distinguished by the security key used
+            $api_url = 'https://secure.nmi.com/api/transact.php';
             
             $post_data = array(
                 'security_key' => $this->api_username,
@@ -11623,7 +11667,7 @@ function init_nmi_gateway_class() {
             $response = wp_remote_post($api_url, array(
                 'body' => $post_data,
                 'timeout' => 30,
-                'sslverify' => !$this->test_mode
+                'sslverify' => true // Always verify SSL for security
             ));
             
             if (is_wp_error($response)) {
@@ -11663,8 +11707,8 @@ function init_nmi_gateway_class() {
                 return new WP_Error('error', 'Transaction ID not found');
             }
             
-            // Build API request for refund
-            $api_url = $this->test_mode ? 'https://secure.nmi.com/api/transact.php' : 'https://secure.nmi.com/api/transact.php';
+            // Build API request for refund - NMI uses same endpoint
+            $api_url = 'https://secure.nmi.com/api/transact.php';
             
             $post_data = array(
                 'security_key' => $this->api_username,
@@ -11677,7 +11721,7 @@ function init_nmi_gateway_class() {
             $response = wp_remote_post($api_url, array(
                 'body' => $post_data,
                 'timeout' => 30,
-                'sslverify' => !$this->test_mode
+                'sslverify' => true // Always verify SSL
             ));
             
             if (is_wp_error($response)) {
@@ -11711,39 +11755,53 @@ function init_nmi_gateway_class() {
         
         private function log_transaction($order_id, $type, $transaction_id, $amount, $status, $raw_response) {
             global $wpdb;
-            
-            // Create logs table if not exists
             $table_name = $wpdb->prefix . 'nmi_transaction_logs';
-            $charset_collate = $wpdb->get_charset_collate();
             
-            $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-                id bigint(20) NOT NULL AUTO_INCREMENT,
-                order_id bigint(20) NOT NULL,
-                transaction_type varchar(20) NOT NULL,
-                transaction_id varchar(100) DEFAULT '',
-                amount decimal(10,2) NOT NULL,
-                status varchar(20) NOT NULL,
-                raw_response text,
-                created_at datetime DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id),
-                KEY order_id (order_id)
-            ) $charset_collate;";
-            
-            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-            dbDelta($sql);
-            
-            // Insert log
+            // Insert log using wpdb->insert which handles sanitization
             $wpdb->insert($table_name, array(
-                'order_id' => $order_id,
-                'transaction_type' => $type,
-                'transaction_id' => $transaction_id,
-                'amount' => $amount,
-                'status' => $status,
-                'raw_response' => $raw_response,
+                'order_id' => absint($order_id),
+                'transaction_type' => sanitize_text_field($type),
+                'transaction_id' => sanitize_text_field($transaction_id),
+                'amount' => floatval($amount),
+                'status' => sanitize_text_field($status),
+                'raw_response' => $raw_response, // Text field, stored as-is
                 'created_at' => current_time('mysql')
-            ));
+            ), array('%d', '%s', '%s', '%f', '%s', '%s', '%s'));
         }
     }
+}
+
+// Create NMI transaction logs table on plugin/theme activation
+add_action('after_setup_theme', 'nmi_create_transaction_logs_table');
+function nmi_create_transaction_logs_table() {
+    // Only create table once
+    if (get_option('nmi_transaction_logs_table_created')) {
+        return;
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        order_id bigint(20) NOT NULL,
+        transaction_type varchar(20) NOT NULL,
+        transaction_id varchar(100) DEFAULT '',
+        amount decimal(10,2) NOT NULL,
+        status varchar(20) NOT NULL,
+        raw_response text,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY order_id (order_id),
+        KEY created_at (created_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+    
+    // Mark as created
+    update_option('nmi_transaction_logs_table_created', true);
 }
 
 // Payment Gateway Settings Page
@@ -11893,7 +11951,13 @@ add_action('template_redirect', function () {
                         </td>
                         <td style="padding:12px;color:#6b7280;font-size:13px;"><?= date('Y-m-d H:i:s', strtotime($log['created_at'])) ?></td>
                         <td style="padding:12px;">
-                            <button onclick="viewLogDetails(<?= htmlspecialchars(json_encode($log), ENT_QUOTES, 'UTF-8') ?>)" 
+                            <button onclick="viewLogDetails(<?= esc_attr($log['id']) ?>)" 
+                                    data-order-id="<?= esc_attr($log['order_id']) ?>"
+                                    data-transaction-type="<?= esc_attr($log['transaction_type']) ?>"
+                                    data-transaction-id="<?= esc_attr($log['transaction_id']) ?>"
+                                    data-amount="<?= esc_attr($log['amount']) ?>"
+                                    data-status="<?= esc_attr($log['status']) ?>"
+                                    data-created-at="<?= esc_attr($log['created_at']) ?>"
                                     style="padding:6px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;font-size:12px;">
                                 <i class="fa-solid fa-eye"></i> View
                             </button>
@@ -11923,7 +11987,18 @@ add_action('template_redirect', function () {
     </div>
     
     <script>
-    function viewLogDetails(log) {
+    function viewLogDetails(logId) {
+        // Get data from button attributes instead of passing full object
+        const button = event.target.closest('button');
+        const log = {
+            order_id: button.dataset.orderId,
+            transaction_type: button.dataset.transactionType,
+            transaction_id: button.dataset.transactionId,
+            amount: button.dataset.amount,
+            status: button.dataset.status,
+            created_at: button.dataset.createdAt
+        };
+        
         const content = `
             <div style="background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px;">
                 <div style="display:grid;grid-template-columns:150px 1fr;gap:15px;">
@@ -11948,7 +12023,13 @@ add_action('template_redirect', function () {
             </div>
             
             <h4 style="margin-top:25px;color:#374151;">Raw API Response:</h4>
-            <pre style="background:#1e293b;color:#e2e8f0;padding:20px;border-radius:8px;overflow-x:auto;font-size:12px;line-height:1.6;">${log.raw_response || 'No response data'}</pre>
+            <div id="rawResponseContainer">
+                <p style="color:#6b7280;text-align:center;padding:20px;">
+                    <i class="fa-solid fa-lock" style="font-size:24px;display:block;margin-bottom:10px;"></i>
+                    Raw API responses are not displayed for security purposes.<br>
+                    Contact administrator if detailed debugging information is needed.
+                </p>
+            </div>
         `;
         document.getElementById('logModalContent').innerHTML = content;
         document.getElementById('logModal').style.display = 'block';

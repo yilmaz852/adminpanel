@@ -9328,9 +9328,11 @@ add_action('init', function () {
     add_rewrite_rule('^sales-panel/orders/?$', 'index.php?sales_panel=orders', 'top');
     add_rewrite_rule('^sales-panel/commissions/?$', 'index.php?sales_panel=commissions', 'top');
     add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
+    add_rewrite_rule('^sales-panel/messaging/?$', 'index.php?sales_panel=messaging', 'top');
+    add_rewrite_rule('^sales-panel/notes/?$', 'index.php?sales_panel=notes', 'top');
 
     // Flush rewrite rules and refresh capabilities once
-    if (!get_option('sales_agent_flush_v2')) {
+    if (!get_option('sales_agent_flush_v3_messaging')) {
         flush_rewrite_rules();
         
         // Force refresh of role capabilities
@@ -9349,7 +9351,8 @@ add_action('init', function () {
             }
         }
         
-        update_option('sales_agent_flush_v2', true);
+        update_option('sales_agent_flush_v3_messaging', true);
+        delete_option('sales_agent_flush_v2'); // Clean up old marker
         delete_option('sales_agent_flush_v1'); // Clean up old marker
     }
 }, 20); // Run after main b2b panel init
@@ -9540,6 +9543,12 @@ add_action('template_redirect', function () {
                     break;
                 case 'new-order':
                     sa_render_new_order_page();
+                    break;
+                case 'messaging':
+                    sa_render_messaging_page();
+                    break;
+                case 'notes':
+                    sa_render_notes_page();
                     break;
                 default:
                     sa_render_dashboard_page();
@@ -9937,29 +9946,14 @@ function sa_render_dashboard_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><?= esc_html($panel_title) ?></h1>
-                <div class="user-name"><?= esc_html($user->display_name) ?></div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active">
-                    <i class="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/sales-panel/customers') ?>">
-                    <i class="fa-solid fa-users"></i> My Customers
-                </a>
-                <a href="<?= home_url('/sales-panel/orders') ?>">
-                    <i class="fa-solid fa-shopping-cart"></i> Orders
-                </a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> Reports
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
-                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
-                </a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
         <!-- Main Content -->
@@ -10114,6 +10108,8 @@ function sa_render_customers_page() {
             <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
             <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
@@ -10361,29 +10357,14 @@ function sa_render_customer_detail_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><?= esc_html($panel_title) ?></h1>
-                <div class="user-name"><?= esc_html($user->display_name) ?></div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>">
-                    <i class="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
-                    <i class="fa-solid fa-users"></i> My Customers
-                </a>
-                <a href="<?= home_url('/sales-panel/orders') ?>">
-                    <i class="fa-solid fa-shopping-cart"></i> Orders
-                </a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> Reports
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
-                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
-                </a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
         <!-- Main Content -->
@@ -10569,6 +10550,8 @@ function sa_render_orders_page() {
             <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>" class="active"><i class="fa-solid fa-box-open"></i> Orders</a>
             <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
@@ -10836,6 +10819,8 @@ function sa_render_commissions_page() {
             <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
             <a href="<?= home_url('/sales-panel/commissions') ?>" class="active"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
@@ -11112,29 +11097,14 @@ function sa_render_new_order_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><?= esc_html($panel_title) ?></h1>
-                <div class="user-name"><?= esc_html($user->display_name) ?></div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>">
-                    <i class="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
-                    <i class="fa-solid fa-users"></i> My Customers
-                </a>
-                <a href="<?= home_url('/sales-panel/orders') ?>">
-                    <i class="fa-solid fa-shopping-cart"></i> Orders
-                </a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> Reports
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
-                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
-                </a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
         <!-- Main Content -->
@@ -11806,6 +11776,305 @@ add_action('wp_footer', function () {
         </a>';
     }
 });
+
+// Sales Panel: Messaging Page
+function sa_render_messaging_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user_id = get_current_user_id();
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $user_groups = b2b_get_user_messaging_groups($user_id);
+    
+    // If admin, show all groups
+    if (current_user_can('manage_options')) {
+        $user_groups = b2b_get_messaging_groups();
+    }
+    
+    $selected_group = sanitize_text_field($_GET['group'] ?? '');
+    if (empty($selected_group) && !empty($user_groups)) {
+        $selected_group = array_key_first($user_groups);
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Messaging</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; }
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 16px; font-weight: 700; }
+            .sidebar a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; }
+            .sidebar a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar a.active { background: #4f46e5; color: white; }
+            .sidebar a i { width: 20px; margin-right: 12px; }
+            .sidebar a[style*="margin-top:auto"] { margin-top: auto; }
+            .main { margin-left: 250px; flex: 1; padding: 40px; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main { margin-left: 0; padding: 80px 20px 20px; }
+            }
+        </style>
+    </head>
+    <body>
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>" class="active"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <h1 style="margin-bottom: 30px;"><i class="fa-solid fa-comments"></i> Messaging</h1>
+            
+            <?php if (empty($user_groups)): ?>
+                <div class="card" style="text-align:center;padding:50px;">
+                    <i class="fa-solid fa-inbox" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+                    <h3 style="color:#9ca3af;">No messaging groups</h3>
+                    <p style="color:#9ca3af;">You are not assigned to any messaging groups yet.</p>
+                </div>
+            <?php else: ?>
+            
+            <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+                <div class="card" style="height:600px;overflow-y:auto;">
+                    <h3 style="margin-top:0;">Your Groups</h3>
+                    <?php foreach ($user_groups as $group_id => $group): ?>
+                        <a href="?sales_panel=messaging&group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
+                            <div style="font-weight:600;"><?= esc_html($group['name']) ?></div>
+                            <div style="font-size:12px;color:#9ca3af;"><?= count($group['members'] ?? []) ?> members</div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+                
+                <div class="card" style="height:600px;display:flex;flex-direction:column;">
+                    <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
+                        <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
+                            <?= esc_html($user_groups[$selected_group]['name']) ?>
+                        </h3>
+                        
+                        <div id="messages-container" style="flex:1;overflow-y:auto;padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:15px;"></div>
+                        
+                        <form id="messageForm" style="display:flex;gap:10px;">
+                            <input type="hidden" id="current_group" value="<?= $selected_group ?>">
+                            <textarea id="message_input" placeholder="Type your message..." style="flex:1;resize:none;height:60px;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required></textarea>
+                            <button type="submit" style="align-self:flex-end;height:60px;background:#10b981;color:white;border:none;padding:0 20px;border-radius:8px;cursor:pointer;">
+                                <i class="fa-solid fa-paper-plane"></i> Send
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <p style="text-align:center;color:#9ca3af;padding:50px;">Select a group to start messaging</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <script>
+            var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+            let lastTimestamp = 0;
+            
+            function loadMessages(initial = false) {
+                const groupId = document.getElementById('current_group')?.value;
+                if (!groupId) return;
+                
+                fetch(ajaxurl + '?action=b2b_get_messages&group_id=' + groupId + '&last_timestamp=' + (initial ? 0 : lastTimestamp))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.data.messages.length > 0) {
+                            const container = document.getElementById('messages-container');
+                            const shouldScroll = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+                            
+                            data.data.messages.forEach(msg => {
+                                const isMe = msg.user_id == <?= $user_id ?>;
+                                const div = document.createElement('div');
+                                div.style.marginBottom = '15px';
+                                div.style.textAlign = isMe ? 'right' : 'left';
+                                
+                                div.innerHTML = `
+                                    <div style="display:inline-block;max-width:70%;text-align:left;">
+                                        <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">${msg.user_name} • ${new Date(msg.time).toLocaleString()}</div>
+                                        <div style="background:${isMe ? '#3b82f6' : '#fff'};color:${isMe ? '#fff' : '#1f2937'};padding:10px 15px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                            ${msg.message}
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                container.appendChild(div);
+                                lastTimestamp = Math.max(lastTimestamp, msg.timestamp);
+                            });
+                            
+                            if (shouldScroll || initial) {
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        }
+                    });
+            }
+            
+            document.getElementById('messageForm')?.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const groupId = document.getElementById('current_group').value;
+                const message = document.getElementById('message_input').value.trim();
+                
+                if (!message) return;
+                
+                const formData = new FormData();
+                formData.append('action', 'b2b_send_message');
+                formData.append('group_id', groupId);
+                formData.append('message', message);
+                
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('message_input').value = '';
+                        loadMessages();
+                    } else {
+                        alert('Error: ' + (data.data || 'Failed to send'));
+                    }
+                });
+            });
+            
+            if (document.getElementById('current_group')) {
+                loadMessages(true);
+                setInterval(() => loadMessages(false), 5000);
+            }
+            </script>
+            
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// Sales Panel: Notes Page
+function sa_render_notes_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user_id = get_current_user_id();
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    $notes = get_option('b2b_notes', []);
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter notes based on visibility
+    $visible_notes = [];
+    foreach ($notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $visible_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $visible_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $visible_notes[$note_id] = $note;
+        }
+    }
+    
+    $messaging_groups = b2b_get_messaging_groups();
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Notes</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; }
+            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; }
+            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 16px; font-weight: 700; }
+            .sidebar a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; }
+            .sidebar a:hover { background: rgba(255,255,255,0.1); color: white; }
+            .sidebar a.active { background: #4f46e5; color: white; }
+            .sidebar a i { width: 20px; margin-right: 12px; }
+            .sidebar a[style*="margin-top:auto"] { margin-top: auto; }
+            .main { margin-left: 250px; flex: 1; padding: 40px; }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
+            @media (max-width: 768px) {
+                .sidebar { transform: translateX(-100%); }
+                .sidebar.active { transform: translateX(0); }
+                .mobile-toggle { display: block; }
+                .main { margin-left: 0; padding: 80px 20px 20px; }
+            }
+        </style>
+    </head>
+    <body>
+        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>" class="active"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <h1 style="margin-bottom: 30px;"><i class="fa-solid fa-note-sticky"></i> Notes</h1>
+            
+            <?php if (empty($visible_notes)): ?>
+                <div class="card" style="text-align:center;padding:50px;">
+                    <i class="fa-solid fa-sticky-note" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+                    <h3 style="color:#9ca3af;">No notes yet</h3>
+                </div>
+            <?php else: ?>
+            
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(350px, 1fr));gap:20px;">
+                <?php foreach ($visible_notes as $note_id => $note): ?>
+                <div class="card" style="background:<?= $note['visibility'] == 'general' ? '#fffbeb' : '#eff6ff' ?>;border-left:4px solid <?= $note['visibility'] == 'general' ? '#f59e0b' : '#3b82f6' ?>;">
+                    <h3 style="margin:0 0 10px 0;color:#1f2937;"><?= esc_html($note['title']) ?></h3>
+                    <div style="font-size:14px;color:#4b5563;margin-bottom:15px;white-space:pre-wrap;">
+                        <?= esc_html($note['content']) ?>
+                    </div>
+                    <div style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+                        <div><strong>By:</strong> <?= esc_html($note['author']) ?></div>
+                        <div><strong>Visibility:</strong> <?= $note['visibility'] == 'general' ? 'Everyone' : esc_html($messaging_groups[$note['group_id']]['name'] ?? 'Unknown Group') ?></div>
+                        <div><strong>Created:</strong> <?= date('d.m.Y H:i', strtotime($note['created'])) ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
 
 // End of Sales Agent System Phase 4
 

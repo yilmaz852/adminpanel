@@ -9891,60 +9891,42 @@ function sa_render_dashboard_page() {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Dashboard</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
-            
-            /* Sidebar Styles */
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
-            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
-            .sidebar-nav { padding: 20px 0; }
-            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
-            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar-nav a.active { background: #4f46e5; color: white; }
-            .sidebar-nav a i { width: 20px; margin-right: 12px; }
-            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-            
-            /* Mobile Toggle */
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            
-            /* Main Content */
-            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
-            
-            /* Dashboard Cards */
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
             .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
             .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
             .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
             .stat-card.warning { border-left: 4px solid #f59e0b; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            
-            /* Mobile Responsive */
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
-                .mobile-toggle { display: block; }
-                .main-content { margin-left: 0; padding: 80px 20px 20px; }
-            }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
         </style>
     </head>
     <body>
-        <!-- Mobile Toggle Button -->
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        
-        <!-- Sidebar -->
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
         <div class="sidebar">
             <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
             <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active"><i class="fa-solid fa-gauge"></i> Dashboard</a>
@@ -9956,8 +9938,7 @@ function sa_render_dashboard_page() {
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <!-- Main Content -->
-        <div class="main-content">
+        <div class="main">
             <div class="stats">
                 <div class="stat-card">
                     <h3>Total Customers</h3>
@@ -10368,7 +10349,7 @@ function sa_render_customer_detail_page() {
         </div>
         
         <!-- Main Content -->
-        <div class="main-content">
+        <div class="main">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
@@ -11108,7 +11089,7 @@ function sa_render_new_order_page() {
         </div>
         
         <!-- Main Content -->
-        <div class="main-content">
+        <div class="main">
         <div class="container">
         <div class="container">
             <div style="margin-bottom: 20px;">
@@ -11803,36 +11784,37 @@ function sa_render_messaging_page() {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Messaging</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; }
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 16px; font-weight: 700; }
-            .sidebar a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; }
-            .sidebar a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar a.active { background: #4f46e5; color: white; }
-            .sidebar a i { width: 20px; margin-right: 12px; }
-            .sidebar a[style*="margin-top:auto"] { margin-top: auto; }
-            .main { margin-left: 250px; flex: 1; padding: 40px; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
                 .mobile-toggle { display: block; }
-                .main { margin-left: 0; padding: 80px 20px 20px; }
             }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
         </style>
     </head>
     <body>
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
         
         <div class="sidebar">
             <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
@@ -12002,35 +11984,33 @@ function sa_render_notes_page() {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Notes</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; }
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 16px; font-weight: 700; }
-            .sidebar a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; }
-            .sidebar a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar a.active { background: #4f46e5; color: white; }
-            .sidebar a i { width: 20px; margin-right: 12px; }
-            .sidebar a[style*="margin-top:auto"] { margin-top: auto; }
-            .main { margin-left: 250px; flex: 1; padding: 40px; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
                 .mobile-toggle { display: block; }
-                .main { margin-left: 0; padding: 80px 20px 20px; }
             }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
         </style>
     </head>
     <body>
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
         
         <div class="sidebar">
             <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>

@@ -67,14 +67,21 @@ add_action('init', function () {
     // Support Module
     add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
     add_rewrite_rule('^b2b-panel/support-ticket/?$', 'index.php?b2b_adm_page=support-ticket', 'top');
+    
+    // Messaging Module
+    add_rewrite_rule('^b2b-panel/messaging/?$', 'index.php?b2b_adm_page=messaging', 'top');
+    add_rewrite_rule('^b2b-panel/messaging/groups/?$', 'index.php?b2b_adm_page=messaging_groups', 'top');
+    
+    // Notes Module
+    add_rewrite_rule('^b2b-panel/notes/?$', 'index.php?b2b_adm_page=notes', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures support module rewrites are properly registered
-    if (!get_option('b2b_rewrite_v19_support_fixed')) {
+    // Fixed version that ensures messaging and notes module rewrites are properly registered
+    if (!get_option('b2b_rewrite_v20_messaging_notes')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v19_support_fixed', true);
+        update_option('b2b_rewrite_v20_messaging_notes', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v18_support');
+        delete_option('b2b_rewrite_v19_support_fixed');
     }
 });
 
@@ -1327,6 +1334,12 @@ function b2b_adm_header($title) {
             <?php if(current_user_can('manage_woocommerce')): ?>
             <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
             <?php endif; ?>
+            
+            <!-- Messaging Module -->
+            <a href="<?= home_url('/b2b-panel/messaging') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups'])?'active':'' ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            
+            <!-- Notes Module -->
+            <a href="<?= home_url('/b2b-panel/notes') ?>" class="<?= get_query_var('b2b_adm_page')=='notes'?'active':'' ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -2298,6 +2311,53 @@ add_action('template_redirect', function () {
         }
     });
     </script>
+    
+    <!-- Important Notes Widget -->
+    <?php
+    $all_notes = get_option('b2b_notes', []);
+    $user_id = get_current_user_id();
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter visible notes
+    $dashboard_notes = [];
+    foreach ($all_notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $dashboard_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $dashboard_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $dashboard_notes[$note_id] = $note;
+        }
+    }
+    
+    // Show only latest 3 notes
+    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
+    
+    if (!empty($dashboard_notes)):
+    ?>
+    <div class="card" style="margin-top:30px;background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
+            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
+                View All <i class="fa-solid fa-arrow-right"></i>
+            </a>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;">
+            <?php foreach ($dashboard_notes as $note_id => $note): ?>
+            <div style="background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
+                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
+                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
+                </p>
+                <div style="font-size:11px;color:#b45309;margin-top:8px;">
+                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
+                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php b2b_adm_footer(); exit;
 });
@@ -9268,9 +9328,11 @@ add_action('init', function () {
     add_rewrite_rule('^sales-panel/orders/?$', 'index.php?sales_panel=orders', 'top');
     add_rewrite_rule('^sales-panel/commissions/?$', 'index.php?sales_panel=commissions', 'top');
     add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
+    add_rewrite_rule('^sales-panel/messaging/?$', 'index.php?sales_panel=messaging', 'top');
+    add_rewrite_rule('^sales-panel/notes/?$', 'index.php?sales_panel=notes', 'top');
 
     // Flush rewrite rules and refresh capabilities once
-    if (!get_option('sales_agent_flush_v2')) {
+    if (!get_option('sales_agent_flush_v3_messaging')) {
         flush_rewrite_rules();
         
         // Force refresh of role capabilities
@@ -9289,7 +9351,8 @@ add_action('init', function () {
             }
         }
         
-        update_option('sales_agent_flush_v2', true);
+        update_option('sales_agent_flush_v3_messaging', true);
+        delete_option('sales_agent_flush_v2'); // Clean up old marker
         delete_option('sales_agent_flush_v1'); // Clean up old marker
     }
 }, 20); // Run after main b2b panel init
@@ -9480,6 +9543,12 @@ add_action('template_redirect', function () {
                     break;
                 case 'new-order':
                     sa_render_new_order_page();
+                    break;
+                case 'messaging':
+                    sa_render_messaging_page();
+                    break;
+                case 'notes':
+                    sa_render_notes_page();
                     break;
                 default:
                     sa_render_dashboard_page();
@@ -9822,88 +9891,54 @@ function sa_render_dashboard_page() {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <title><?= esc_html($panel_title) ?> - Dashboard</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
-            
-            /* Sidebar Styles */
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
-            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
-            .sidebar-nav { padding: 20px 0; }
-            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
-            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar-nav a.active { background: #4f46e5; color: white; }
-            .sidebar-nav a i { width: 20px; margin-right: 12px; }
-            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-            
-            /* Mobile Toggle */
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            
-            /* Main Content */
-            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
-            
-            /* Dashboard Cards */
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
             .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
             .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
             .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
             .stat-card.warning { border-left: 4px solid #f59e0b; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            
-            /* Mobile Responsive */
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
-                .mobile-toggle { display: block; }
-                .main-content { margin-left: 0; padding: 80px 20px 20px; }
-            }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
         </style>
     </head>
     <body>
-        <!-- Mobile Toggle Button -->
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        
-        <!-- Sidebar -->
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><?= esc_html($panel_title) ?></h1>
-                <div class="user-name"><?= esc_html($user->display_name) ?></div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active">
-                    <i class="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/sales-panel/customers') ?>">
-                    <i class="fa-solid fa-users"></i> My Customers
-                </a>
-                <a href="<?= home_url('/sales-panel/orders') ?>">
-                    <i class="fa-solid fa-shopping-cart"></i> Orders
-                </a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> Reports
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
-                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
-                </a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <!-- Main Content -->
-        <div class="main-content">
+        <div class="main">
             <div class="stats">
                 <div class="stat-card">
                     <h3>Total Customers</h3>
@@ -10054,6 +10089,8 @@ function sa_render_customers_page() {
             <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
             <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
@@ -10301,33 +10338,18 @@ function sa_render_customer_detail_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><?= esc_html($panel_title) ?></h1>
-                <div class="user-name"><?= esc_html($user->display_name) ?></div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>">
-                    <i class="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
-                    <i class="fa-solid fa-users"></i> My Customers
-                </a>
-                <a href="<?= home_url('/sales-panel/orders') ?>">
-                    <i class="fa-solid fa-shopping-cart"></i> Orders
-                </a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> Reports
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
-                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
-                </a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
         <!-- Main Content -->
-        <div class="main-content">
+        <div class="main">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
@@ -10509,6 +10531,8 @@ function sa_render_orders_page() {
             <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>" class="active"><i class="fa-solid fa-box-open"></i> Orders</a>
             <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
@@ -10776,6 +10800,8 @@ function sa_render_commissions_page() {
             <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
             <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
             <a href="<?= home_url('/sales-panel/commissions') ?>" class="active"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
@@ -11052,33 +11078,18 @@ function sa_render_new_order_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h1><?= esc_html($panel_title) ?></h1>
-                <div class="user-name"><?= esc_html($user->display_name) ?></div>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>">
-                    <i class="fa-solid fa-chart-line"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/sales-panel/customers') ?>" class="active">
-                    <i class="fa-solid fa-users"></i> My Customers
-                </a>
-                <a href="<?= home_url('/sales-panel/orders') ?>">
-                    <i class="fa-solid fa-shopping-cart"></i> Orders
-                </a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> Reports
-                </a>
-            </nav>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color: rgba(255,255,255,0.8); text-decoration: none; display: flex; align-items: center;">
-                    <i class="fa-solid fa-power-off" style="margin-right: 10px;"></i> Logout
-                </a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
         <!-- Main Content -->
-        <div class="main-content">
+        <div class="main">
         <div class="container">
         <div class="container">
             <div style="margin-bottom: 20px;">
@@ -11747,4 +11758,1022 @@ add_action('wp_footer', function () {
     }
 });
 
+// Sales Panel: Messaging Page
+function sa_render_messaging_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user_id = get_current_user_id();
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $user_groups = b2b_get_user_messaging_groups($user_id);
+    
+    // If admin, show all groups
+    if (current_user_can('manage_options')) {
+        $user_groups = b2b_get_messaging_groups();
+    }
+    
+    $selected_group = sanitize_text_field($_GET['group'] ?? '');
+    if (empty($selected_group) && !empty($user_groups)) {
+        $selected_group = array_key_first($user_groups);
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Messaging</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+        
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>" class="active"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <h1 style="margin-bottom: 30px;"><i class="fa-solid fa-comments"></i> Messaging</h1>
+            
+            <?php if (empty($user_groups)): ?>
+                <div class="card" style="text-align:center;padding:50px;">
+                    <i class="fa-solid fa-inbox" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+                    <h3 style="color:#9ca3af;">No messaging groups</h3>
+                    <p style="color:#9ca3af;">You are not assigned to any messaging groups yet.</p>
+                </div>
+            <?php else: ?>
+            
+            <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+                <div class="card" style="height:600px;overflow-y:auto;">
+                    <h3 style="margin-top:0;">Your Groups</h3>
+                    <?php foreach ($user_groups as $group_id => $group): ?>
+                        <a href="?sales_panel=messaging&group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
+                            <div style="font-weight:600;"><?= esc_html($group['name']) ?></div>
+                            <div style="font-size:12px;color:#9ca3af;"><?= count($group['members'] ?? []) ?> members</div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+                
+                <div class="card" style="height:600px;display:flex;flex-direction:column;">
+                    <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
+                        <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
+                            <?= esc_html($user_groups[$selected_group]['name']) ?>
+                        </h3>
+                        
+                        <div id="messages-container" style="flex:1;overflow-y:auto;padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:15px;"></div>
+                        
+                        <form id="messageForm" style="display:flex;gap:10px;">
+                            <input type="hidden" id="current_group" value="<?= $selected_group ?>">
+                            <textarea id="message_input" placeholder="Type your message..." style="flex:1;resize:none;height:60px;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required></textarea>
+                            <button type="submit" style="align-self:flex-end;height:60px;background:#10b981;color:white;border:none;padding:0 20px;border-radius:8px;cursor:pointer;">
+                                <i class="fa-solid fa-paper-plane"></i> Send
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <p style="text-align:center;color:#9ca3af;padding:50px;">Select a group to start messaging</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <script>
+            var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+            let lastTimestamp = 0;
+            
+            function loadMessages(initial = false) {
+                const groupId = document.getElementById('current_group')?.value;
+                if (!groupId) return;
+                
+                fetch(ajaxurl + '?action=b2b_get_messages&group_id=' + groupId + '&last_timestamp=' + (initial ? 0 : lastTimestamp))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.data.messages.length > 0) {
+                            const container = document.getElementById('messages-container');
+                            const shouldScroll = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+                            
+                            data.data.messages.forEach(msg => {
+                                const isMe = msg.user_id == <?= $user_id ?>;
+                                const div = document.createElement('div');
+                                div.style.marginBottom = '15px';
+                                div.style.textAlign = isMe ? 'right' : 'left';
+                                
+                                div.innerHTML = `
+                                    <div style="display:inline-block;max-width:70%;text-align:left;">
+                                        <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">${msg.user_name} • ${new Date(msg.time).toLocaleString()}</div>
+                                        <div style="background:${isMe ? '#3b82f6' : '#fff'};color:${isMe ? '#fff' : '#1f2937'};padding:10px 15px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                            ${msg.message}
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                container.appendChild(div);
+                                lastTimestamp = Math.max(lastTimestamp, msg.timestamp);
+                            });
+                            
+                            if (shouldScroll || initial) {
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        }
+                    });
+            }
+            
+            document.getElementById('messageForm')?.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const groupId = document.getElementById('current_group').value;
+                const message = document.getElementById('message_input').value.trim();
+                
+                if (!message) return;
+                
+                const formData = new FormData();
+                formData.append('action', 'b2b_send_message');
+                formData.append('group_id', groupId);
+                formData.append('message', message);
+                
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('message_input').value = '';
+                        loadMessages();
+                    } else {
+                        alert('Error: ' + (data.data || 'Failed to send'));
+                    }
+                });
+            });
+            
+            if (document.getElementById('current_group')) {
+                loadMessages(true);
+                setInterval(() => loadMessages(false), 5000);
+            }
+            </script>
+            
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// Sales Panel: Notes Page
+function sa_render_notes_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user_id = get_current_user_id();
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    $notes = get_option('b2b_notes', []);
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter notes based on visibility
+    $visible_notes = [];
+    foreach ($notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $visible_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $visible_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $visible_notes[$note_id] = $note;
+        }
+    }
+    
+    $messaging_groups = b2b_get_messaging_groups();
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Notes</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+        
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>" class="active"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <h1 style="margin-bottom: 30px;"><i class="fa-solid fa-note-sticky"></i> Notes</h1>
+            
+            <?php if (empty($visible_notes)): ?>
+                <div class="card" style="text-align:center;padding:50px;">
+                    <i class="fa-solid fa-sticky-note" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+                    <h3 style="color:#9ca3af;">No notes yet</h3>
+                </div>
+            <?php else: ?>
+            
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(350px, 1fr));gap:20px;">
+                <?php foreach ($visible_notes as $note_id => $note): ?>
+                <div class="card" style="background:<?= $note['visibility'] == 'general' ? '#fffbeb' : '#eff6ff' ?>;border-left:4px solid <?= $note['visibility'] == 'general' ? '#f59e0b' : '#3b82f6' ?>;">
+                    <h3 style="margin:0 0 10px 0;color:#1f2937;"><?= esc_html($note['title']) ?></h3>
+                    <div style="font-size:14px;color:#4b5563;margin-bottom:15px;white-space:pre-wrap;">
+                        <?= esc_html($note['content']) ?>
+                    </div>
+                    <div style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+                        <div><strong>By:</strong> <?= esc_html($note['author']) ?></div>
+                        <div><strong>Visibility:</strong> <?= $note['visibility'] == 'general' ? 'Everyone' : esc_html($messaging_groups[$note['group_id']]['name'] ?? 'Unknown Group') ?></div>
+                        <div><strong>Created:</strong> <?= date('d.m.Y H:i', strtotime($note['created'])) ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
 // End of Sales Agent System Phase 4
+
+/* =====================================================
+   MESSAGING AND NOTES SYSTEM
+   - Admin creates messaging groups
+   - Users assigned to groups can communicate
+   - Notifications for new messages
+   - Notes system with group/general visibility
+===================================================== */
+
+// Helper function: Get all messaging groups
+function b2b_get_messaging_groups() {
+    return get_option('b2b_messaging_groups', []);
+}
+
+// Helper function: Check if user is in a messaging group
+function b2b_user_in_messaging_group($user_id, $group_id) {
+    $groups = b2b_get_messaging_groups();
+    if (!isset($groups[$group_id])) return false;
+    
+    $members = $groups[$group_id]['members'] ?? [];
+    return in_array($user_id, $members);
+}
+
+// Helper function: Get user's messaging groups
+function b2b_get_user_messaging_groups($user_id) {
+    $groups = b2b_get_messaging_groups();
+    $user_groups = [];
+    
+    foreach ($groups as $group_id => $group) {
+        $members = $group['members'] ?? [];
+        if (in_array($user_id, $members)) {
+            $user_groups[$group_id] = $group;
+        }
+    }
+    
+    return $user_groups;
+}
+
+// AJAX: Send message to group
+add_action('wp_ajax_b2b_send_message', function() {
+    if (!is_user_logged_in()) wp_die();
+    
+    $group_id = sanitize_text_field($_POST['group_id'] ?? '');
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    
+    if (empty($group_id) || empty($message)) {
+        wp_send_json_error('Invalid data');
+    }
+    
+    $user_id = get_current_user_id();
+    
+    // Check if user is in this group
+    if (!current_user_can('manage_options') && !b2b_user_in_messaging_group($user_id, $group_id)) {
+        wp_send_json_error('Not authorized');
+    }
+    
+    // Get existing messages
+    $messages = get_option('b2b_messages_' . $group_id, []);
+    
+    // Add new message
+    $user = wp_get_current_user();
+    $messages[] = [
+        'user_id' => $user_id,
+        'user_name' => $user->display_name,
+        'message' => $message,
+        'time' => current_time('mysql'),
+        'timestamp' => time()
+    ];
+    
+    // Keep last 500 messages
+    if (count($messages) > 500) {
+        $messages = array_slice($messages, -500);
+    }
+    
+    update_option('b2b_messages_' . $group_id, $messages);
+    
+    // Update unread count for other group members
+    $groups = b2b_get_messaging_groups();
+    if (isset($groups[$group_id]['members'])) {
+        foreach ($groups[$group_id]['members'] as $member_id) {
+            if ($member_id != $user_id) {
+                $unread = get_user_meta($member_id, 'b2b_unread_messages', true) ?: 0;
+                update_user_meta($member_id, 'b2b_unread_messages', $unread + 1);
+            }
+        }
+    }
+    
+    wp_send_json_success(['message' => 'Sent']);
+});
+
+// AJAX: Get messages for a group
+add_action('wp_ajax_b2b_get_messages', function() {
+    if (!is_user_logged_in()) wp_die();
+    
+    $group_id = sanitize_text_field($_GET['group_id'] ?? '');
+    $last_timestamp = intval($_GET['last_timestamp'] ?? 0);
+    
+    if (empty($group_id)) {
+        wp_send_json_error('Invalid group');
+    }
+    
+    $user_id = get_current_user_id();
+    
+    // Check if user is in this group
+    if (!current_user_can('manage_options') && !b2b_user_in_messaging_group($user_id, $group_id)) {
+        wp_send_json_error('Not authorized');
+    }
+    
+    // Get messages
+    $messages = get_option('b2b_messages_' . $group_id, []);
+    
+    // Filter new messages only
+    if ($last_timestamp > 0) {
+        $messages = array_filter($messages, function($msg) use ($last_timestamp) {
+            return ($msg['timestamp'] ?? 0) > $last_timestamp;
+        });
+    }
+    
+    // Clear unread count for this user
+    if (!$last_timestamp) {
+        delete_user_meta($user_id, 'b2b_unread_messages');
+    }
+    
+    wp_send_json_success(['messages' => array_values($messages)]);
+});
+
+// AJAX: Save note
+add_action('wp_ajax_b2b_save_note', function() {
+    if (!current_user_can('manage_options')) wp_die();
+    
+    $note_id = sanitize_text_field($_POST['note_id'] ?? '');
+    $title = sanitize_text_field($_POST['title'] ?? '');
+    $content = sanitize_textarea_field($_POST['content'] ?? '');
+    $visibility = sanitize_text_field($_POST['visibility'] ?? 'general');
+    $group_id = sanitize_text_field($_POST['group_id'] ?? '');
+    
+    if (empty($title) || empty($content)) {
+        wp_send_json_error('Title and content required');
+    }
+    
+    $notes = get_option('b2b_notes', []);
+    
+    if (empty($note_id)) {
+        // New note
+        $note_id = 'note_' . time() . '_' . wp_generate_password(8, false);
+    }
+    
+    $notes[$note_id] = [
+        'title' => $title,
+        'content' => $content,
+        'visibility' => $visibility,
+        'group_id' => $group_id,
+        'author' => wp_get_current_user()->display_name,
+        'created' => current_time('mysql'),
+        'updated' => current_time('mysql')
+    ];
+    
+    update_option('b2b_notes', $notes);
+    
+    wp_send_json_success(['message' => 'Note saved']);
+});
+
+// AJAX: Delete note
+add_action('wp_ajax_b2b_delete_note', function() {
+    if (!current_user_can('manage_options')) wp_die();
+    
+    $note_id = sanitize_text_field($_POST['note_id'] ?? '');
+    
+    if (empty($note_id)) {
+        wp_send_json_error('Invalid note');
+    }
+    
+    $notes = get_option('b2b_notes', []);
+    unset($notes[$note_id]);
+    update_option('b2b_notes', $notes);
+    
+    wp_send_json_success(['message' => 'Note deleted']);
+});
+
+// PAGE: Messaging Groups Management
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'messaging_groups') return;
+    b2b_adm_guard();
+    
+    // Handle form submission
+    if (isset($_POST['save_messaging_group'])) {
+        $group_id = sanitize_text_field($_POST['group_id'] ?? '');
+        $group_name = sanitize_text_field($_POST['group_name'] ?? '');
+        $members = $_POST['members'] ?? [];
+        
+        if (!empty($group_name)) {
+            $groups = b2b_get_messaging_groups();
+            
+            if (empty($group_id)) {
+                $group_id = 'group_' . time();
+            }
+            
+            $groups[$group_id] = [
+                'name' => $group_name,
+                'members' => array_map('intval', $members),
+                'created' => current_time('mysql')
+            ];
+            
+            update_option('b2b_messaging_groups', $groups);
+            
+            echo '<script>window.location.href="' . home_url('/b2b-panel/messaging/groups') . '";</script>';
+            exit;
+        }
+    }
+    
+    // Handle delete
+    if (isset($_GET['delete'])) {
+        $group_id = sanitize_text_field($_GET['delete']);
+        $groups = b2b_get_messaging_groups();
+        unset($groups[$group_id]);
+        update_option('b2b_messaging_groups', $groups);
+        
+        // Also delete messages
+        delete_option('b2b_messages_' . $group_id);
+        
+        echo '<script>window.location.href="' . home_url('/b2b-panel/messaging/groups') . '";</script>';
+        exit;
+    }
+    
+    $groups = b2b_get_messaging_groups();
+    $all_users = get_users(['role__not_in' => ['customer']]);
+    
+    b2b_adm_header('Messaging Groups');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-users"></i> Messaging Groups</h1>
+        <button class="btn" onclick="document.getElementById('addGroupModal').style.display='block'">
+            <i class="fa-solid fa-plus"></i> New Group
+        </button>
+    </div>
+    
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Group Name</th>
+                    <th>Members</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($groups)): ?>
+                    <tr><td colspan="4" style="text-align:center;padding:30px;color:#9ca3af;">No groups yet. Create your first messaging group!</td></tr>
+                <?php else: ?>
+                    <?php foreach ($groups as $group_id => $group): ?>
+                    <tr>
+                        <td><strong><?= esc_html($group['name']) ?></strong></td>
+                        <td><?= count($group['members'] ?? []) ?> members</td>
+                        <td><?= date('d.m.Y', strtotime($group['created'])) ?></td>
+                        <td>
+                            <a href="<?= home_url('/b2b-panel/messaging?group=' . $group_id) ?>" class="btn btn-light" style="padding:6px 12px;">
+                                <i class="fa-solid fa-comments"></i> View
+                            </a>
+                            <button class="btn btn-secondary" style="padding:6px 12px;" onclick="editGroup('<?= $group_id ?>')">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+                            <a href="?delete=<?= $group_id ?>" class="btn btn-danger" style="padding:6px 12px;" onclick="return confirm('Delete this group?')">
+                                <i class="fa-solid fa-trash"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Add/Edit Group Modal -->
+    <div id="addGroupModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+        <div style="background:white;margin:5% auto;padding:30px;width:90%;max-width:600px;border-radius:12px;position:relative;">
+            <span onclick="document.getElementById('addGroupModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+            <h2 style="margin:0 0 20px 0;"><i class="fa-solid fa-users"></i> <span id="modalTitle">New Messaging Group</span></h2>
+            <form method="post">
+                <input type="hidden" name="group_id" id="group_id">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Group Name</label>
+                <input type="text" name="group_name" id="group_name" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;">
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Members</label>
+                <div style="max-height:300px;overflow-y:auto;border:1px solid #d1d5db;border-radius:6px;padding:10px;margin-bottom:20px;">
+                    <?php foreach ($all_users as $user): ?>
+                        <label style="display:block;padding:8px;cursor:pointer;border-radius:4px;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                            <input type="checkbox" name="members[]" value="<?= $user->ID ?>" style="margin-right:8px;" class="member-checkbox">
+                            <?= esc_html($user->display_name) ?> <span style="color:#9ca3af;font-size:12px;">(<?= $user->user_email ?>)</span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+                
+                <button type="submit" name="save_messaging_group" class="btn" style="width:100%;">
+                    <i class="fa-solid fa-save"></i> Save Group
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+    function editGroup(groupId) {
+        const groups = <?= json_encode($groups) ?>;
+        const group = groups[groupId];
+        
+        document.getElementById('modalTitle').textContent = 'Edit Group';
+        document.getElementById('group_id').value = groupId;
+        document.getElementById('group_name').value = group.name;
+        
+        // Uncheck all
+        document.querySelectorAll('.member-checkbox').forEach(cb => cb.checked = false);
+        
+        // Check group members
+        group.members.forEach(memberId => {
+            const checkbox = document.querySelector(`.member-checkbox[value="${memberId}"]`);
+            if (checkbox) checkbox.checked = true;
+        });
+        
+        document.getElementById('addGroupModal').style.display = 'block';
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+});
+
+// PAGE: Messaging Interface
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'messaging') return;
+    b2b_adm_guard();
+    
+    $user_id = get_current_user_id();
+    $user_groups = b2b_get_user_messaging_groups($user_id);
+    
+    // If admin, show all groups
+    if (current_user_can('manage_options')) {
+        $user_groups = b2b_get_messaging_groups();
+    }
+    
+    $selected_group = sanitize_text_field($_GET['group'] ?? '');
+    if (empty($selected_group) && !empty($user_groups)) {
+        $selected_group = array_key_first($user_groups);
+    }
+    
+    b2b_adm_header('Messaging');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-comments"></i> Messaging</h1>
+        <?php if (current_user_can('manage_options')): ?>
+        <a href="<?= home_url('/b2b-panel/messaging/groups') ?>" class="btn">
+            <i class="fa-solid fa-users-gear"></i> Manage Groups
+        </a>
+        <?php endif; ?>
+    </div>
+    
+    <?php if (empty($user_groups)): ?>
+        <div class="card" style="text-align:center;padding:50px;">
+            <i class="fa-solid fa-inbox" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+            <h3 style="color:#9ca3af;">No messaging groups</h3>
+            <p style="color:#9ca3af;">You are not assigned to any messaging groups yet.</p>
+            <?php if (current_user_can('manage_options')): ?>
+                <a href="<?= home_url('/b2b-panel/messaging/groups') ?>" class="btn" style="margin-top:20px;">
+                    <i class="fa-solid fa-plus"></i> Create a Group
+                </a>
+            <?php endif; ?>
+        </div>
+    <?php else: ?>
+    
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+        <!-- Groups List -->
+        <div class="card" style="height:600px;overflow-y:auto;">
+            <h3 style="margin-top:0;">Your Groups</h3>
+            <?php foreach ($user_groups as $group_id => $group): ?>
+                <a href="?group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
+                    <div style="font-weight:600;"><?= esc_html($group['name']) ?></div>
+                    <div style="font-size:12px;color:#9ca3af;"><?= count($group['members'] ?? []) ?> members</div>
+                </a>
+            <?php endforeach; ?>
+        </div>
+        
+        <!-- Messages -->
+        <div class="card" style="height:600px;display:flex;flex-direction:column;">
+            <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
+                <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
+                    <?= esc_html($user_groups[$selected_group]['name']) ?>
+                </h3>
+                
+                <div id="messages-container" style="flex:1;overflow-y:auto;padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:15px;">
+                    <!-- Messages will be loaded here -->
+                </div>
+                
+                <form id="messageForm" style="display:flex;gap:10px;">
+                    <input type="hidden" id="current_group" value="<?= $selected_group ?>">
+                    <textarea id="message_input" placeholder="Type your message..." style="flex:1;resize:none;height:60px;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required></textarea>
+                    <button type="submit" class="btn" style="align-self:flex-end;height:60px;">
+                        <i class="fa-solid fa-paper-plane"></i> Send
+                    </button>
+                </form>
+            <?php else: ?>
+                <p style="text-align:center;color:#9ca3af;padding:50px;">Select a group to start messaging</p>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <script>
+    let lastTimestamp = 0;
+    
+    function loadMessages(initial = false) {
+        const groupId = document.getElementById('current_group').value;
+        if (!groupId) return;
+        
+        fetch(ajaxurl + '?action=b2b_get_messages&group_id=' + groupId + '&last_timestamp=' + (initial ? 0 : lastTimestamp))
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.data.messages.length > 0) {
+                    const container = document.getElementById('messages-container');
+                    const shouldScroll = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+                    
+                    data.data.messages.forEach(msg => {
+                        const isMe = msg.user_id == <?= $user_id ?>;
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '15px';
+                        div.style.textAlign = isMe ? 'right' : 'left';
+                        
+                        div.innerHTML = `
+                            <div style="display:inline-block;max-width:70%;text-align:left;">
+                                <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">${msg.user_name} • ${new Date(msg.time).toLocaleString()}</div>
+                                <div style="background:${isMe ? '#3b82f6' : '#fff'};color:${isMe ? '#fff' : '#1f2937'};padding:10px 15px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                    ${msg.message}
+                                </div>
+                            </div>
+                        `;
+                        
+                        container.appendChild(div);
+                        lastTimestamp = Math.max(lastTimestamp, msg.timestamp);
+                    });
+                    
+                    if (shouldScroll || initial) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+            });
+    }
+    
+    document.getElementById('messageForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const groupId = document.getElementById('current_group').value;
+        const message = document.getElementById('message_input').value.trim();
+        
+        if (!message) return;
+        
+        const formData = new FormData();
+        formData.append('action', 'b2b_send_message');
+        formData.append('group_id', groupId);
+        formData.append('message', message);
+        
+        fetch(ajaxurl, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('message_input').value = '';
+                loadMessages();
+            } else {
+                alert('Error: ' + (data.data || 'Failed to send'));
+            }
+        });
+    });
+    
+    // Load initial messages
+    loadMessages(true);
+    
+    // Poll for new messages every 5 seconds
+    setInterval(() => loadMessages(false), 5000);
+    </script>
+    
+    <?php endif; ?>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+});
+
+// PAGE: Notes Management
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'notes') return;
+    b2b_adm_guard();
+    
+    $notes = get_option('b2b_notes', []);
+    $user_id = get_current_user_id();
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter notes based on visibility
+    $visible_notes = [];
+    foreach ($notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $visible_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $visible_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $visible_notes[$note_id] = $note;
+        }
+    }
+    
+    $messaging_groups = b2b_get_messaging_groups();
+    
+    b2b_adm_header('Notes');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-note-sticky"></i> Notes</h1>
+        <?php if (current_user_can('manage_options')): ?>
+        <button class="btn" onclick="openNoteModal()">
+            <i class="fa-solid fa-plus"></i> New Note
+        </button>
+        <?php endif; ?>
+    </div>
+    
+    <?php if (empty($visible_notes)): ?>
+        <div class="card" style="text-align:center;padding:50px;">
+            <i class="fa-solid fa-sticky-note" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+            <h3 style="color:#9ca3af;">No notes yet</h3>
+            <?php if (current_user_can('manage_options')): ?>
+                <p style="color:#9ca3af;">Create your first note to share important information.</p>
+            <?php endif; ?>
+        </div>
+    <?php else: ?>
+    
+    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(350px, 1fr));gap:20px;">
+        <?php foreach ($visible_notes as $note_id => $note): ?>
+        <div class="card" style="background:<?= $note['visibility'] == 'general' ? '#fffbeb' : '#eff6ff' ?>;border-left:4px solid <?= $note['visibility'] == 'general' ? '#f59e0b' : '#3b82f6' ?>;">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
+                <h3 style="margin:0;color:#1f2937;"><?= esc_html($note['title']) ?></h3>
+                <?php if (current_user_can('manage_options')): ?>
+                <div>
+                    <button class="btn btn-light" style="padding:4px 8px;font-size:12px;" onclick="editNote('<?= $note_id ?>')">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger" style="padding:4px 8px;font-size:12px;" onclick="deleteNote('<?= $note_id ?>')">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <div style="font-size:14px;color:#4b5563;margin-bottom:15px;white-space:pre-wrap;">
+                <?= esc_html($note['content']) ?>
+            </div>
+            
+            <div style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+                <div><strong>By:</strong> <?= esc_html($note['author']) ?></div>
+                <div><strong>Visibility:</strong> <?= $note['visibility'] == 'general' ? 'Everyone' : esc_html($messaging_groups[$note['group_id']]['name'] ?? 'Unknown Group') ?></div>
+                <div><strong>Created:</strong> <?= date('d.m.Y H:i', strtotime($note['created'])) ?></div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <?php endif; ?>
+    
+    <!-- Add/Edit Note Modal -->
+    <?php if (current_user_can('manage_options')): ?>
+    <div id="noteModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+        <div style="background:white;margin:5% auto;padding:30px;width:90%;max-width:600px;border-radius:12px;position:relative;">
+            <span onclick="document.getElementById('noteModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+            <h2 style="margin:0 0 20px 0;"><i class="fa-solid fa-note-sticky"></i> <span id="noteModalTitle">New Note</span></h2>
+            <form id="noteForm">
+                <input type="hidden" id="note_id">
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Title</label>
+                <input type="text" id="note_title" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;">
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Content</label>
+                <textarea id="note_content" required style="width:100%;height:150px;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;resize:vertical;"></textarea>
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Visibility</label>
+                <select id="note_visibility" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;">
+                    <option value="general">General (Everyone)</option>
+                    <?php foreach ($messaging_groups as $group_id => $group): ?>
+                        <option value="group" data-group-id="<?= $group_id ?>"><?= esc_html($group['name']) ?> Only</option>
+                    <?php endforeach; ?>
+                </select>
+                
+                <button type="submit" class="btn" style="width:100%;">
+                    <i class="fa-solid fa-save"></i> Save Note
+                </button>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
+    
+    <script>
+    const notes = <?= json_encode($notes) ?>;
+    
+    function openNoteModal() {
+        document.getElementById('noteModalTitle').textContent = 'New Note';
+        document.getElementById('note_id').value = '';
+        document.getElementById('note_title').value = '';
+        document.getElementById('note_content').value = '';
+        document.getElementById('note_visibility').selectedIndex = 0;
+        document.getElementById('noteModal').style.display = 'block';
+    }
+    
+    function editNote(noteId) {
+        const note = notes[noteId];
+        document.getElementById('noteModalTitle').textContent = 'Edit Note';
+        document.getElementById('note_id').value = noteId;
+        document.getElementById('note_title').value = note.title;
+        document.getElementById('note_content').value = note.content;
+        
+        if (note.visibility === 'general') {
+            document.getElementById('note_visibility').selectedIndex = 0;
+        } else {
+            const options = document.querySelectorAll('#note_visibility option');
+            options.forEach((opt, idx) => {
+                if (opt.getAttribute('data-group-id') === note.group_id) {
+                    document.getElementById('note_visibility').selectedIndex = idx;
+                }
+            });
+        }
+        
+        document.getElementById('noteModal').style.display = 'block';
+    }
+    
+    function deleteNote(noteId) {
+        if (!confirm('Delete this note?')) return;
+        
+        const formData = new FormData();
+        formData.append('action', 'b2b_delete_note');
+        formData.append('note_id', noteId);
+        
+        fetch(ajaxurl, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error deleting note');
+            }
+        });
+    }
+    
+    document.getElementById('noteForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const select = document.getElementById('note_visibility');
+        const selectedOption = select.options[select.selectedIndex];
+        const visibility = selectedOption.value;
+        const groupId = selectedOption.getAttribute('data-group-id') || '';
+        
+        const formData = new FormData();
+        formData.append('action', 'b2b_save_note');
+        formData.append('note_id', document.getElementById('note_id').value);
+        formData.append('title', document.getElementById('note_title').value);
+        formData.append('content', document.getElementById('note_content').value);
+        formData.append('visibility', visibility);
+        formData.append('group_id', groupId);
+        
+        fetch(ajaxurl, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error saving note: ' + (data.data || 'Unknown error'));
+            }
+        });
+    });
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+});
+
+// Add unread message count to dashboard
+add_action('wp_footer', function() {
+    if (!is_user_logged_in() || !strpos($_SERVER['REQUEST_URI'], '/b2b-panel')) return;
+    
+    $user_id = get_current_user_id();
+    $unread = get_user_meta($user_id, 'b2b_unread_messages', true) ?: 0;
+    
+    if ($unread > 0) {
+        ?>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagingLink = document.querySelector('a[href*="/b2b-panel/messaging"]');
+            if (messagingLink && !messagingLink.querySelector('.badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'badge';
+                badge.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:11px;margin-left:8px;';
+                badge.textContent = '<?= $unread ?>';
+                messagingLink.appendChild(badge);
+            }
+        });
+        </script>
+        <?php
+    }
+});
+
+// Display recent notes on dashboard
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'dashboard') return;
+    
+    // This will be displayed on dashboard - let me add it there
+}, 999);
+
+// End of Messaging and Notes System

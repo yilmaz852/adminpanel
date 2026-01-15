@@ -9968,10 +9968,32 @@ function sa_render_customers_page() {
     // Get agent's customers
     global $wpdb;
     $agent_id = $user->ID;
-    $customer_ids = $wpdb->get_col($wpdb->prepare(
-        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
-        $agent_id
-    ));
+    
+    // If sales manager, get all customers from subordinate agents
+    if ($is_manager) {
+        // Get all sales agents who have this manager assigned
+        $agent_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_manager_id' AND meta_value = %d",
+            $agent_id
+        ));
+        
+        // If there are subordinate agents, get their customers
+        if (!empty($agent_ids)) {
+            $placeholders = implode(',', array_fill(0, count($agent_ids), '%d'));
+            $customer_ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value IN ($placeholders)",
+                ...$agent_ids
+            ));
+        } else {
+            $customer_ids = [];
+        }
+    } else {
+        // Regular agent - get only their own customers
+        $customer_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+            $agent_id
+        ));
+    }
     
     $customers = [];
     if (!empty($customer_ids)) {

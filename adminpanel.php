@@ -63,6 +63,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
     add_rewrite_rule('^b2b-panel/settings/sales-agent/?$', 'index.php?b2b_adm_page=settings_sales_agent', 'top');
+    add_rewrite_rule('^b2b-panel/settings/payments/?$', 'index.php?b2b_adm_page=settings_payments', 'top');
     
     // Support Module
     add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
@@ -77,11 +78,11 @@ add_action('init', function () {
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
     // Fixed version that ensures messaging and notes module rewrites are properly registered
-    if (!get_option('b2b_rewrite_v20_messaging_notes')) {
+    if (!get_option('b2b_rewrite_v21_payments')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v20_messaging_notes', true);
+        update_option('b2b_rewrite_v21_payments', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v19_support_fixed');
+        delete_option('b2b_rewrite_v20_messaging_notes');
     }
 });
 
@@ -1320,13 +1321,14 @@ function b2b_adm_header($title) {
             </div>
             
             <!-- Settings Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>">
                 <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
                 <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
                 <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
+                <a href="<?= home_url('/b2b-panel/settings/payments') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_payments'?'active':'' ?>"><i class="fa-solid fa-credit-card"></i> Payment Gateways</a>
                 <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
             
@@ -11421,6 +11423,549 @@ add_action('template_redirect', function () {
 });
 
 // End of Sales Agent System Phase 2
+
+/* =====================================================
+   PAYMENT GATEWAY MODULE: NMI Gateway
+===================================================== */
+
+/**
+ * WooCommerce NMI Payment Gateway
+ * Simple implementation for processing payments, refunds, and logging
+ */
+
+// Register the payment gateway
+add_filter('woocommerce_payment_gateways', 'add_nmi_gateway_class');
+function add_nmi_gateway_class($gateways) {
+    $gateways[] = 'WC_NMI_Gateway';
+    return $gateways;
+}
+
+// Initialize gateway class after plugins are loaded
+add_action('plugins_loaded', 'init_nmi_gateway_class');
+function init_nmi_gateway_class() {
+    if (!class_exists('WC_Payment_Gateway')) return;
+    
+    class WC_NMI_Gateway extends WC_Payment_Gateway {
+        public function __construct() {
+            $this->id = 'nmi_gateway';
+            $this->method_title = 'NMI Gateway';
+            $this->method_description = 'Accept credit card payments via NMI (Network Merchants Inc.)';
+            $this->has_fields = true;
+            $this->supports = array('products', 'refunds');
+            
+            // Load settings
+            $this->init_form_fields();
+            $this->init_settings();
+            
+            // Define user settings
+            $this->enabled = $this->get_option('enabled');
+            $this->title = $this->get_option('title');
+            $this->description = $this->get_option('description');
+            $this->api_username = $this->get_option('api_username');
+            $this->api_password = $this->get_option('api_password');
+            $this->test_mode = 'yes' === $this->get_option('test_mode');
+            
+            // Save settings
+            add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
+        }
+        
+        public function init_form_fields() {
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title' => 'Enable/Disable',
+                    'type' => 'checkbox',
+                    'label' => 'Enable NMI Gateway',
+                    'default' => 'no'
+                ),
+                'title' => array(
+                    'title' => 'Title',
+                    'type' => 'text',
+                    'description' => 'Payment method title shown to customers.',
+                    'default' => 'Credit Card (NMI)',
+                    'desc_tip' => true
+                ),
+                'description' => array(
+                    'title' => 'Description',
+                    'type' => 'textarea',
+                    'description' => 'Payment method description shown to customers.',
+                    'default' => 'Pay securely with your credit card.',
+                    'desc_tip' => true
+                ),
+                'test_mode' => array(
+                    'title' => 'Test Mode',
+                    'type' => 'checkbox',
+                    'label' => 'Enable test mode',
+                    'default' => 'yes',
+                    'description' => 'Use test API credentials for testing.'
+                ),
+                'api_username' => array(
+                    'title' => 'API Username',
+                    'type' => 'text',
+                    'description' => 'Your NMI API username (Security Key).',
+                    'default' => '',
+                    'desc_tip' => true
+                ),
+                'api_password' => array(
+                    'title' => 'API Password',
+                    'type' => 'password',
+                    'description' => 'Your NMI API password (optional, if required).',
+                    'default' => '',
+                    'desc_tip' => true
+                )
+            );
+        }
+        
+        public function payment_fields() {
+            if ($this->description) {
+                echo wpautop(wptexturize($this->description));
+            }
+            ?>
+            <fieldset style="border:1px solid #e5e7eb;padding:15px;border-radius:8px;background:#f9fafb;">
+                <p class="form-row form-row-wide">
+                    <label>Card Number <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_number" maxlength="16" placeholder="1234 5678 9012 3456" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <p class="form-row form-row-first">
+                    <label>Expiry Date (MM/YY) <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_expiry" maxlength="5" placeholder="12/25" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <p class="form-row form-row-last">
+                    <label>CVV <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_cvv" maxlength="4" placeholder="123" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <div style="clear:both;"></div>
+            </fieldset>
+            <?php
+        }
+        
+        public function validate_fields() {
+            if (empty($_POST['nmi_card_number'])) {
+                wc_add_notice('Card number is required', 'error');
+                return false;
+            }
+            if (empty($_POST['nmi_card_expiry'])) {
+                wc_add_notice('Card expiry date is required', 'error');
+                return false;
+            }
+            if (empty($_POST['nmi_card_cvv'])) {
+                wc_add_notice('CVV is required', 'error');
+                return false;
+            }
+            return true;
+        }
+        
+        public function process_payment($order_id) {
+            $order = wc_get_order($order_id);
+            
+            // Get card details
+            $card_number = sanitize_text_field($_POST['nmi_card_number']);
+            $card_expiry = sanitize_text_field($_POST['nmi_card_expiry']);
+            $card_cvv = sanitize_text_field($_POST['nmi_card_cvv']);
+            
+            // Prepare API request
+            $amount = $order->get_total();
+            $response = $this->process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount);
+            
+            if ($response['success']) {
+                // Payment successful
+                $order->payment_complete($response['transaction_id']);
+                $order->add_order_note(sprintf('NMI Payment completed. Transaction ID: %s', $response['transaction_id']));
+                
+                // Log transaction
+                $this->log_transaction($order_id, 'payment', $response['transaction_id'], $amount, 'completed', $response['raw_response']);
+                
+                // Empty cart
+                WC()->cart->empty_cart();
+                
+                return array(
+                    'result' => 'success',
+                    'redirect' => $this->get_return_url($order)
+                );
+            } else {
+                // Payment failed
+                wc_add_notice('Payment failed: ' . $response['error'], 'error');
+                $order->add_order_note('NMI Payment failed: ' . $response['error']);
+                
+                // Log failed transaction
+                $this->log_transaction($order_id, 'payment', '', $amount, 'failed', $response['raw_response']);
+                
+                return array('result' => 'fail');
+            }
+        }
+        
+        private function process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount) {
+            // Parse expiry date
+            list($exp_month, $exp_year) = explode('/', $card_expiry);
+            $exp_year = '20' . $exp_year; // Convert YY to YYYY
+            
+            // Build API request
+            $api_url = $this->test_mode ? 'https://secure.nmi.com/api/transact.php' : 'https://secure.nmi.com/api/transact.php';
+            
+            $post_data = array(
+                'security_key' => $this->api_username,
+                'type' => 'sale',
+                'ccnumber' => str_replace(' ', '', $card_number),
+                'ccexp' => $exp_month . $exp_year,
+                'cvv' => $card_cvv,
+                'amount' => number_format($amount, 2, '.', ''),
+                'firstname' => $order->get_billing_first_name(),
+                'lastname' => $order->get_billing_last_name(),
+                'address1' => $order->get_billing_address_1(),
+                'city' => $order->get_billing_city(),
+                'state' => $order->get_billing_state(),
+                'zip' => $order->get_billing_postcode(),
+                'country' => $order->get_billing_country(),
+                'email' => $order->get_billing_email(),
+                'orderid' => $order->get_order_number()
+            );
+            
+            // Send API request
+            $response = wp_remote_post($api_url, array(
+                'body' => $post_data,
+                'timeout' => 30,
+                'sslverify' => !$this->test_mode
+            ));
+            
+            if (is_wp_error($response)) {
+                return array(
+                    'success' => false,
+                    'error' => $response->get_error_message(),
+                    'raw_response' => ''
+                );
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            parse_str($body, $parsed_response);
+            
+            // Check response
+            if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
+                // Success
+                return array(
+                    'success' => true,
+                    'transaction_id' => $parsed_response['transactionid'] ?? '',
+                    'raw_response' => $body
+                );
+            } else {
+                // Failure
+                return array(
+                    'success' => false,
+                    'error' => $parsed_response['responsetext'] ?? 'Unknown error',
+                    'raw_response' => $body
+                );
+            }
+        }
+        
+        public function process_refund($order_id, $amount = null, $reason = '') {
+            $order = wc_get_order($order_id);
+            $transaction_id = $order->get_transaction_id();
+            
+            if (!$transaction_id) {
+                return new WP_Error('error', 'Transaction ID not found');
+            }
+            
+            // Build API request for refund
+            $api_url = $this->test_mode ? 'https://secure.nmi.com/api/transact.php' : 'https://secure.nmi.com/api/transact.php';
+            
+            $post_data = array(
+                'security_key' => $this->api_username,
+                'type' => 'refund',
+                'transactionid' => $transaction_id,
+                'amount' => number_format($amount, 2, '.', '')
+            );
+            
+            // Send API request
+            $response = wp_remote_post($api_url, array(
+                'body' => $post_data,
+                'timeout' => 30,
+                'sslverify' => !$this->test_mode
+            ));
+            
+            if (is_wp_error($response)) {
+                return new WP_Error('error', $response->get_error_message());
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            parse_str($body, $parsed_response);
+            
+            // Check response
+            if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
+                // Refund successful
+                $refund_transaction_id = $parsed_response['transactionid'] ?? '';
+                $order->add_order_note(sprintf('NMI Refund completed. Amount: %s. Transaction ID: %s. Reason: %s', 
+                    wc_price($amount), $refund_transaction_id, $reason));
+                
+                // Log refund
+                $this->log_transaction($order_id, 'refund', $refund_transaction_id, $amount, 'completed', $body);
+                
+                return true;
+            } else {
+                // Refund failed
+                $error = $parsed_response['responsetext'] ?? 'Unknown error';
+                
+                // Log failed refund
+                $this->log_transaction($order_id, 'refund', '', $amount, 'failed', $body);
+                
+                return new WP_Error('error', $error);
+            }
+        }
+        
+        private function log_transaction($order_id, $type, $transaction_id, $amount, $status, $raw_response) {
+            global $wpdb;
+            
+            // Create logs table if not exists
+            $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+            $charset_collate = $wpdb->get_charset_collate();
+            
+            $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+                id bigint(20) NOT NULL AUTO_INCREMENT,
+                order_id bigint(20) NOT NULL,
+                transaction_type varchar(20) NOT NULL,
+                transaction_id varchar(100) DEFAULT '',
+                amount decimal(10,2) NOT NULL,
+                status varchar(20) NOT NULL,
+                raw_response text,
+                created_at datetime DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY order_id (order_id)
+            ) $charset_collate;";
+            
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+            
+            // Insert log
+            $wpdb->insert($table_name, array(
+                'order_id' => $order_id,
+                'transaction_type' => $type,
+                'transaction_id' => $transaction_id,
+                'amount' => $amount,
+                'status' => $status,
+                'raw_response' => $raw_response,
+                'created_at' => current_time('mysql')
+            ));
+        }
+    }
+}
+
+// Payment Gateway Settings Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_payments') return;
+    b2b_adm_guard();
+    
+    // Get NMI gateway instance
+    $gateways = WC()->payment_gateways->get_available_payment_gateways();
+    $nmi_gateway = isset($gateways['nmi_gateway']) ? $gateways['nmi_gateway'] : null;
+    
+    // Handle settings save
+    $message = '';
+    if (isset($_POST['save_nmi_settings']) && wp_verify_nonce($_POST['nmi_settings_nonce'], 'save_nmi_settings')) {
+        if ($nmi_gateway) {
+            $nmi_gateway->settings['enabled'] = isset($_POST['nmi_enabled']) ? 'yes' : 'no';
+            $nmi_gateway->settings['title'] = sanitize_text_field($_POST['nmi_title']);
+            $nmi_gateway->settings['description'] = sanitize_textarea_field($_POST['nmi_description']);
+            $nmi_gateway->settings['test_mode'] = isset($_POST['nmi_test_mode']) ? 'yes' : 'no';
+            $nmi_gateway->settings['api_username'] = sanitize_text_field($_POST['nmi_api_username']);
+            $nmi_gateway->settings['api_password'] = sanitize_text_field($_POST['nmi_api_password']);
+            
+            update_option('woocommerce_nmi_gateway_settings', $nmi_gateway->settings);
+            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Payment gateway settings saved.</div>';
+        }
+    }
+    
+    // Get current settings
+    $settings = get_option('woocommerce_nmi_gateway_settings', array());
+    $enabled = isset($settings['enabled']) && $settings['enabled'] === 'yes';
+    $title = $settings['title'] ?? 'Credit Card (NMI)';
+    $description = $settings['description'] ?? 'Pay securely with your credit card.';
+    $test_mode = isset($settings['test_mode']) && $settings['test_mode'] === 'yes';
+    $api_username = $settings['api_username'] ?? '';
+    $api_password = $settings['api_password'] ?? '';
+    
+    // Get transaction logs
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+    $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY created_at DESC LIMIT 50", ARRAY_A);
+    
+    b2b_adm_header('Payment Gateway Settings');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-credit-card"></i> NMI Payment Gateway</h1>
+    </div>
+    
+    <?= $message ?>
+    
+    <div class="card" style="margin-bottom:30px;">
+        <form method="post">
+            <?php wp_nonce_field('save_nmi_settings', 'nmi_settings_nonce'); ?>
+            
+            <h3 style="margin-top:0;color:#1e40af;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-gear"></i> Gateway Configuration
+            </h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_enabled" value="1" <?= checked($enabled, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Enable NMI Gateway</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Allow customers to pay using NMI payment gateway</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_test_mode" value="1" <?= checked($test_mode, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Test Mode</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Use test API credentials for testing payments</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Title</label>
+                <input type="text" name="nmi_title" value="<?= esc_attr($title) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Payment method title shown to customers during checkout</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Description</label>
+                <textarea name="nmi_description" rows="3" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($description) ?></textarea>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Payment method description shown to customers</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Username (Security Key)</label>
+                <input type="text" name="nmi_api_username" value="<?= esc_attr($api_username) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Your NMI API username/security key from NMI account</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Password (Optional)</label>
+                <input type="password" name="nmi_api_password" value="<?= esc_attr($api_password) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Optional API password if required by your NMI account</small>
+            </div>
+            
+            <button type="submit" name="save_nmi_settings" class="btn-primary" style="padding:12px 30px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    
+    <!-- Transaction Logs -->
+    <div class="card">
+        <h3 style="margin-top:0;color:#1e40af;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+            <i class="fa-solid fa-list"></i> Transaction Logs
+        </h3>
+        
+        <?php if (!empty($logs)): ?>
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Order ID</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Type</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Transaction ID</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Amount</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Status</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Date</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($logs as $log): 
+                        $status_color = $log['status'] === 'completed' ? '#10b981' : '#ef4444';
+                        $type_icon = $log['transaction_type'] === 'payment' ? 'fa-credit-card' : 'fa-rotate-left';
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:12px;">
+                            <a href="<?= admin_url('post.php?post=' . $log['order_id'] . '&action=edit') ?>" target="_blank" style="color:#3b82f6;text-decoration:none;font-weight:600;">
+                                #<?= $log['order_id'] ?>
+                            </a>
+                        </td>
+                        <td style="padding:12px;">
+                            <span style="display:inline-flex;align-items:center;gap:5px;">
+                                <i class="fa-solid <?= $type_icon ?>"></i>
+                                <?= ucfirst($log['transaction_type']) ?>
+                            </span>
+                        </td>
+                        <td style="padding:12px;font-family:monospace;font-size:13px;"><?= esc_html($log['transaction_id']) ?: '—' ?></td>
+                        <td style="padding:12px;font-weight:600;"><?= wc_price($log['amount']) ?></td>
+                        <td style="padding:12px;">
+                            <span style="padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:white;background:<?= $status_color ?>;">
+                                <?= ucfirst($log['status']) ?>
+                            </span>
+                        </td>
+                        <td style="padding:12px;color:#6b7280;font-size:13px;"><?= date('Y-m-d H:i:s', strtotime($log['created_at'])) ?></td>
+                        <td style="padding:12px;">
+                            <button onclick="viewLogDetails(<?= htmlspecialchars(json_encode($log), ENT_QUOTES, 'UTF-8') ?>)" 
+                                    style="padding:6px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;font-size:12px;">
+                                <i class="fa-solid fa-eye"></i> View
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <p style="color:#6b7280;text-align:center;padding:40px 20px;">
+            <i class="fa-solid fa-inbox" style="font-size:48px;display:block;margin-bottom:15px;opacity:0.3;"></i>
+            No transaction logs yet. Transactions will appear here after first payment.
+        </p>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Log Details Modal -->
+    <div id="logModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;padding:20px;overflow:auto;">
+        <div style="max-width:800px;margin:50px auto;background:white;border-radius:12px;padding:30px;position:relative;">
+            <button onclick="closeLogModal()" style="position:absolute;top:15px;right:15px;background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;">
+                <i class="fa-solid fa-times"></i>
+            </button>
+            <h3 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-file-lines"></i> Transaction Details</h3>
+            <div id="logModalContent" style="margin-top:20px;"></div>
+        </div>
+    </div>
+    
+    <script>
+    function viewLogDetails(log) {
+        const content = `
+            <div style="background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px;">
+                <div style="display:grid;grid-template-columns:150px 1fr;gap:15px;">
+                    <strong>Order ID:</strong>
+                    <span>#${log.order_id}</span>
+                    
+                    <strong>Transaction Type:</strong>
+                    <span>${log.transaction_type}</span>
+                    
+                    <strong>Transaction ID:</strong>
+                    <span style="font-family:monospace;">${log.transaction_id || '—'}</span>
+                    
+                    <strong>Amount:</strong>
+                    <span>${log.amount}</span>
+                    
+                    <strong>Status:</strong>
+                    <span style="font-weight:600;color:${log.status === 'completed' ? '#10b981' : '#ef4444'};">${log.status}</span>
+                    
+                    <strong>Date:</strong>
+                    <span>${log.created_at}</span>
+                </div>
+            </div>
+            
+            <h4 style="margin-top:25px;color:#374151;">Raw API Response:</h4>
+            <pre style="background:#1e293b;color:#e2e8f0;padding:20px;border-radius:8px;overflow-x:auto;font-size:12px;line-height:1.6;">${log.raw_response || 'No response data'}</pre>
+        `;
+        document.getElementById('logModalContent').innerHTML = content;
+        document.getElementById('logModal').style.display = 'block';
+    }
+    
+    function closeLogModal() {
+        document.getElementById('logModal').style.display = 'none';
+    }
+    
+    // Close modal on outside click
+    document.getElementById('logModal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeLogModal();
+    });
+    </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
 
 /**
  * PHASE 4: AJAX HANDLERS

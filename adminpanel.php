@@ -10038,7 +10038,10 @@ function sa_render_customers_page() {
                             $switch_url = wp_nonce_url(add_query_arg('switch_customer', $customer->ID, home_url()), 'switch_customer');
                         ?>
                         <tr>
-                            <td><strong><a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#667eea;text-decoration:none;"><?= esc_html($customer->display_name) ?></a></strong></td>
+                            <td>
+                                <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
+                                <strong><a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;"><?= esc_html($customer->display_name) ?></a></strong>
+                            </td>
                             <td class="col-email"><?= esc_html($customer->user_email) ?></td>
                             <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
                             <td class="col-company"><?= $company ? esc_html($company) : '-' ?></td>
@@ -10579,30 +10582,14 @@ function sa_render_commissions_page() {
     
     $user = wp_get_current_user();
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
-    $commission_rate = get_option('sales_commission_rate', 3);
-    
-    // Get agent's customers
-    global $wpdb;
     $agent_id = $user->ID;
-    $customer_ids = $wpdb->get_col($wpdb->prepare(
-        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
-        $agent_id
-    ));
     
-    $orders = [];
-    $total_commission = 0;
-    
-    if (!empty($customer_ids)) {
-        $orders = wc_get_orders([
-            'customer' => $customer_ids,
-            'limit' => -1,
-            'status' => ['completed', 'processing']
-        ]);
-        
-        foreach ($orders as $order) {
-            $total_commission += ($order->get_total() * $commission_rate / 100);
-        }
-    }
+    // Filters
+    $start_date = $_GET['start_date'] ?? '2020-01-01';
+    $end_date = $_GET['end_date'] ?? date('Y-m-d');
+    $excluded = $_GET['exclude_status'] ?? [];
+    $paged_comm = isset($_GET['paged']) ? absint($_GET['paged']) : 1;
+    $per_page = 20;
     
     ?>
     <!DOCTYPE html>
@@ -10610,7 +10597,7 @@ function sa_render_commissions_page() {
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title><?= esc_html($panel_title) ?> - Commissions</title>
+        <title><?= esc_html($panel_title) ?> - Reports</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -10623,15 +10610,28 @@ function sa_render_commissions_page() {
             .nav a { display: inline-block; padding: 15px 20px; text-decoration: none; color: #6b7280; font-weight: 500; border-bottom: 2px solid transparent; }
             .nav a:hover, .nav a.active { color: #667eea; border-bottom-color: #667eea; }
             .container { max-width: 1400px; margin: 0 auto; padding: 40px; }
-            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-            .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
-            .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
             .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            .card h3 { margin-bottom: 20px; color: #1f2937; font-size: 20px; }
+            .report-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
+            .report-card { padding: 20px; border-radius: 12px; color: #fff; text-align: center; }
+            .report-card strong { font-size: 14px; display: block; margin-bottom: 10px; opacity: 0.9; }
+            .report-card div { font-size: 24px; font-weight: bold; margin-top: 5px; }
+            .bg-gross { background: #4f46e5; }
+            .bg-refund { background: #f59e0b; }
+            .bg-net { background: #10b981; }
+            .bg-comm { background: #ec4899; }
+            .filters-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+            .form-group { flex: 1; min-width: 150px; }
+            .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
+            .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; background: #667eea; color: #fff; }
+            .btn:hover { opacity: 0.9; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: #667eea; color: #fff; border-color: #667eea; }
         </style>
     </head>
     <body>
@@ -10651,53 +10651,169 @@ function sa_render_commissions_page() {
         </div>
         
         <div class="container">
-            <div class="stats">
-                <div class="stat-card">
-                    <h3>Commission Rate</h3>
-                    <div class="value"><?= number_format($commission_rate, 2) ?>%</div>
+            <div class="card">
+                <h3>Reports</h3>
+                <form method="get" class="filters-form">
+                    <input type="hidden" name="sales_panel" value="commissions">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" value="<?= esc_attr($start_date) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" value="<?= esc_attr($end_date) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Exclude Status</label>
+                        <select name="exclude_status[]" multiple style="height:42px">
+                            <?php foreach (wc_get_order_statuses() as $k => $v): ?>
+                                <option value="<?= esc_attr($k) ?>" <?= in_array($k, $excluded) ? 'selected' : '' ?>><?= esc_html($v) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="btn" style="height:42px">Generate</button>
+                </form>
+            </div>
+            
+            <?php
+            // Get agent's customers
+            global $wpdb;
+            $agent_customers = get_users(['meta_key' => 'bagli_agent_id', 'meta_value' => $agent_id, 'fields' => 'ID']);
+            $customer_ids = !empty($agent_customers) ? $agent_customers : [0];
+            
+            // Build query args
+            $base_args = [
+                'post_type' => 'shop_order',
+                'post_status' => array_diff(array_keys(wc_get_order_statuses()), $excluded),
+                'date_query' => [[
+                    'after' => $start_date . ' 00:00:00',
+                    'before' => $end_date . ' 23:59:59',
+                    'inclusive' => true
+                ]],
+                'meta_query' => [
+                    'relation' => 'OR',
+                    ['key' => '_sales_agent_id', 'value' => $agent_id],
+                    ['key' => '_customer_user', 'value' => $customer_ids, 'compare' => 'IN']
+                ],
+                'fields' => 'ids',
+                'posts_per_page' => -1
+            ];
+            
+            $all_ids = get_posts($base_args);
+            $gross = 0;
+            $refund = 0;
+            $net = 0;
+            $comm = 0;
+            $rate = (float) get_option('sales_commission_rate', 3);
+            
+            // Calculate totals
+            foreach ($all_ids as $oid) {
+                $o = wc_get_order($oid);
+                if (!$o) continue;
+                
+                $gross += $o->get_total();
+                $i_sub = floatval($o->get_subtotal());
+                $r_sub = 0;
+                
+                foreach (sa_get_refund_ids($oid) as $rid) {
+                    $r_sub += abs(floatval(sa_get_refund_item_totals($rid)['subtotal']));
+                }
+                
+                $n_item = max(0, $i_sub - $r_sub);
+                $refund += $o->get_total_refunded();
+                $net += $n_item;
+                $comm += ($n_item * ($rate / 100));
+            }
+            ?>
+            
+            <div class="report-grid">
+                <div class="report-card bg-gross">
+                    <strong>Gross Sales</strong>
+                    <div><?= wc_price($gross) ?></div>
                 </div>
-                <div class="stat-card">
-                    <h3>Total Orders</h3>
-                    <div class="value"><?= count($orders) ?></div>
+                <div class="report-card bg-refund">
+                    <strong>Refunds</strong>
+                    <div><?= wc_price($refund) ?></div>
                 </div>
-                <div class="stat-card">
-                    <h3>Total Commission</h3>
-                    <div class="value"><?= wc_price($total_commission) ?></div>
+                <div class="report-card bg-net">
+                    <strong>Net Item Subtotal</strong>
+                    <div><?= wc_price($net) ?></div>
+                </div>
+                <div class="report-card bg-comm">
+                    <strong>Commission (<?= $rate ?>%)</strong>
+                    <div><?= wc_price($comm) ?></div>
                 </div>
             </div>
             
+            <?php
+            $total_orders = count($all_ids);
+            $max_pages_comm = ceil($total_orders / $per_page);
+            $paged_ids = array_slice($all_ids, ($paged_comm - 1) * $per_page, $per_page);
+            
+            if ($paged_ids):
+            ?>
             <div class="card">
-                <h2>Commission Details</h2>
-                <?php if (empty($orders)): ?>
-                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
-                <?php else: ?>
+                <div style="overflow-x:auto;">
                 <table>
                     <thead>
                         <tr>
-                            <th>Order #</th>
-                            <th>Customer</th>
+                            <th>Order</th>
                             <th>Date</th>
-                            <th>Order Total</th>
-                            <th>Commission (<?= $commission_rate ?>%)</th>
+                            <th>Customer</th>
+                            <th>Status</th>
+                            <th>Gross</th>
+                            <th>Refund</th>
+                            <th>Net Item</th>
+                            <th>Comm</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($orders as $order): 
-                            $customer = get_userdata($order->get_customer_id());
-                            $commission = $order->get_total() * $commission_rate / 100;
+                        <?php foreach ($paged_ids as $oid):
+                            $o = wc_get_order($oid);
+                            $i_sub = floatval($o->get_subtotal());
+                            $r_sub = 0;
+                            
+                            foreach (sa_get_refund_ids($oid) as $rid) {
+                                $r_data = sa_get_refund_item_totals($rid);
+                                $r_sub += abs(floatval($r_data['subtotal']));
+                            }
+                            
+                            $n_item = max(0, $i_sub - $r_sub);
+                            $row_comm = $n_item * ($rate / 100);
+                            $c_name = $o->get_billing_first_name() . ' ' . $o->get_billing_last_name();
                         ?>
                         <tr>
-                            <td>#<?= $order->get_id() ?></td>
-                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
-                            <td><?= $order->get_date_created()->format('Y-m-d') ?></td>
-                            <td><?= $order->get_formatted_order_total() ?></td>
-                            <td style="font-weight: bold; color: #10b981;"><?= wc_price($commission) ?></td>
+                            <td>#<?= $o->get_id() ?></td>
+                            <td><?= $o->get_date_created()->date('d.m.Y') ?></td>
+                            <td><?= esc_html($c_name) ?></td>
+                            <td><?= ucfirst($o->get_status()) ?></td>
+                            <td><?= $o->get_formatted_order_total() ?></td>
+                            <td style="color:#dc2626"><?= wc_price($o->get_total_refunded()) ?></td>
+                            <td><?= wc_price($n_item) ?></td>
+                            <td style="font-weight:bold;color:#ec4899"><?= wc_price($row_comm) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
+                
+                <?php if ($max_pages_comm > 1): ?>
+                <div class="pagination">
+                    <?php if ($paged_comm > 1): ?>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm - 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Prev</a>
+                    <?php endif; ?>
+                    <span class="current">Page <?= $paged_comm ?> / <?= $max_pages_comm ?></span>
+                    <?php if ($paged_comm < $max_pages_comm): ?>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm + 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Next</a>
+                    <?php endif; ?>
+                </div>
                 <?php endif; ?>
             </div>
+            <?php else: ?>
+            <div class="card">
+                <p style="color: #6b7280; padding: 20px; text-align: center;">No records found.</p>
+            </div>
+            <?php endif; ?>
         </div>
     </body>
     </html>

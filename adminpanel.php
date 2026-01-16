@@ -1452,7 +1452,15 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:12px;justify-content:center;position:relative}
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
-        .sidebar.collapsed .submenu{display:none !important}
+        /* Collapsed submenu - use fixed positioning */
+        .sidebar.collapsed .submenu{display:none;position:fixed;left:80px;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999}
+        .sidebar.collapsed .submenu.show{display:block !important}
+        /* Solid white text and icons */
+        .sidebar.collapsed .submenu a,.sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#ffffff !important;opacity:1 !important;font-weight:500}
+        .sidebar.collapsed .submenu a:hover{background:rgba(255,255,255,.1)}
+        /* Tooltip for menu items without submenu */
+        .sidebar.collapsed .sidebar-nav a:not(.submenu-toggle)::after{content:attr(data-title);position:fixed;left:80px;padding:10px 14px;background:#1e293b;color:#fff;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.2s;z-index:9999}
+        .sidebar.collapsed .sidebar-nav a:not(.submenu-toggle):hover::after{opacity:1}
         .sidebar-nav a:hover{background:var(--sidebar-hover);color:var(--white);transform:translateX(5px)}
         .sidebar.collapsed .sidebar-nav a:hover, .sidebar.collapsed .submenu-toggle:hover{transform:none}
         .sidebar-nav a.active{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);box-shadow:0 4px 12px rgba(138,95,232,0.3)}
@@ -1460,15 +1468,10 @@ function b2b_adm_header($title) {
         body.sidebar-collapsed .main{margin-left:80px;width:calc(100% - 80px)}
         
         /* Collapsed Sidebar Tooltip & Hover Menu */
-        .sidebar.collapsed .sidebar-nav a::after, .sidebar.collapsed .submenu-toggle::after{content:attr(data-title);position:absolute;left:100%;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.9);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;white-space:nowrap;margin-left:10px;opacity:0;pointer-events:none;transition:opacity 0.2s ease;z-index:1000}
-        .sidebar.collapsed .sidebar-nav a:hover::after, .sidebar.collapsed .submenu-toggle:hover::after{opacity:1}
+        .sidebar.collapsed .submenu-toggle::after{content:attr(data-title);position:fixed;left:calc(80px + 10px);background:rgba(0,0,0,0.9);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity 0.2s ease;z-index:1000}
+        .sidebar.collapsed .submenu-toggle:hover::after{opacity:1}
         
-        /* Collapsed Sidebar - Hover Submenu */
-        .sidebar.collapsed .submenu{display:none !important;position:absolute;left:100%;background:rgba(30,41,59,0.98);min-width:220px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
-        .sidebar.collapsed .submenu.show{display:block !important}
-        .sidebar.collapsed .submenu a{display:block;padding:12px 15px;margin-bottom:5px;color:#fff !important;opacity:0.9;transition:all 0.2s ease}
-        .sidebar.collapsed .submenu a:hover{opacity:1;background:rgba(255,255,255,0.1);border-radius:6px}
-        .sidebar.collapsed .submenu a i{color:#fff !important}
+        /* Collapsed Sidebar - Hover Submenu (REMOVED - using fixed positioning instead) */
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1620,38 +1623,7 @@ function b2b_adm_header($title) {
         .modal{display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;backdrop-filter:blur(2px)}
         .modal-content{background:var(--white);width:95%;max-width:750px;border-radius:12px;overflow:hidden;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)}
         
-        /* Tooltip for collapsed sidebar */
-        .sidebar.collapsed .sidebar-nav a::after, .sidebar.collapsed .submenu-toggle::after{
-            content:attr(data-title);
-            position:absolute;
-            left:calc(100% + 15px);
-            top:50%;
-            transform:translateY(-50%);
-            background:var(--primary);
-            color:white;
-            padding:8px 12px;
-            border-radius:6px;
-            font-size:13px;
-            white-space:nowrap;
-            opacity:0;
-            pointer-events:none;
-            transition:opacity 0.2s ease;
-            z-index:1000;
-            box-shadow:0 4px 12px rgba(0,0,0,0.2)}
-        .sidebar.collapsed .sidebar-nav a::before, .sidebar.collapsed .submenu-toggle::before{
-            content:'';
-            position:absolute;
-            left:calc(100% + 7px);
-            top:50%;
-            transform:translateY(-50%);
-            border:8px solid transparent;
-            border-right-color:var(--primary);
-            opacity:0;
-            pointer-events:none;
-            transition:opacity 0.2s ease;
-            z-index:1000}
-        .sidebar.collapsed .sidebar-nav a:hover::after, .sidebar.collapsed .submenu-toggle:hover::after,
-        .sidebar.collapsed .sidebar-nav a:hover::before, .sidebar.collapsed .submenu-toggle:hover::before{opacity:1}
+        /* Tooltip for collapsed sidebar - removed (using fixed positioning tooltips above) */
         
         /* B2B Module Submenu */
         .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;border-radius:8px;margin-bottom:5px;transition:0.2s;cursor:pointer;user-select:none;}
@@ -1958,14 +1930,13 @@ function b2b_adm_header($title) {
                 toggle.addEventListener('mouseenter', function() {
                     if (sidebar.classList.contains('collapsed')) {
                         hoverTimeout = setTimeout(() => {
-                            // Calculate proper position
+                            // Use getBoundingClientRect for fixed positioning
                             const toggleRect = toggle.getBoundingClientRect();
-                            const sidebarRect = sidebar.getBoundingClientRect();
-                            const relativeTop = toggleRect.top - sidebarRect.top + sidebar.scrollTop;
                             
-                            // Set position and display
-                            submenu.style.top = relativeTop + 'px';
-                            submenu.style.left = '100%';
+                            // Set fixed position
+                            submenu.style.position = 'fixed';
+                            submenu.style.top = toggleRect.top + 'px';
+                            submenu.style.left = '80px'; // collapsed sidebar width
                             submenu.classList.add('show');
                             submenu.classList.remove('active'); // Remove active to ensure hover styling takes precedence
                         }, 100);

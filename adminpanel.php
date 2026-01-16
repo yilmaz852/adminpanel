@@ -1403,7 +1403,10 @@ function b2b_adm_header($title) {
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        /* Hope UI Design System - Refined & Optimized */
+        /* Importing Google Fonts - Poppins */
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+        
+        /* Hope UI Design System Variables */
         :root{
             --primary:#8f5fe8;
             --primary-dark:#7239ea;
@@ -1433,55 +1436,84 @@ function b2b_adm_header($title) {
             --shadow-lg:0 10px 15px -3px rgba(0,0,0,0.1);
             --shadow-xl:0 20px 25px -5px rgba(0,0,0,0.1);
         }
-        body{margin:0;font-family:"Poppins",sans-serif;background:linear-gradient(#F1F3FF, #CBD4FF);color:var(--text);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
         
-        .sidebar{width:270px;background:#151A2D;color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,0.1);transition:all 0.4s ease;left:0}
-        .sidebar.collapsed{width:85px;overflow:visible !important;z-index:1000 !important}
-        .sidebar-head{padding:25px 20px;color:var(--white);font-weight:700;font-size:1.2rem;border-bottom:1px solid rgba(255,255,255,0.1);background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);display:flex;align-items:center;justify-content:space-between;transition:padding 0.4s ease;position:relative}
-        .sidebar.collapsed .sidebar-head{padding:25px 10px;justify-content:center}
-        .sidebar-head-title{transition:opacity 0.3s ease;white-space:nowrap}
-        .sidebar.collapsed .sidebar-head-title{opacity:0;width:0;overflow:hidden}
-        .sidebar-toggle{background:#EEF2FF;border:none;color:#151A2D;font-size:18px;cursor:pointer;padding:8px;transition:all 0.4s ease;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:absolute;right:20px;height:35px;width:35px;border-radius:8px}
-        .sidebar-toggle:hover{background:#d9e1fd}
-        .sidebar.collapsed .sidebar-toggle{transform:translate(-4px, 65px) rotate(180deg)}
-        .sidebar-nav{padding:20px 15px;flex:1;overflow-y:auto;overflow-x:visible;scrollbar-width:thin;scrollbar-color:transparent transparent;transform:translateY(15px);transition:all 0.4s ease}
-        .sidebar-nav:hover{scrollbar-color:#EEF2FF transparent}
-        .sidebar.collapsed .sidebar-nav{overflow:unset;transform:translateY(65px)}
-        .sidebar-nav .nav-list{list-style:none;display:flex;gap:4px;flex-direction:column}
-        .sidebar-nav .nav-item .nav-link{color:#fff;display:flex;gap:12px;white-space:nowrap;border-radius:8px;padding:11px 15px;align-items:center;text-decoration:none;border:1px solid #151A2D;transition:all 0.4s ease;margin-bottom:4px}
-        .sidebar-nav .dropdown-toggle{cursor:pointer}
+        *{margin:0;padding:0;box-sizing:border-box;font-family:"Poppins",sans-serif}
+        body{min-height:100vh;background:linear-gradient(#F1F3FF, #CBD4FF);color:var(--text);display:flex;font-size:14px;line-height:1.6}
+        
+        /* Sidebar Styles - Gist Reference Implementation */
+        .sidebar{position:fixed;top:0;left:0;z-index:10;width:270px;height:100vh;background:#151A2D;transition:all 0.4s ease}
+        .sidebar.collapsed{width:85px}
+        
+        .sidebar .sidebar-header{display:flex;position:relative;padding:25px 20px;align-items:center;justify-content:space-between}
+        
+        .sidebar-header .header-logo img{width:46px;height:46px;display:block;object-fit:contain;border-radius:50%}
+        
+        .sidebar-header .sidebar-toggler,
+        .sidebar-menu-button{position:absolute;right:20px;height:35px;width:35px;color:#151A2D;border:none;cursor:pointer;display:flex;background:#EEF2FF;align-items:center;justify-content:center;border-radius:8px;transition:0.4s ease}
+        
+        .sidebar.collapsed .sidebar-header .sidebar-toggler{transform:translate(-4px, 65px)}
+        
+        .sidebar-header .sidebar-toggler span,
+        .sidebar-menu-button span{font-size:1.75rem;transition:0.4s ease}
+        
+        .sidebar.collapsed .sidebar-header .sidebar-toggler span{transform:rotate(180deg)}
+        
+        .sidebar-header .sidebar-toggler:hover{background:#d9e1fd}
+        
+        .sidebar-nav .nav-list{list-style:none;display:flex;gap:4px;padding:0 15px;flex-direction:column;transform:translateY(15px);transition:0.4s ease}
+        
+        .sidebar .sidebar-nav .primary-nav{overflow-y:auto;scrollbar-width:thin;padding-bottom:20px;height:calc(100vh - 227px);scrollbar-color:transparent transparent}
+        
+        .sidebar .sidebar-nav .primary-nav:hover{scrollbar-color:#EEF2FF transparent}
+        
+        .sidebar.collapsed .sidebar-nav .primary-nav{overflow:unset;transform:translateY(65px)}
+        
+        .sidebar-nav .nav-item .nav-link{color:#fff;display:flex;gap:12px;white-space:nowrap;border-radius:8px;padding:11px 15px;align-items:center;text-decoration:none;border:1px solid #151A2D;transition:0.4s ease}
+        
         .sidebar-nav .nav-item:is(:hover, .open)>.nav-link:not(.dropdown-title){color:#151A2D;background:#EEF2FF}
+        
         .sidebar .nav-link .nav-label{transition:opacity 0.3s ease}
+        
         .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:0;pointer-events:none}
+        
         .sidebar.collapsed .nav-link .dropdown-icon{transition:opacity 0.3s 0s ease}
+        
+        .sidebar-nav .secondary-nav{position:absolute;bottom:35px;width:100%;background:#151A2D}
+        
         .sidebar-nav .nav-item{position:relative}
         
         /* Dropdown Stylings */
         .sidebar-nav .dropdown-container .dropdown-icon{margin:0 -4px 0 auto;transition:transform 0.4s ease, opacity 0.3s 0.2s ease}
+        
         .sidebar-nav .dropdown-container.open .dropdown-icon{transform:rotate(180deg)}
+        
         .sidebar-nav .dropdown-menu{height:0;overflow-y:hidden;list-style:none;padding-left:15px;transition:height 0.4s ease}
+        
         .sidebar.collapsed .dropdown-menu{position:absolute;top:-10px;left:100%;opacity:0;height:auto !important;padding-right:10px;overflow-y:unset;pointer-events:none;border-radius:0 10px 10px 0;background:#151A2D;transition:0s}
+        
         .sidebar.collapsed .dropdown-menu:has(.dropdown-link){padding:7px 10px 7px 24px}
+        
         .sidebar.sidebar.collapsed .nav-item:hover>.dropdown-menu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
+        
         .sidebar.sidebar.collapsed .nav-item:hover>.dropdown-menu:has(.dropdown-link){transform:translateY(10px)}
-        .dropdown-menu .nav-link{color:#F1F4FF;padding:9px 15px}
+        
+        .dropdown-menu .nav-item .nav-link{color:#F1F4FF;padding:9px 15px}
+        
         .sidebar.collapsed .dropdown-menu .nav-link{padding:7px 15px}
         
-        /* Tooltip for menu items without submenu */
-        .sidebar.collapsed .sidebar-nav > .nav-link::after{content:attr(data-title);position:fixed;left:85px;padding:10px 14px;background:#151A2D;color:#fff;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.2s;z-index:9999}
-        .sidebar.collapsed .sidebar-nav > .nav-link:hover::after{opacity:1}
-        .sidebar-nav .nav-link:hover:not(.active){background:#EEF2FF;color:#151A2D}
-        .sidebar.collapsed .sidebar-nav .nav-link:hover{transform:none}
+        .dropdown-menu .nav-item .nav-link.dropdown-title{display:none;color:#fff;padding:9px 15px}
+        
+        .dropdown-menu:has(.dropdown-link) .nav-item .dropdown-title{font-weight:500;padding:7px 15px}
+        
+        .sidebar.collapsed .dropdown-menu .nav-item .dropdown-title{display:block}
+        
+        .sidebar-menu-button{display:none}
+        
+        /* Active Link Style */
         .sidebar-nav .nav-link.active{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);box-shadow:0 4px 12px rgba(138,95,232,0.3)}
-        .sidebar-nav .dropdown-toggle:hover:not(.active), .sidebar-nav .dropdown-container.open > .dropdown-toggle:not(.active){background:#EEF2FF;color:#151A2D}
+        /* Main Content Area */
         .main{margin-left:270px;flex:1;padding:40px;width:calc(100% - 270px);transition:all 0.4s ease;box-sizing:border-box}
         body.sidebar-collapsed .main{margin-left:85px;width:calc(100% - 85px)}
-        
-        /* Collapsed Sidebar Tooltip & Hover Menu */
-        .sidebar.collapsed .dropdown-toggle::after{content:attr(data-title);position:fixed;left:calc(85px + 10px);background:rgba(0,0,0,0.9);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity 0.2s ease;z-index:1000}
-        .sidebar.collapsed .dropdown-toggle:hover::after{opacity:1}
-        
-        /* Collapsed Sidebar - Hover Submenu (REMOVED - using fixed positioning instead) */
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1641,8 +1673,8 @@ function b2b_adm_header($title) {
         .form-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;}
         
         /* Mobile Menu Toggle Button */
-        .mobile-menu-toggle{display:none;position:fixed;left:20px;top:20px;z-index:1002;background:#151A2D;color:#F1F4FF;border:none;padding:0;width:42px;height:40px;cursor:pointer;font-size:20px;box-shadow:0 2px 12px rgba(0,0,0,0.2);border-radius:8px;align-items:center;justify-content:center}
-        .mobile-menu-toggle:active{transform:scale(0.95)}
+        .mobile-menu-toggle{display:none;position:fixed;top:0;left:0;z-index:1002;background:var(--primary);color:white;border:none;padding:0;width:56px;height:56px;cursor:pointer;font-size:20px;box-shadow:0 2px 12px rgba(0,0,0,0.2);border-bottom-right-radius:16px;align-items:center;justify-content:center}
+        .mobile-menu-toggle:active{background:#1e293b;transform:scale(0.95)}
         
         /* Mobile Header Bar */
         .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
@@ -1657,35 +1689,37 @@ function b2b_adm_header($title) {
         
         /* Responsive Design */
         @media (max-width: 1200px) {
-            .sidebar{width:270px;}
-            .main{margin-left:270px;padding:30px;}
+            .sidebar{width:240px;}
+            .main{margin-left:240px;padding:30px;}
             .dash-grid{grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));}
         }
         @media (max-width: 992px) {
-            .sidebar{width:270px;}
-            .main{margin-left:270px;padding:25px;}
+            .sidebar{width:220px;}
+            .main{margin-left:220px;padding:25px;}
             .page-title{font-size:20px;}
             .form-grid{grid-template-columns:1fr;}
         }
         @media (max-width: 768px) {
+            .sidebar-menu-button{position:fixed;left:20px;top:20px;height:40px;width:42px;display:flex;color:#F1F4FF;background:#151A2D}
+            .sidebar.collapsed{width:270px;left:-270px}
+            .sidebar.collapsed .sidebar-header .sidebar-toggler{transform:none}
+            .sidebar.collapsed .sidebar-nav .primary-nav{transform:translateY(15px)}
+            .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:1;pointer-events:auto}
+            
             .mobile-menu-toggle{display:flex}
             .mobile-header{display:block}
             body{flex-direction:column;overflow-x:hidden}
-            .sidebar{width:270px;height:100vh;position:fixed;left:-270px;top:0;z-index:1001;transition:all 0.4s ease;box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
-            .sidebar.collapsed{width:270px;left:0}
-            .sidebar.collapsed .sidebar-header .sidebar-toggler{transform:none}
-            .sidebar.collapsed .sidebar-nav{transform:translateY(15px)}
-            .sidebar.mobile-open{left:0}
-            .sidebar-toggle{display:flex}
-            .sidebar-nav{padding:20px 15px;display:block;overflow-x:hidden;transform:translateY(15px)}
-            .sidebar-nav .nav-link, .dropdown-toggle{flex:initial;min-width:initial;width:100%;padding:11px 15px;margin-bottom:4px;border-radius:8px}
-            .sidebar-nav .nav-link .nav-label, .dropdown-toggle .nav-label{opacity:1 !important;width:auto !important;overflow:visible !important}
-            .sidebar.collapsed .sidebar-nav .nav-link, .sidebar.collapsed .dropdown-toggle{padding:11px 15px;justify-content:flex-start}
-            .sidebar.collapsed .dropdown-toggle i.fa-chevron-down{display:inline-block !important;opacity:1 !important}
-            .sidebar.collapsed .dropdown-menu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0}
-            .sidebar.collapsed .sidebar-nav .nav-link::after, .sidebar.collapsed .dropdown-toggle::after{display:none}
+            .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
+            .sidebar.mobile-open{transform:translateX(0)}
+            .sidebar-toggler{display:none}
+            .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
+            .sidebar-nav .nav-link{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
+            .sidebar-nav .nav-link .nav-label{opacity:1 !important;width:auto !important;overflow:visible !important}
+            .sidebar.collapsed .sidebar-nav .nav-link{padding:14px 16px;justify-content:flex-start}
+            .sidebar.collapsed .dropdown-toggle .dropdown-icon{display:inline-block !important;opacity:1 !important}
+            .sidebar.collapsed .dropdown-menu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0;opacity:1;pointer-events:auto;transform:none}
             .dropdown-menu{padding-left:20px}
-            .dropdown-menu .nav-link{padding:9px 15px;font-size:13px}
+            .dropdown-menu .nav-link{padding:10px 16px;font-size:14px}
             .main{margin-left:0;padding:16px;padding-top:72px;width:100%;max-width:100%;overflow-x:hidden}
             body.sidebar-collapsed .main{margin-left:0;width:100%}
             .page-header{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:16px}
@@ -1715,7 +1749,7 @@ function b2b_adm_header($title) {
             .modal-content{margin:12px;width:calc(100% - 24px)}
             .sidebar{width:85%;max-width:280px}
             .sidebar-nav{padding:70px 12px 16px 12px}
-            .sidebar-nav .nav-link, .dropdown-toggle{padding:12px 14px}
+            .sidebar-nav a, .submenu-toggle{padding:12px 14px}
             #bulkEditPanel{padding:12px}
             .bulk-section{padding:12px}
             .page-header{gap:10px}
@@ -1738,137 +1772,226 @@ function b2b_adm_header($title) {
     <div class="sidebar-overlay" onclick="toggleMobileMenu()"></div>
 
     <div class="sidebar">
-        <div class="sidebar-head">
-            <span class="sidebar-head-title"><i class="fa-solid fa-shield-halved"></i> ADMIN PANEL V10</span>
-            <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">
-                <i class="fa-solid fa-angles-left"></i>
+        <div class="sidebar-header">
+            <div class="header-logo">
+                <span style="color:#fff;font-weight:700;font-size:1.2rem;display:flex;align-items:center;gap:8px">
+                    <i class="fa-solid fa-shield-halved"></i> 
+                    <span class="nav-label" style="white-space:nowrap">ADMIN PANEL</span>
+                </span>
+            </div>
+            <button class="sidebar-toggler" onclick="toggleSidebar()" title="Toggle Sidebar">
+                <span><i class="fa-solid fa-angles-left"></i></span>
             </button>
         </div>
         <div class="sidebar-nav">
-            <a href="<?= home_url('/b2b-panel') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>" data-title="Dashboard">
-                <i class="fa-solid fa-chart-pie"></i> <span class="nav-label">Dashboard</span>
-            </a>
-            <a href="<?= home_url('/b2b-panel/orders') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>" data-title="Orders">
-                <i class="fa-solid fa-box"></i> <span class="nav-label">Orders</span>
-            </a>
-            <a href="<?= home_url('/b2b-panel/reports') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>" data-title="Reports">
-                <i class="fa-solid fa-chart-line"></i> <span class="nav-label">Reports</span>
-            </a>
+            <div class="nav-list primary-nav">
+                <!-- Dashboard -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>" data-title="Dashboard">
+                        <i class="fa-solid fa-chart-pie"></i> <span class="nav-label">Dashboard</span>
+                    </a>
+                </div>
+                
+                <!-- Orders -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/orders') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>" data-title="Orders">
+                        <i class="fa-solid fa-box"></i> <span class="nav-label">Orders</span>
+                    </a>
+                </div>
+                
+                <!-- Reports -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/reports') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>" data-title="Reports">
+                        <i class="fa-solid fa-chart-line"></i> <span class="nav-label">Reports</span>
+                    </a>
+                </div>
+                
+                <!-- Stock Planning Dropdown -->
+                <div class="nav-item dropdown-container <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'open':'' ?>">
+                    <div class="nav-link dropdown-toggle" onclick="toggleDropdown(this)" data-title="Stock Planning" style="cursor:pointer">
+                        <i class="fa-solid fa-boxes-stacked"></i> 
+                        <span class="nav-label">Stock Planning</span> 
+                        <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                    </div>
+                    <div class="dropdown-menu">
+                        <div class="nav-item">
+                            <a href="#" class="nav-link dropdown-title">Stock Planning</a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/stock-planning') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='stock_planning'?'active':'' ?>" data-title="Sales Analysis">
+                                <i class="fa-solid fa-chart-gantt"></i> <span class="nav-label">Sales Analysis</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='supplier_orders'?'active':'' ?>" data-title="Supplier Orders">
+                                <i class="fa-solid fa-truck-ramp-box"></i> <span class="nav-label">Supplier Orders</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Activity Log -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>" data-title="Activity Log">
+                        <i class="fa-solid fa-clipboard-list"></i> <span class="nav-label">Activity Log</span>
+                    </a>
+                </div>
+                
+                <!-- Products Dropdown -->
+                <div class="nav-item dropdown-container <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'open':'' ?>">
+                    <div class="nav-link dropdown-toggle" onclick="toggleDropdown(this)" data-title="Products" style="cursor:pointer">
+                        <i class="fa-solid fa-tags"></i> 
+                        <span class="nav-label">Products</span> 
+                        <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                    </div>
+                    <div class="dropdown-menu">
+                        <div class="nav-item">
+                            <a href="#" class="nav-link dropdown-title">Products</a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/products') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'||get_query_var('b2b_adm_page')=='product_add_new'?'active':'' ?>" data-title="All Products">
+                                <i class="fa-solid fa-list"></i> <span class="nav-label">All Products</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>" data-title="Categories">
+                                <i class="fa-solid fa-folder-tree"></i> <span class="nav-label">Categories</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>" data-title="Price Adjuster">
+                                <i class="fa-solid fa-dollar-sign"></i> <span class="nav-label">Price Adjuster</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/products/import') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>" data-title="Import">
+                                <i class="fa-solid fa-file-import"></i> <span class="nav-label">Import</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/products/export') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products_export'?'active':'' ?>" data-title="Export">
+                                <i class="fa-solid fa-file-export"></i> <span class="nav-label">Export</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Customers -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/customers') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>" data-title="Customers">
+                        <i class="fa-solid fa-users"></i> <span class="nav-label">Customers</span>
+                    </a>
+                </div>
+                
+                <!-- B2B Module Dropdown -->
+                <div class="nav-item dropdown-container <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'open':'' ?>">
+                    <div class="nav-link dropdown-toggle" onclick="toggleDropdown(this)" data-title="B2B Module" style="cursor:pointer">
+                        <i class="fa-solid fa-layer-group"></i> 
+                        <span class="nav-label">B2B Module</span> 
+                        <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                    </div>
+                    <div class="dropdown-menu">
+                        <div class="nav-item">
+                            <a href="#" class="nav-link dropdown-title">B2B Module</a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_approvals'?'active':'' ?>" data-title="Approvals">
+                                <i class="fa-solid fa-user-check"></i> <span class="nav-label">Approvals</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_groups'?'active':'' ?>" data-title="Groups">
+                                <i class="fa-solid fa-users-gear"></i> <span class="nav-label">Groups</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/b2b-module/roles') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_roles'?'active':'' ?>" data-title="Roles">
+                                <i class="fa-solid fa-user-tag"></i> <span class="nav-label">Roles</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_settings'?'active':'' ?>" data-title="Settings">
+                                <i class="fa-solid fa-sliders"></i> <span class="nav-label">Settings</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_form_editor'?'active':'' ?>" data-title="Form Editor">
+                                <i class="fa-solid fa-pen-to-square"></i> <span class="nav-label">Form Editor</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Settings Dropdown -->
+                <div class="nav-item dropdown-container <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'open':'' ?>">
+                    <div class="nav-link dropdown-toggle" onclick="toggleDropdown(this)" data-title="Settings" style="cursor:pointer">
+                        <i class="fa-solid fa-gear"></i> 
+                        <span class="nav-label">Settings</span> 
+                        <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+                    </div>
+                    <div class="dropdown-menu">
+                        <div class="nav-item">
+                            <a href="#" class="nav-link dropdown-title">Settings</a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>" data-title="General">
+                                <i class="fa-solid fa-sliders"></i> <span class="nav-label">General</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>" data-title="Tax Exemption">
+                                <i class="fa-solid fa-receipt"></i> <span class="nav-label">Tax Exemption</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="nav-link dropdown-link <?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>" data-title="Shipping">
+                                <i class="fa-solid fa-truck"></i> <span class="nav-label">Shipping</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings/payments') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_payments'?'active':'' ?>" data-title="Payment Gateways">
+                                <i class="fa-solid fa-credit-card"></i> <span class="nav-label">Payment Gateways</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>" data-title="Sales Agent">
+                                <i class="fa-solid fa-user-tie"></i> <span class="nav-label">Sales Agent</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Support Tickets -->
+                <?php if(current_user_can('manage_woocommerce')): ?>
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>" data-title="Support">
+                        <i class="fa-solid fa-headphones"></i> <span class="nav-label">Support</span>
+                    </a>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Messaging -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/messaging') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups'])?'active':'' ?>" data-title="Messaging">
+                        <i class="fa-solid fa-comments"></i> <span class="nav-label">Messaging</span>
+                    </a>
+                </div>
+                
+                <!-- Notes -->
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/notes') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='notes'?'active':'' ?>" data-title="Notes">
+                        <i class="fa-solid fa-note-sticky"></i> <span class="nav-label">Notes</span>
+                    </a>
+                </div>
+            </div>
             
-            <!-- Stock Planning Module with Submenu -->
-            <div class="nav-item dropdown-container">
-            <div class="nav-link dropdown-toggle <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>" data-title="Stock Planning">
-                <i class="fa-solid fa-boxes-stacked"></i> <span class="nav-label">Stock Planning</span> <i class="fa-solid fa-chevron-down dropdown-icon"></i>
+            <div class="nav-list secondary-nav">
+                <div class="nav-item">
+                    <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" class="nav-link" style="color:#fca5a5">
+                        <i class="fa-solid fa-power-off"></i> <span class="nav-label">Logout</span>
+                    </a>
+                </div>
             </div>
-            <div class="dropdown-menu <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/stock-planning') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='stock_planning'?'active':'' ?>">
-                    <i class="fa-solid fa-chart-gantt"></i> <span class="nav-label">Sales Analysis</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='supplier_orders'?'active':'' ?>">
-                    <i class="fa-solid fa-truck-ramp-box"></i> <span class="nav-label">Supplier Orders</span>
-                </a>
-            </div>
-            </div>
-            
-            <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>" data-title="Activity Log">
-                <i class="fa-solid fa-clipboard-list"></i> <span class="nav-label">Activity Log</span>
-            </a>
-            
-            <!-- Products Module with Submenu -->
-            <div class="nav-item dropdown-container">
-            <div class="nav-link dropdown-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" data-title="Products">
-                <i class="fa-solid fa-tags"></i> <span class="nav-label">Products</span> <i class="fa-solid fa-chevron-down dropdown-icon"></i>
-            </div>
-            <div class="dropdown-menu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/products') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'||get_query_var('b2b_adm_page')=='product_add_new'?'active':'' ?>">
-                    <i class="fa-solid fa-list"></i> <span class="nav-label">All Products</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>">
-                    <i class="fa-solid fa-folder-tree"></i> <span class="nav-label">Categories</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>">
-                    <i class="fa-solid fa-dollar-sign"></i> <span class="nav-label">Price Adjuster</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/products/import') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>">
-                    <i class="fa-solid fa-file-import"></i> <span class="nav-label">Import</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/products/export') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='products_export'?'active':'' ?>">
-                    <i class="fa-solid fa-file-export"></i> <span class="nav-label">Export</span>
-                </a>
-            </div>
-            </div>
-            
-            <a href="<?= home_url('/b2b-panel/customers') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>" data-title="Customers">
-                <i class="fa-solid fa-users"></i> <span class="nav-label">Customers</span>
-            </a>
-            
-            <!-- B2B Module with Submenu -->
-            <div class="nav-item dropdown-container">
-            <div class="nav-link dropdown-toggle <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>" data-title="B2B Module">
-                <i class="fa-solid fa-layer-group"></i> <span class="nav-label">B2B Module</span> <i class="fa-solid fa-chevron-down dropdown-icon"></i>
-            </div>
-            <div class="dropdown-menu <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_approvals'?'active':'' ?>">
-                    <i class="fa-solid fa-user-check"></i> <span class="nav-label">Approvals</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_groups'?'active':'' ?>">
-                    <i class="fa-solid fa-users-gear"></i> <span class="nav-label">Groups</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/b2b-module/roles') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_roles'?'active':'' ?>">
-                    <i class="fa-solid fa-user-tag"></i> <span class="nav-label">Roles</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_settings'?'active':'' ?>">
-                    <i class="fa-solid fa-sliders"></i> <span class="nav-label">Settings</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='b2b_form_editor'?'active':'' ?>">
-                    <i class="fa-solid fa-pen-to-square"></i> <span class="nav-label">Form Editor</span>
-                </a>
-            </div>
-            </div>
-            
-            <!-- Settings Module with Submenu -->
-            <div class="nav-item dropdown-container">
-            <div class="nav-link dropdown-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" data-title="Settings">
-                <i class="fa-solid fa-gear"></i> <span class="nav-label">Settings</span> <i class="fa-solid fa-chevron-down dropdown-icon"></i>
-            </div>
-            <div class="dropdown-menu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/settings') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>">
-                    <i class="fa-solid fa-sliders"></i> <span class="nav-label">General</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>">
-                    <i class="fa-solid fa-receipt"></i> <span class="nav-label">Tax Exemption</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="nav-link dropdown-link <?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>">
-                    <i class="fa-solid fa-truck"></i> <span class="nav-label">Shipping</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/settings/payments') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_payments'?'active':'' ?>">
-                    <i class="fa-solid fa-credit-card"></i> <span class="nav-label">Payment Gateways</span>
-                </a>
-                <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>">
-                    <i class="fa-solid fa-user-tie"></i> <span class="nav-label">Sales Agent</span>
-                </a>
-            </div>
-            </div>
-            
-            <!-- Support Tickets Module -->
-            <?php if(current_user_can('manage_woocommerce')): ?>
-            <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>" data-title="Support">
-                <i class="fa-solid fa-headphones"></i> <span class="nav-label">Support</span>
-            </a>
-            <?php endif; ?>
-            
-            <!-- Messaging Module -->
-            <a href="<?= home_url('/b2b-panel/messaging') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups'])?'active':'' ?>" data-title="Messaging">
-                <i class="fa-solid fa-comments"></i> <span class="nav-label">Messaging</span>
-            </a>
-            
-            <!-- Notes Module -->
-            <a href="<?= home_url('/b2b-panel/notes') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='notes'?'active':'' ?>" data-title="Notes">
-                <i class="fa-solid fa-note-sticky"></i> <span class="nav-label">Notes</span>
-            </a>
-        </div>
-        <div style="margin-top:auto;padding:20px">
-            <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
         </div>
     </div>
 
@@ -1877,32 +2000,45 @@ function b2b_adm_header($title) {
     // Define ajaxurl for AJAX requests (not available in front-end by default)
     var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
     
-    // Toggle the visibility of a dropdown menu
-    const toggleDropdown = (dropdown, menu, isOpen) => {
-        dropdown.classList.toggle("open", isOpen);
-        menu.style.height = isOpen ? `${menu.scrollHeight}px` : 0;
-    };
-
-    // Close all open dropdowns
-    const closeAllDropdowns = () => {
-        document.querySelectorAll(".dropdown-container.open").forEach((openDropdown) => {
-            toggleDropdown(openDropdown, openDropdown.querySelector(".dropdown-menu"), false);
+    // Toggle dropdown menus
+    function toggleDropdown(element) {
+        const sidebar = document.querySelector('.sidebar');
+        const container = element.closest('.dropdown-container');
+        const dropdownMenu = container.querySelector('.dropdown-menu');
+        
+        // Don't toggle in collapsed mode - let hover handle it
+        if (sidebar.classList.contains('collapsed')) {
+            return;
+        }
+        
+        // Close all other dropdowns
+        closeAllDropdowns(container);
+        
+        // Toggle current dropdown
+        const isOpen = container.classList.contains('open');
+        if (isOpen) {
+            container.classList.remove('open');
+            dropdownMenu.style.height = '0';
+        } else {
+            container.classList.add('open');
+            // Set height to scrollHeight for smooth animation
+            dropdownMenu.style.height = dropdownMenu.scrollHeight + 'px';
+        }
+    }
+    
+    // Close all dropdowns except the current one
+    function closeAllDropdowns(exceptContainer = null) {
+        const allContainers = document.querySelectorAll('.dropdown-container');
+        allContainers.forEach(container => {
+            if (container !== exceptContainer) {
+                container.classList.remove('open');
+                const menu = container.querySelector('.dropdown-menu');
+                if (menu) {
+                    menu.style.height = '0';
+                }
+            }
         });
-    };
-
-    // Attach click event to all dropdown toggles
-    document.querySelectorAll(".dropdown-toggle").forEach((dropdownToggle) => {
-        dropdownToggle.addEventListener("click", (e) => {
-            e.preventDefault();
-
-            const dropdown = dropdownToggle.closest(".dropdown-container");
-            const menu = dropdown.querySelector(".dropdown-menu");
-            const isOpen = dropdown.classList.contains("open");
-
-            closeAllDropdowns(); // Close all open dropdowns
-            toggleDropdown(dropdown, menu, !isOpen); // Toggle current dropdown visibility
-        });
-    });
+    }
     
     // Sidebar collapse/expand toggle
     function toggleSidebar() {
@@ -1910,39 +2046,63 @@ function b2b_adm_header($title) {
         const body = document.body;
         const isCollapsed = sidebar.classList.contains('collapsed');
         
-        closeAllDropdowns(); // Close all open dropdowns
-        
         if (isCollapsed) {
             sidebar.classList.remove('collapsed');
             body.classList.remove('sidebar-collapsed');
             localStorage.setItem('sidebarCollapsed', 'false');
+            
+            // Restore open dropdown states
+            document.querySelectorAll('.dropdown-container.open').forEach(container => {
+                const menu = container.querySelector('.dropdown-menu');
+                if (menu) {
+                    menu.style.height = menu.scrollHeight + 'px';
+                }
+            });
         } else {
             sidebar.classList.add('collapsed');
             body.classList.add('sidebar-collapsed');
             localStorage.setItem('sidebarCollapsed', 'true');
+            
+            // Reset all dropdown heights when collapsing
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.style.height = '';
+            });
         }
     }
     
-    // Attach click event to sidebar toggle buttons
-    document.querySelectorAll(".sidebar-toggle").forEach((button) => {
-        button.addEventListener("click", toggleSidebar);
-    });
-    
-    // Collapse sidebar by default on small screens
-    if (window.innerWidth <= 1024) {
-        document.querySelector(".sidebar").classList.add("collapsed");
-        document.body.classList.add('sidebar-collapsed');
-    }
-    
     // Restore sidebar state from localStorage on page load
-    const sidebarCollapsed = localStorage.getItem('sidebarCollapsed');
-    if (sidebarCollapsed === 'true') {
-        document.querySelector('.sidebar').classList.add('collapsed');
-        document.body.classList.add('sidebar-collapsed');
-    } else if (sidebarCollapsed === 'false') {
-        document.querySelector('.sidebar').classList.remove('collapsed');
-        document.body.classList.remove('sidebar-collapsed');
-    }
+    document.addEventListener('DOMContentLoaded', function() {
+        const sidebarCollapsed = localStorage.getItem('sidebarCollapsed');
+        if (sidebarCollapsed === 'true') {
+            document.querySelector('.sidebar').classList.add('collapsed');
+            document.body.classList.add('sidebar-collapsed');
+        } else {
+            // Set initial heights for open dropdowns
+            document.querySelectorAll('.dropdown-container.open').forEach(container => {
+                const menu = container.querySelector('.dropdown-menu');
+                if (menu) {
+                    menu.style.height = menu.scrollHeight + 'px';
+                }
+            });
+        }
+        
+        updateMobileTitle();
+        
+        // Close mobile menu when clicking a link
+        if(window.innerWidth <= 768) {
+            const sidebarLinks = document.querySelectorAll('.sidebar-nav a');
+            sidebarLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if(window.innerWidth <= 768) {
+                        setTimeout(toggleMobileMenu, 150);
+                    }
+                });
+            });
+        }
+        
+        // Update mobile title on window resize
+        window.addEventListener('resize', updateMobileTitle);
+    });
     
     // Mobile menu toggle
     function toggleMobileMenu() {
@@ -1973,25 +2133,6 @@ function b2b_adm_header($title) {
             mobileTitle.textContent = pageTitle.textContent;
         }
     }
-    
-    // Close mobile menu when clicking a link
-    document.addEventListener('DOMContentLoaded', function() {
-        updateMobileTitle();
-        
-        if(window.innerWidth <= 768) {
-            const sidebarLinks = document.querySelectorAll('.sidebar-nav a');
-            sidebarLinks.forEach(link => {
-                link.addEventListener('click', function() {
-                    if(window.innerWidth <= 768) {
-                        setTimeout(toggleMobileMenu, 150);
-                    }
-                });
-            });
-        }
-        
-        // Update mobile title on window resize
-        window.addEventListener('resize', updateMobileTitle);
-    });
     </script>
     <?php
 }

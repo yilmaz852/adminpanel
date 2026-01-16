@@ -63,6 +63,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/shipping/?$', 'index.php?b2b_adm_page=settings_shipping', 'top');
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
     add_rewrite_rule('^b2b-panel/settings/sales-agent/?$', 'index.php?b2b_adm_page=settings_sales_agent', 'top');
+    add_rewrite_rule('^b2b-panel/settings/payments/?$', 'index.php?b2b_adm_page=settings_payments', 'top');
     
     // Support Module
     add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
@@ -77,11 +78,11 @@ add_action('init', function () {
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
     // Fixed version that ensures messaging and notes module rewrites are properly registered
-    if (!get_option('b2b_rewrite_v20_messaging_notes')) {
+    if (!get_option('b2b_rewrite_v21_payments')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v20_messaging_notes', true);
+        update_option('b2b_rewrite_v21_payments', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v19_support_fixed');
+        delete_option('b2b_rewrite_v20_messaging_notes');
     }
 });
 
@@ -1075,6 +1076,69 @@ add_action('wp_ajax_b2b_adm_get_details', function() {
     if($wh_a || $wh_b) {
         $logs_html = '<div style="background:#f1f5f9;padding:15px;margin-top:15px;font-size:12px;border-radius:6px;color:#475569;border:1px solid #e2e8f0;"><strong><i class="fa-solid fa-clock-rotate-left"></i> Warehouse Logs:</strong><br><div style="white-space:pre-wrap;margin-top:5px">'.esc_html(trim($wh_a . "\n" . $wh_b)).'</div></div>';
     }
+    
+    // 5. QUICKBOOKS SYNC STATUS - NEW SECTION
+    $qb_invoice = get_post_meta($oid, '_qbo_invoice_id', true) 
+               ?: get_post_meta($oid, '_quickbooks_invoice_id', true);
+    $qb_invoice_num = get_post_meta($oid, '_qbo_invoice_number', true);
+    $qb_sync_date = get_post_meta($oid, '_qbo_sync_date', true) 
+                 ?: get_post_meta($oid, '_quickbooks_sync_date', true);
+    $qb_synced = get_post_meta($oid, '_qbo_synced', true) 
+              ?: get_post_meta($oid, 'myworks_qbo_synced', true);
+    $qb_sync_status = get_post_meta($oid, '_qbo_sync_status', true);
+    
+    // Determine sync status
+    $is_synced = false;
+    if ($qb_invoice || $qb_synced == '1' || $qb_synced == 'yes' || $qb_sync_status == 'synced') {
+        $is_synced = true;
+    }
+    
+    $qb_html = '';
+    if ($is_synced || $qb_invoice || $qb_sync_date) {
+        $status_color = $is_synced ? '#10b981' : '#ef4444';
+        $status_icon = $is_synced ? 'fa-circle-check' : 'fa-circle-xmark';
+        $status_text = $is_synced ? 'Synced' : 'Not Synced';
+        
+        $qb_html = '<div style="margin-top:20px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:20px;">';
+        $qb_html .= '<h4 style="margin:0 0 15px 0;color:#0c4a6e;font-size:14px;border-bottom:1px solid #bae6fd;padding-bottom:10px;text-transform:uppercase">';
+        $qb_html .= '<i class="fa-solid fa-book"></i> QuickBooks Sync Status</h4>';
+        
+        $qb_html .= '<div style="display:grid;grid-template-columns:140px 1fr;gap:12px;font-size:13px;color:#334155">';
+        
+        // Status
+        $qb_html .= '<div style="font-weight:600">Status:</div>';
+        $qb_html .= '<div style="display:flex;align-items:center;gap:6px;color:'.$status_color.';font-weight:600">';
+        $qb_html .= '<i class="fa-solid '.$status_icon.'"></i> '.$status_text.'</div>';
+        
+        // Invoice ID
+        if ($qb_invoice) {
+            $qb_html .= '<div style="font-weight:600">Invoice ID:</div>';
+            $qb_html .= '<div style="font-family:monospace;color:#0c4a6e">'.esc_html($qb_invoice).'</div>';
+        }
+        
+        // Invoice Number
+        if ($qb_invoice_num) {
+            $qb_html .= '<div style="font-weight:600">Invoice Number:</div>';
+            $qb_html .= '<div style="font-family:monospace;color:#0c4a6e">'.esc_html($qb_invoice_num).'</div>';
+        }
+        
+        // Sync Date
+        if ($qb_sync_date) {
+            $formatted_date = is_numeric($qb_sync_date) 
+                ? date('d.m.Y H:i', $qb_sync_date) 
+                : date('d.m.Y H:i', strtotime($qb_sync_date));
+            $qb_html .= '<div style="font-weight:600">Last Sync:</div>';
+            $qb_html .= '<div>'.esc_html($formatted_date).'</div>';
+        }
+        
+        $qb_html .= '</div></div>';
+    } else {
+        // Not synced - show info box
+        $qb_html = '<div style="margin-top:20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:15px;text-align:center;">';
+        $qb_html .= '<i class="fa-solid fa-circle-xmark" style="font-size:24px;color:#94a3b8;display:block;margin-bottom:10px"></i>';
+        $qb_html .= '<span style="color:#64748b;font-size:13px">Not synced to QuickBooks yet</span>';
+        $qb_html .= '</div>';
+    }
 
     wp_send_json_success([
         'id' => $order->get_id(),
@@ -1083,8 +1147,8 @@ add_action('wp_ajax_b2b_adm_get_details', function() {
         'shipping' => $order->get_formatted_shipping_address() ?: 'No address',
         'items' => $items,
         'grand_total' => $order->get_formatted_order_total(),
-        // Notlar + Teslimat Bilgisi + Loglar (Hepsi birleşti)
-        'extra_html' => $notes . $ops_html . $logs_html 
+        // Notlar + Teslimat Bilgisi + Loglar + QB Status (Hepsi birleşti)
+        'extra_html' => $notes . $ops_html . $logs_html . $qb_html
     ]);
 });
 
@@ -1320,13 +1384,14 @@ function b2b_adm_header($title) {
             </div>
             
             <!-- Settings Module with Submenu -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" onclick="toggleSubmenu(this)">
                 <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>">
                 <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
                 <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
                 <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
+                <a href="<?= home_url('/b2b-panel/settings/payments') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_payments'?'active':'' ?>"><i class="fa-solid fa-credit-card"></i> Payment Gateways</a>
                 <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
             
@@ -2787,6 +2852,28 @@ add_action('template_redirect', function () {
         $note = esc_attr(get_post_meta($oid, '_'.$wh.'_notes', true));
         return "<button class='wh-btn' style='background:$col;width:100%;font-size:11px;padding:5px' data-id='$oid' data-wh='$wh' data-note='$note'>$txt</button>";
     }
+    
+    // QB Status Helper
+    function adm_qb_status($oid) {
+        // Check various meta keys that MyWorks QB Online plugin might use
+        $qb_invoice = get_post_meta($oid, '_qbo_invoice_id', true) 
+                   ?: get_post_meta($oid, '_quickbooks_invoice_id', true);
+        $qb_synced = get_post_meta($oid, '_qbo_synced', true) 
+                  ?: get_post_meta($oid, 'myworks_qbo_synced', true);
+        $qb_sync_status = get_post_meta($oid, '_qbo_sync_status', true);
+        
+        // Determine if synced
+        $is_synced = false;
+        if ($qb_invoice || $qb_synced == '1' || $qb_synced == 'yes' || $qb_sync_status == 'synced') {
+            $is_synced = true;
+        }
+        
+        $col = $is_synced ? '#10b981' : '#94a3b8';
+        $icon = $is_synced ? 'fa-circle-check' : 'fa-circle-xmark';
+        $txt = $is_synced ? 'Synced' : 'Not Synced';
+        
+        return "<div style='display:flex;align-items:center;gap:6px;font-size:12px;color:$col;font-weight:600'><i class='fa-solid $icon'></i> $txt</div>";
+    }
     ?>
 
     <!-- WIDER MODAL CSS -->
@@ -2810,8 +2897,9 @@ add_action('template_redirect', function () {
                         <label><input type="checkbox" checked data-col="2"> Customer</label>
                         <label><input type="checkbox" checked data-col="3"> Wh. A</label>
                         <label><input type="checkbox" checked data-col="4"> Wh. B</label>
-                        <label><input type="checkbox" checked data-col="5"> Status</label>
-                        <label><input type="checkbox" checked data-col="6"> Action</label>
+                        <label><input type="checkbox" checked data-col="5"> QB Status</label>
+                        <label><input type="checkbox" checked data-col="6"> Status</label>
+                        <label><input type="checkbox" checked data-col="7"> Action</label>
                     </div>
                 </div>
             </div>
@@ -2838,8 +2926,9 @@ add_action('template_redirect', function () {
                 <th data-col="2">Customer / Address</th>
                 <th data-col="3">Wh. A</th>
                 <th data-col="4">Wh. B</th>
-                <th data-col="5">Status</th>
-                <th data-col="6" style="text-align:right">Action</th>
+                <th data-col="5">QB Status</th>
+                <th data-col="6">Status</th>
+                <th data-col="7" style="text-align:right">Action</th>
             </tr></thead>
             <tbody>
             <?php if($query->have_posts()): while($query->have_posts()): $query->the_post(); $oid=get_the_ID(); $o=wc_get_order($oid); if(!$o) continue; 
@@ -2851,17 +2940,18 @@ add_action('template_redirect', function () {
                 <td data-col="2"><strong><?=$o->get_formatted_billing_full_name()?></strong><br><small style="color:#9ca3af"><?=$o->get_billing_city()?></small></td>
                 <td data-col="3"><?= adm_wh_btn($oid, 'warehouse_a') ?></td>
                 <td data-col="4"><?= adm_wh_btn($oid, 'warehouse_b') ?></td>
-                <td data-col="5" style="width:160px">
+                <td data-col="5"><?= adm_qb_status($oid) ?></td>
+                <td data-col="6" style="width:160px">
                     <select onchange="updateStatus(<?=$oid?>, this.value)" style="padding:5px;font-size:12px;margin:0">
                         <?php foreach($all_statuses as $k=>$v): $slug=str_replace('wc-','',$k); ?><option value="<?=$slug?>" <?=selected('wc-'.$o->get_status(),$k)?>><?=$v?></option><?php endforeach; ?>
                     </select>
                 </td>
-                <td data-col="6" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
+                <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
                     <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px"><i class="fa-regular fa-eye"></i></button>
                     <?=$pdf_btn?>
                 </td>
             </tr>
-            <?php endwhile; else: ?><tr><td colspan="7" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
+            <?php endwhile; else: ?><tr><td colspan="8" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
             </tbody>
         </table>
         <?php if($query->max_num_pages > 1) echo "<div style='margin-top:20px;text-align:center'>".paginate_links(['base'=>add_query_arg('paged','%#%'),'format'=>'','current'=>$paged,'total'=>$query->max_num_pages])."</div>"; ?>
@@ -6080,7 +6170,7 @@ add_action('template_redirect', function () {
    12F. SALES AGENT SETTINGS PAGE (Admin V10 Panel)
 ===================================================== */
 add_action('template_redirect', function () {
-    if (get_query_var('b2b_adm_page') !== 'sales_agent') return;
+    if (get_query_var('b2b_adm_page') !== 'settings_sales_agent') return;
     b2b_adm_guard();
     b2b_adm_header('Sales Agent Settings');
     
@@ -6120,6 +6210,8 @@ add_action('template_redirect', function () {
             update_option('sales_commission_rate', floatval($_POST['sales_commission_rate']));
             update_option('sales_stale_days', intval($_POST['sales_stale_days']));
             update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
+            update_option('sales_manager_can_order', isset($_POST['sales_manager_can_order']) ? 1 : 0);
+            update_option('sales_view_all_customers', isset($_POST['sales_view_all_customers']) ? 1 : 0);
             
             echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0;"><i class="fa-solid fa-check-circle"></i> Settings saved successfully!</div>';
         }
@@ -6130,6 +6222,8 @@ add_action('template_redirect', function () {
     $commission_rate = get_option('sales_commission_rate', 10);
     $stale_days = get_option('sales_stale_days', 30);
     $merge_products = get_option('sales_merge_products', 0);
+    $manager_can_order = get_option('sales_manager_can_order', 0);
+    $view_all_customers = get_option('sales_view_all_customers', 0);
     ?>
     
     <div class="page-header">
@@ -6189,7 +6283,7 @@ add_action('template_redirect', function () {
                 <p style="color:#6b7280;font-size:12px;margin:5px 0 0 0;">Mark customer as inactive after this many days without activity</p>
             </div>
             
-            <div style="margin-bottom:0;">
+            <div style="margin-bottom:15px;">
                 <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
                     <input type="checkbox" name="sales_merge_products" value="1" <?= checked($merge_products, 1, false) ?> 
                            style="width:18px;height:18px;cursor:pointer;">
@@ -6198,6 +6292,28 @@ add_action('template_redirect', function () {
                     </span>
                 </label>
                 <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Automatically combine duplicate products into a single cart item</p>
+            </div>
+            
+            <div style="margin-bottom:15px;padding-top:15px;border-top:1px solid #e5e7eb;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_manager_can_order" value="1" <?= checked($manager_can_order, 1, false) ?> 
+                           style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:600;color:#374151;">
+                        <i class="fa-solid fa-user-shield"></i> Sales Managers Can Create Orders for Agent Customers
+                    </span>
+                </label>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Allow sales managers to place orders on behalf of customers assigned to sales agents</p>
+            </div>
+            
+            <div style="margin-bottom:0;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_view_all_customers" value="1" <?= checked($view_all_customers, 1, false) ?> 
+                           style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:600;color:#374151;">
+                        <i class="fa-solid fa-users-viewfinder"></i> View All Customers (Customer Role)
+                    </span>
+                </label>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Sales agents and managers can view all customers with "customer" role, not just assigned ones</p>
             </div>
         </div>
         
@@ -9394,7 +9510,13 @@ add_action('template_redirect', function () {
             $agent = wp_get_current_user();
             if (!current_user_can('administrator')) {
                 $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
-                if ($assigned_agent != $agent->ID) {
+                $allow_manager = get_option('sales_manager_can_order', 0);
+                
+                // Check if user is sales manager and setting is enabled
+                if (in_array('sales_manager', $agent->roles) && $allow_manager) {
+                    // Sales manager can access if setting is enabled
+                } else if ($assigned_agent != $agent->ID) {
+                    // Not the assigned agent and not an authorized manager
                     wp_die('Access denied to this customer');
                 }
             }
@@ -10003,9 +10125,14 @@ function sa_render_customers_page() {
     // Get agent's customers
     global $wpdb;
     $agent_id = $user->ID;
+    $view_all_customers = get_option('sales_view_all_customers', 0);
     
-    // If sales manager, get all customers from subordinate agents
-    if ($is_manager) {
+    // If sales manager with "View All Customers" setting enabled
+    if ($is_manager && $view_all_customers) {
+        // Get all users with customer role
+        $customers = get_users(['role' => 'customer']);
+        $customer_ids = wp_list_pluck($customers, 'ID');
+    } else if ($is_manager) {
         // Get all sales agents who have this manager assigned
         $agent_ids = $wpdb->get_col($wpdb->prepare(
             "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_manager_id' AND meta_value = %d",
@@ -10030,9 +10157,12 @@ function sa_render_customers_page() {
         ));
     }
     
-    $customers = [];
-    if (!empty($customer_ids)) {
-        $customers = get_users(['include' => $customer_ids]);
+    // Get final customers list if not already set
+    if (!isset($customers)) {
+        $customers = [];
+        if (!empty($customer_ids)) {
+            $customers = get_users(['include' => $customer_ids]);
+        }
     }
     
     ?>
@@ -10153,8 +10283,10 @@ function sa_render_customers_page() {
                         ?>
                         <tr>
                             <td>
-                                <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
-                                <strong><a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;"><?= esc_html($customer->display_name) ?></a></strong>
+                                <a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;display:inline-flex;align-items:center;">
+                                    <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
+                                    <strong><?= esc_html($customer->display_name) ?></strong>
+                                </a>
                             </td>
                             <td class="col-email"><?= esc_html($customer->user_email) ?></td>
                             <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
@@ -10261,7 +10393,13 @@ function sa_render_customer_detail_page() {
     $user = wp_get_current_user();
     if (!current_user_can('administrator')) {
         $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
-        if ($assigned_agent != $user->ID) {
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if user is sales manager and setting is enabled
+        if (in_array('sales_manager', $user->roles) && $allow_manager) {
+            // Sales manager can access if setting is enabled
+        } else if ($assigned_agent != $user->ID) {
+            // Not the assigned agent and not an authorized manager
             wp_die('Access denied to this customer');
         }
     }
@@ -10286,28 +10424,22 @@ function sa_render_customer_detail_page() {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
-            
-            /* Sidebar Styles */
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
-            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
-            .sidebar-nav { padding: 20px 0; }
-            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
-            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar-nav a.active { background: #4f46e5; color: white; }
-            .sidebar-nav a i { width: 20px; margin-right: 12px; }
-            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-            
-            /* Mobile Toggle */
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            
-            /* Main Content */
-            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
-            .container { max-width: 1400px; margin: 0 auto; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
             .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
             .info-item { padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
@@ -10320,23 +10452,13 @@ function sa_render_customer_detail_page() {
             .btn:hover { background: #059669; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
-            
-            /* Mobile Responsive */
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
-                .mobile-toggle { display: block; }
-                .main-content { margin-left: 0; padding: 80px 20px 20px; }
-            }
         </style>
     </head>
     <body>
-        <!-- Mobile Toggle Button -->
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        
-        <!-- Sidebar -->
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
         <div class="sidebar">
             <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
             <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
@@ -10348,9 +10470,7 @@ function sa_render_customer_detail_page() {
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <!-- Main Content -->
         <div class="main">
-        <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
             </div>
@@ -10408,7 +10528,6 @@ function sa_render_customer_detail_page() {
                 </table>
                 <?php endif; ?>
             </div>
-        </div>
         </div>
     </body>
     </html>
@@ -10992,7 +11111,13 @@ function sa_render_new_order_page() {
     $user = wp_get_current_user();
     if (!current_user_can('administrator')) {
         $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
-        if ($assigned_agent != $user->ID) {
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if user is sales manager and setting is enabled
+        if (in_array('sales_manager', $user->roles) && $allow_manager) {
+            // Sales manager can access if setting is enabled
+        } else if ($assigned_agent != $user->ID) {
+            // Not the assigned agent and not an authorized manager
             wp_die('Access denied to this customer');
         }
     }
@@ -11016,28 +11141,22 @@ function sa_render_new_order_page() {
         <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
-            
-            /* Sidebar Styles */
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
-            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
-            .sidebar-nav { padding: 20px 0; }
-            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
-            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar-nav a.active { background: #4f46e5; color: white; }
-            .sidebar-nav a i { width: 20px; margin-right: 12px; }
-            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-            
-            /* Mobile Toggle */
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            
-            /* Main Content */
-            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
-            .container { max-width: 1400px; margin: 0 auto; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
             .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
             .btn:hover { background: #059669; }
@@ -11060,23 +11179,13 @@ function sa_render_new_order_page() {
             .select2-container .select2-selection--single { height: 38px; border-color: #d1d5db; display: flex; align-items: center; }
             textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px; }
             input[type="text"], input[type="number"], select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
-            
-            /* Mobile Responsive */
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
-                .mobile-toggle { display: block; }
-                .main-content { margin-left: 0; padding: 80px 20px 20px; }
-            }
         </style>
     </head>
     <body>
-        <!-- Mobile Toggle Button -->
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        
-        <!-- Sidebar -->
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
         <div class="sidebar">
             <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
             <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
@@ -11088,13 +11197,24 @@ function sa_render_new_order_page() {
             <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <!-- Main Content -->
         <div class="main">
-        <div class="container">
-        <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
             </div>
+            
+            <?php
+            // Show sales manager indicator if applicable
+            $current_user = wp_get_current_user();
+            $assigned_agent_id = get_user_meta($customer_id, 'bagli_agent_id', true);
+            if (in_array('sales_manager', $current_user->roles) && $assigned_agent_id != $current_user->ID):
+                $assigned_agent = get_userdata($assigned_agent_id);
+            ?>
+            <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 15px;margin-bottom:20px;border-radius:6px;">
+                <i class="fa-solid fa-info-circle" style="color:#3b82f6;margin-right:8px;"></i>
+                <strong style="color:#1e40af;">Sales Manager View:</strong> 
+                <span style="color:#475569;">Creating order for customer assigned to <strong><?= esc_html($assigned_agent->display_name ?? 'Unknown Agent') ?></strong></span>
+            </div>
+            <?php endif; ?>
             
             <div class="card">
                 <h2><i class="fa-solid fa-cart-shopping"></i> New Order: <?= esc_html($customer->display_name) ?></h2>
@@ -11306,7 +11426,7 @@ function sa_render_new_order_page() {
             }
         });
         </script>
-        </div>
+    </div>
     </body>
     </html>
     <?php
@@ -11422,6 +11542,756 @@ add_action('template_redirect', function () {
 
 // End of Sales Agent System Phase 2
 
+/* =====================================================
+   PAYMENT GATEWAY MODULE: NMI Gateway
+===================================================== */
+
+/**
+ * WooCommerce NMI Payment Gateway
+ * Simple implementation for processing payments, refunds, and logging
+ */
+
+// Register the payment gateway
+add_filter('woocommerce_payment_gateways', 'add_nmi_gateway_class');
+function add_nmi_gateway_class($gateways) {
+    $gateways[] = 'WC_NMI_Gateway';
+    return $gateways;
+}
+
+// Initialize gateway class after plugins are loaded
+add_action('plugins_loaded', 'init_nmi_gateway_class');
+function init_nmi_gateway_class() {
+    if (!class_exists('WC_Payment_Gateway')) return;
+    
+    class WC_NMI_Gateway extends WC_Payment_Gateway {
+        public function __construct() {
+            $this->id = 'nmi_gateway';
+            $this->method_title = 'NMI Gateway';
+            $this->method_description = 'Accept credit card payments via NMI (Network Merchants Inc.)';
+            $this->has_fields = true;
+            $this->supports = array('products', 'refunds');
+            
+            // Load settings
+            $this->init_form_fields();
+            $this->init_settings();
+            
+            // Define user settings
+            $this->enabled = $this->get_option('enabled');
+            $this->title = $this->get_option('title');
+            $this->description = $this->get_option('description');
+            $this->api_username = $this->get_option('api_username');
+            $this->api_password = $this->get_option('api_password');
+            $this->test_mode = 'yes' === $this->get_option('test_mode');
+            $this->capture_mode = $this->get_option('capture_mode', 'sale');
+            $this->debug_mode = 'yes' === $this->get_option('debug_mode');
+            $this->allowed_card_types = $this->get_option('allowed_card_types', array('visa', 'mastercard', 'amex', 'discover'));
+            
+            // Save settings
+            add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
+        }
+        
+        /**
+         * Log debug messages
+         */
+        private function log($message) {
+            if ($this->debug_mode && function_exists('wc_get_logger')) {
+                $logger = wc_get_logger();
+                $logger->debug($message, array('source' => 'nmi-gateway'));
+            }
+        }
+        
+        public function init_form_fields() {
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title' => 'Enable/Disable',
+                    'type' => 'checkbox',
+                    'label' => 'Enable NMI Gateway',
+                    'default' => 'no'
+                ),
+                'title' => array(
+                    'title' => 'Title',
+                    'type' => 'text',
+                    'description' => 'Payment method title shown to customers.',
+                    'default' => 'Credit Card (NMI)',
+                    'desc_tip' => true
+                ),
+                'description' => array(
+                    'title' => 'Description',
+                    'type' => 'textarea',
+                    'description' => 'Payment method description shown to customers.',
+                    'default' => 'Pay securely with your credit card.',
+                    'desc_tip' => true
+                ),
+                'test_mode' => array(
+                    'title' => 'Test Mode',
+                    'type' => 'checkbox',
+                    'label' => 'Enable test mode',
+                    'default' => 'yes',
+                    'description' => 'Use test API credentials for testing.'
+                ),
+                'api_username' => array(
+                    'title' => 'API Username',
+                    'type' => 'text',
+                    'description' => 'Your NMI API username (Security Key).',
+                    'default' => '',
+                    'desc_tip' => true
+                ),
+                'api_password' => array(
+                    'title' => 'API Password',
+                    'type' => 'password',
+                    'description' => 'Your NMI API password (optional, if required).',
+                    'default' => '',
+                    'desc_tip' => true
+                ),
+                'capture_mode' => array(
+                    'title' => 'Capture Mode',
+                    'type' => 'select',
+                    'description' => 'Choose when to capture payment.',
+                    'default' => 'sale',
+                    'options' => array(
+                        'sale' => 'Authorize & Capture (Immediate)',
+                        'auth' => 'Authorize Only (Manual Capture Required)'
+                    ),
+                    'desc_tip' => true
+                ),
+                'debug_mode' => array(
+                    'title' => 'Debug Logging',
+                    'type' => 'checkbox',
+                    'label' => 'Enable debug logging',
+                    'default' => 'no',
+                    'description' => 'Log gateway requests and responses for troubleshooting. <strong>WARNING:</strong> This will log sensitive data including card numbers. Only enable temporarily for debugging.'
+                ),
+                'allowed_card_types' => array(
+                    'title' => 'Allowed Card Types',
+                    'type' => 'select',
+                    'class' => 'wc-enhanced-select',
+                    'css' => 'min-width:300px;',
+                    'description' => 'Select which card types to accept.',
+                    'default' => array('visa', 'mastercard', 'amex', 'discover'),
+                    'options' => array(
+                        'visa' => 'Visa',
+                        'mastercard' => 'MasterCard',
+                        'amex' => 'American Express',
+                        'discover' => 'Discover',
+                        'diners' => 'Diners Club',
+                        'jcb' => 'JCB'
+                    ),
+                    'desc_tip' => true,
+                    'custom_attributes' => array(
+                        'multiple' => 'multiple'
+                    )
+                )
+            );
+        }
+        
+        public function payment_fields() {
+            if ($this->description) {
+                echo wpautop(wptexturize($this->description));
+            }
+            ?>
+            <fieldset style="border:1px solid #e5e7eb;padding:15px;border-radius:8px;background:#f9fafb;">
+                <p class="form-row form-row-wide">
+                    <label>Card Number <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_number" maxlength="16" placeholder="1234 5678 9012 3456" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <p class="form-row form-row-first">
+                    <label>Expiry Date (MM/YY) <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_expiry" maxlength="5" placeholder="12/25" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <p class="form-row form-row-last">
+                    <label>CVV <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_cvv" maxlength="4" placeholder="123" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <div style="clear:both;"></div>
+            </fieldset>
+            <?php
+        }
+        
+        public function validate_fields() {
+            // Validate card number
+            if (empty($_POST['nmi_card_number'])) {
+                wc_add_notice('Card number is required', 'error');
+                return false;
+            }
+            
+            $card_number = preg_replace('/\s+/', '', $_POST['nmi_card_number']);
+            if (!preg_match('/^\d{13,19}$/', $card_number)) {
+                wc_add_notice('Invalid card number format. Must be 13-19 digits.', 'error');
+                return false;
+            }
+            
+            // Validate expiry date
+            if (empty($_POST['nmi_card_expiry'])) {
+                wc_add_notice('Card expiry date is required', 'error');
+                return false;
+            }
+            
+            $expiry = sanitize_text_field($_POST['nmi_card_expiry']);
+            if (!preg_match('/^\d{2}\/\d{2}$/', $expiry)) {
+                wc_add_notice('Invalid expiry date format. Use MM/YY.', 'error');
+                return false;
+            }
+            
+            // Check if date is in the future
+            list($month, $year) = explode('/', $expiry);
+            $exp_date = strtotime('20' . $year . '-' . $month . '-01');
+            if ($exp_date < strtotime('first day of this month')) {
+                wc_add_notice('Card has expired.', 'error');
+                return false;
+            }
+            
+            // Validate CVV
+            if (empty($_POST['nmi_card_cvv'])) {
+                wc_add_notice('CVV is required', 'error');
+                return false;
+            }
+            
+            $cvv = sanitize_text_field($_POST['nmi_card_cvv']);
+            if (!preg_match('/^\d{3,4}$/', $cvv)) {
+                wc_add_notice('Invalid CVV. Must be 3 or 4 digits.', 'error');
+                return false;
+            }
+            
+            return true;
+        }
+        
+        public function process_payment($order_id) {
+            $order = wc_get_order($order_id);
+            
+            // Verify nonce for CSRF protection
+            if (!isset($_POST['woocommerce-process-checkout-nonce']) || 
+                !wp_verify_nonce($_POST['woocommerce-process-checkout-nonce'], 'woocommerce-process_checkout')) {
+                wc_add_notice('Security verification failed', 'error');
+                return array('result' => 'fail');
+            }
+            
+            // Get card details (already validated in validate_fields)
+            $card_number = preg_replace('/\s+/', '', sanitize_text_field($_POST['nmi_card_number']));
+            $card_expiry = sanitize_text_field($_POST['nmi_card_expiry']);
+            $card_cvv = sanitize_text_field($_POST['nmi_card_cvv']);
+            
+            // Prepare API request
+            $amount = $order->get_total();
+            $response = $this->process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount);
+            
+            if ($response['success']) {
+                // Payment successful
+                $order->payment_complete($response['transaction_id']);
+                $order->add_order_note(sprintf('NMI Payment completed. Transaction ID: %s', $response['transaction_id']));
+                
+                // Log transaction
+                $this->log_transaction($order_id, 'payment', $response['transaction_id'], $amount, 'completed', $response['raw_response']);
+                
+                // Empty cart
+                WC()->cart->empty_cart();
+                
+                return array(
+                    'result' => 'success',
+                    'redirect' => $this->get_return_url($order)
+                );
+            } else {
+                // Payment failed
+                wc_add_notice('Payment failed: ' . $response['error'], 'error');
+                $order->add_order_note('NMI Payment failed: ' . $response['error']);
+                
+                // Log failed transaction
+                $this->log_transaction($order_id, 'payment', '', $amount, 'failed', $response['raw_response']);
+                
+                return array('result' => 'fail');
+            }
+        }
+        
+        private function process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount) {
+            // Parse expiry date (already validated as MM/YY format)
+            list($exp_month, $exp_year) = explode('/', $card_expiry);
+            
+            // Convert YY to YYYY (handle years correctly)
+            if (strlen($exp_year) === 2) {
+                $exp_year = '20' . $exp_year;
+            }
+            
+            // Build API request - NMI uses same endpoint for both test and production
+            // Test mode is distinguished by the security key used
+            $api_url = 'https://secure.nmi.com/api/transact.php';
+            
+            $post_data = array(
+                'security_key' => $this->api_username,
+                'type' => $this->capture_mode, // Use configured capture mode (sale or auth)
+                'ccnumber' => str_replace(' ', '', $card_number),
+                'ccexp' => $exp_month . $exp_year,
+                'cvv' => $card_cvv,
+                'amount' => number_format($amount, 2, '.', ''),
+                'firstname' => $order->get_billing_first_name(),
+                'lastname' => $order->get_billing_last_name(),
+                'address1' => $order->get_billing_address_1(),
+                'city' => $order->get_billing_city(),
+                'state' => $order->get_billing_state(),
+                'zip' => $order->get_billing_postcode(),
+                'country' => $order->get_billing_country(),
+                'email' => $order->get_billing_email(),
+                'orderid' => $order->get_order_number()
+            );
+            
+            // Log request if debug mode enabled
+            if ($this->debug_mode) {
+                $log_data = $post_data;
+                // Mask card number - show only last 4 digits if long enough
+                if (isset($log_data['ccnumber']) && strlen($log_data['ccnumber']) >= 4) {
+                    $log_data['ccnumber'] = '****' . substr($log_data['ccnumber'], -4);
+                } else {
+                    $log_data['ccnumber'] = '****';
+                }
+                $log_data['cvv'] = '***';
+                $this->log('NMI Payment Request: ' . json_encode($log_data));
+            }
+            
+            // Send API request
+            $response = wp_remote_post($api_url, array(
+                'body' => $post_data,
+                'timeout' => 30,
+                'sslverify' => true // Always verify SSL for security
+            ));
+            
+            if (is_wp_error($response)) {
+                $this->log('NMI Payment Error: ' . $response->get_error_message());
+                return array(
+                    'success' => false,
+                    'error' => $response->get_error_message(),
+                    'raw_response' => ''
+                );
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            parse_str($body, $parsed_response);
+            
+            // Log response if debug mode enabled
+            if ($this->debug_mode) {
+                $this->log('NMI Payment Response: ' . $body);
+            }
+            
+            // Check response
+            if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
+                // Success
+                return array(
+                    'success' => true,
+                    'transaction_id' => $parsed_response['transactionid'] ?? '',
+                    'raw_response' => $body
+                );
+            } else {
+                // Failure
+                return array(
+                    'success' => false,
+                    'error' => $parsed_response['responsetext'] ?? 'Unknown error',
+                    'raw_response' => $body
+                );
+            }
+        }
+        
+        public function process_refund($order_id, $amount = null, $reason = '') {
+            $order = wc_get_order($order_id);
+            $transaction_id = $order->get_transaction_id();
+            
+            if (!$transaction_id) {
+                return new WP_Error('error', 'Transaction ID not found');
+            }
+            
+            // Build API request for refund - NMI uses same endpoint
+            $api_url = 'https://secure.nmi.com/api/transact.php';
+            
+            $post_data = array(
+                'security_key' => $this->api_username,
+                'type' => 'refund',
+                'transactionid' => $transaction_id,
+                'amount' => number_format($amount, 2, '.', '')
+            );
+            
+            // Send API request
+            $response = wp_remote_post($api_url, array(
+                'body' => $post_data,
+                'timeout' => 30,
+                'sslverify' => true // Always verify SSL
+            ));
+            
+            if (is_wp_error($response)) {
+                return new WP_Error('error', $response->get_error_message());
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            parse_str($body, $parsed_response);
+            
+            // Check response
+            if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
+                // Refund successful
+                $refund_transaction_id = $parsed_response['transactionid'] ?? '';
+                $order->add_order_note(sprintf('NMI Refund completed. Amount: %s. Transaction ID: %s. Reason: %s', 
+                    wc_price($amount), $refund_transaction_id, $reason));
+                
+                // Log refund
+                $this->log_transaction($order_id, 'refund', $refund_transaction_id, $amount, 'completed', $body);
+                
+                return true;
+            } else {
+                // Refund failed
+                $error = $parsed_response['responsetext'] ?? 'Unknown error';
+                
+                // Log failed refund
+                $this->log_transaction($order_id, 'refund', '', $amount, 'failed', $body);
+                
+                return new WP_Error('error', $error);
+            }
+        }
+        
+        private function log_transaction($order_id, $type, $transaction_id, $amount, $status, $raw_response) {
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+            
+            // Insert log using wpdb->insert which handles sanitization
+            $wpdb->insert($table_name, array(
+                'order_id' => absint($order_id),
+                'transaction_type' => sanitize_text_field($type),
+                'transaction_id' => sanitize_text_field($transaction_id),
+                'amount' => floatval($amount),
+                'status' => sanitize_text_field($status),
+                'raw_response' => $raw_response, // Text field, stored as-is
+                'created_at' => current_time('mysql')
+            ), array('%d', '%s', '%s', '%f', '%s', '%s', '%s'));
+        }
+    }
+}
+
+// Create NMI transaction logs table on plugin/theme activation
+add_action('after_setup_theme', 'nmi_create_transaction_logs_table');
+function nmi_create_transaction_logs_table() {
+    // Only create table once
+    if (get_option('nmi_transaction_logs_table_created')) {
+        return;
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        order_id bigint(20) NOT NULL,
+        transaction_type varchar(20) NOT NULL,
+        transaction_id varchar(100) DEFAULT '',
+        amount decimal(10,2) NOT NULL,
+        status varchar(20) NOT NULL,
+        raw_response text,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY order_id (order_id),
+        KEY created_at (created_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+    
+    // Mark as created
+    update_option('nmi_transaction_logs_table_created', true);
+}
+
+// Payment Gateway Settings Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_payments') return;
+    b2b_adm_guard();
+    
+    // Get NMI gateway instance
+    $gateways = WC()->payment_gateways->get_available_payment_gateways();
+    $nmi_gateway = isset($gateways['nmi_gateway']) ? $gateways['nmi_gateway'] : null;
+    
+    // Handle settings save
+    $message = '';
+    if (isset($_POST['save_nmi_settings']) && wp_verify_nonce($_POST['nmi_settings_nonce'], 'save_nmi_settings')) {
+        // Update settings in the options table
+        $settings = array(
+            'enabled' => isset($_POST['nmi_enabled']) ? 'yes' : 'no',
+            'title' => sanitize_text_field($_POST['nmi_title']),
+            'description' => sanitize_textarea_field($_POST['nmi_description']),
+            'test_mode' => isset($_POST['nmi_test_mode']) ? 'yes' : 'no',
+            'api_username' => sanitize_text_field($_POST['nmi_api_username']),
+            'api_password' => sanitize_text_field($_POST['nmi_api_password']),
+            'capture_mode' => sanitize_text_field(isset($_POST['nmi_capture_mode']) ? $_POST['nmi_capture_mode'] : 'sale'),
+            'debug_mode' => isset($_POST['nmi_debug_mode']) ? 'yes' : 'no',
+            'allowed_card_types' => isset($_POST['nmi_allowed_card_types']) && is_array($_POST['nmi_allowed_card_types']) 
+                ? array_map('sanitize_text_field', $_POST['nmi_allowed_card_types']) 
+                : array('visa', 'mastercard', 'amex', 'discover')
+        );
+        
+        update_option('woocommerce_nmi_gateway_settings', $settings);
+        
+        // Clear WooCommerce cache to reflect changes
+        if (function_exists('wc_delete_shop_order_transients')) {
+            wc_delete_shop_order_transients();
+        }
+        
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Payment gateway settings saved and activated in WooCommerce.</div>';
+    }
+    
+    // Get current settings
+    $settings = get_option('woocommerce_nmi_gateway_settings', array());
+    $enabled = isset($settings['enabled']) && $settings['enabled'] === 'yes';
+    $title = $settings['title'] ?? 'Credit Card (NMI)';
+    $description = $settings['description'] ?? 'Pay securely with your credit card.';
+    $test_mode = isset($settings['test_mode']) && $settings['test_mode'] === 'yes';
+    $api_username = $settings['api_username'] ?? '';
+    $api_password = $settings['api_password'] ?? '';
+    $capture_mode = $settings['capture_mode'] ?? 'sale';
+    $debug_mode = isset($settings['debug_mode']) && $settings['debug_mode'] === 'yes';
+    $allowed_card_types = $settings['allowed_card_types'] ?? array('visa', 'mastercard', 'amex', 'discover');
+    
+    // Get transaction logs
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+    $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY created_at DESC LIMIT 50", ARRAY_A);
+    
+    b2b_adm_header('Payment Gateway Settings');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-credit-card"></i> NMI Payment Gateway</h1>
+    </div>
+    
+    <?= $message ?>
+    
+    <div class="card" style="margin-bottom:30px;">
+        <form method="post">
+            <?php wp_nonce_field('save_nmi_settings', 'nmi_settings_nonce'); ?>
+            
+            <h3 style="margin-top:0;color:#1e40af;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-gear"></i> Gateway Configuration
+            </h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_enabled" value="1" <?= checked($enabled, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Enable NMI Gateway</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Allow customers to pay using NMI payment gateway</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_test_mode" value="1" <?= checked($test_mode, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Test Mode</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Use test API credentials for testing payments</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Title</label>
+                <input type="text" name="nmi_title" value="<?= esc_attr($title) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Payment method title shown to customers during checkout</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Description</label>
+                <textarea name="nmi_description" rows="3" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($description) ?></textarea>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Payment method description shown to customers</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Username (Security Key)</label>
+                <input type="text" name="nmi_api_username" value="<?= esc_attr($api_username) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Your NMI API username/security key from NMI account</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Password (Optional)</label>
+                <input type="password" name="nmi_api_password" value="<?= esc_attr($api_password) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Optional API password if required by your NMI account</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Capture Mode</label>
+                <select name="nmi_capture_mode" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <option value="sale" <?= $capture_mode === 'sale' ? 'selected' : '' ?>>Authorize & Capture (Immediate)</option>
+                    <option value="auth" <?= $capture_mode === 'auth' ? 'selected' : '' ?>>Authorize Only (Manual Capture Required)</option>
+                </select>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Choose when to capture payment. "Authorize Only" requires manual capture in NMI portal.</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_debug_mode" value="1" <?= checked($debug_mode, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Enable Debug Logging</span>
+                </label>
+                <small style="color:#ef4444;margin-left:30px;display:block;margin-top:5px;"><strong>WARNING:</strong> Debug mode logs sensitive data including card numbers. Only enable temporarily for troubleshooting.</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Allowed Card Types</label>
+                <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;max-width:500px;">
+                    <?php 
+                    $card_types = array(
+                        'visa' => 'Visa',
+                        'mastercard' => 'MasterCard',
+                        'amex' => 'American Express',
+                        'discover' => 'Discover',
+                        'diners' => 'Diners Club',
+                        'jcb' => 'JCB'
+                    );
+                    foreach ($card_types as $type => $label): 
+                    ?>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" name="nmi_allowed_card_types[]" value="<?= esc_attr($type) ?>" 
+                               <?= in_array($type, $allowed_card_types) ? 'checked' : '' ?>>
+                        <?= esc_html($label) ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Select which card types to accept at checkout</small>
+            </div>
+            
+            <button type="submit" name="save_nmi_settings" class="btn-primary" style="padding:12px 30px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    
+    <!-- Transaction Logs -->
+    <div class="card">
+        <h3 style="margin-top:0;color:#1e40af;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+            <i class="fa-solid fa-list"></i> Transaction Logs
+        </h3>
+        
+        <?php if (!empty($logs)): ?>
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Order ID</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Type</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Transaction ID</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Amount</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Status</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Date</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($logs as $log): 
+                        $status_color = $log['status'] === 'completed' ? '#10b981' : '#ef4444';
+                        $type_icon = $log['transaction_type'] === 'payment' ? 'fa-credit-card' : 'fa-rotate-left';
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:12px;">
+                            <a href="<?= admin_url('post.php?post=' . $log['order_id'] . '&action=edit') ?>" target="_blank" style="color:#3b82f6;text-decoration:none;font-weight:600;">
+                                #<?= $log['order_id'] ?>
+                            </a>
+                        </td>
+                        <td style="padding:12px;">
+                            <span style="display:inline-flex;align-items:center;gap:5px;">
+                                <i class="fa-solid <?= $type_icon ?>"></i>
+                                <?= ucfirst($log['transaction_type']) ?>
+                            </span>
+                        </td>
+                        <td style="padding:12px;font-family:monospace;font-size:13px;"><?= esc_html($log['transaction_id']) ?: '—' ?></td>
+                        <td style="padding:12px;font-weight:600;"><?= wc_price($log['amount']) ?></td>
+                        <td style="padding:12px;">
+                            <span style="padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:white;background:<?= $status_color ?>;">
+                                <?= ucfirst($log['status']) ?>
+                            </span>
+                        </td>
+                        <td style="padding:12px;color:#6b7280;font-size:13px;"><?= date('Y-m-d H:i:s', strtotime($log['created_at'])) ?></td>
+                        <td style="padding:12px;">
+                            <button onclick="viewLogDetails(<?= esc_attr($log['id']) ?>)" 
+                                    data-order-id="<?= esc_attr($log['order_id']) ?>"
+                                    data-transaction-type="<?= esc_attr($log['transaction_type']) ?>"
+                                    data-transaction-id="<?= esc_attr($log['transaction_id']) ?>"
+                                    data-amount="<?= esc_attr($log['amount']) ?>"
+                                    data-status="<?= esc_attr($log['status']) ?>"
+                                    data-created-at="<?= esc_attr($log['created_at']) ?>"
+                                    style="padding:6px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;font-size:12px;">
+                                <i class="fa-solid fa-eye"></i> View
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <p style="color:#6b7280;text-align:center;padding:40px 20px;">
+            <i class="fa-solid fa-inbox" style="font-size:48px;display:block;margin-bottom:15px;opacity:0.3;"></i>
+            No transaction logs yet. Transactions will appear here after first payment.
+        </p>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Log Details Modal -->
+    <div id="logModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;padding:20px;overflow:auto;">
+        <div style="max-width:800px;margin:50px auto;background:white;border-radius:12px;padding:30px;position:relative;">
+            <button onclick="closeLogModal()" style="position:absolute;top:15px;right:15px;background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;">
+                <i class="fa-solid fa-times"></i>
+            </button>
+            <h3 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-file-lines"></i> Transaction Details</h3>
+            <div id="logModalContent" style="margin-top:20px;"></div>
+        </div>
+    </div>
+    
+    <script>
+    function viewLogDetails(logId) {
+        // Get data from button attributes instead of passing full object
+        const button = event.target.closest('button');
+        const log = {
+            order_id: button.dataset.orderId,
+            transaction_type: button.dataset.transactionType,
+            transaction_id: button.dataset.transactionId,
+            amount: button.dataset.amount,
+            status: button.dataset.status,
+            created_at: button.dataset.createdAt
+        };
+        
+        const content = `
+            <div style="background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px;">
+                <div style="display:grid;grid-template-columns:150px 1fr;gap:15px;">
+                    <strong>Order ID:</strong>
+                    <span>#${log.order_id}</span>
+                    
+                    <strong>Transaction Type:</strong>
+                    <span>${log.transaction_type}</span>
+                    
+                    <strong>Transaction ID:</strong>
+                    <span style="font-family:monospace;">${log.transaction_id || '—'}</span>
+                    
+                    <strong>Amount:</strong>
+                    <span>${log.amount}</span>
+                    
+                    <strong>Status:</strong>
+                    <span style="font-weight:600;color:${log.status === 'completed' ? '#10b981' : '#ef4444'};">${log.status}</span>
+                    
+                    <strong>Date:</strong>
+                    <span>${log.created_at}</span>
+                </div>
+            </div>
+            
+            <h4 style="margin-top:25px;color:#374151;">Raw API Response:</h4>
+            <div id="rawResponseContainer">
+                <p style="color:#6b7280;text-align:center;padding:20px;">
+                    <i class="fa-solid fa-lock" style="font-size:24px;display:block;margin-bottom:10px;"></i>
+                    Raw API responses are not displayed for security purposes.<br>
+                    Contact administrator if detailed debugging information is needed.
+                </p>
+            </div>
+        `;
+        document.getElementById('logModalContent').innerHTML = content;
+        document.getElementById('logModal').style.display = 'block';
+    }
+    
+    function closeLogModal() {
+        document.getElementById('logModal').style.display = 'none';
+    }
+    
+    // Close modal on outside click
+    document.getElementById('logModal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeLogModal();
+    });
+    </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
 /**
  * PHASE 4: AJAX HANDLERS
  * Add AJAX functionality for sales panel
@@ -11439,8 +12309,14 @@ function sa_search_products_callback() {
     if ($cid > 0 && !current_user_can('administrator')) {
         $agent_id = get_current_user_id();
         $customer_agent = get_user_meta($cid, 'bagli_agent_id', true);
+        $user = wp_get_current_user();
+        $allow_manager = get_option('sales_manager_can_order', 0);
         
-        if ($customer_agent != $agent_id) {
+        // Check if sales agent or authorized sales manager
+        $is_authorized = ($customer_agent == $agent_id) || 
+                        (in_array('sales_manager', $user->roles) && $allow_manager);
+        
+        if (!$is_authorized) {
             wp_send_json_error('Access denied to this customer');
         }
     }
@@ -11688,7 +12564,15 @@ add_action('init', function () {
         
         // Verify agent has access to this customer
         $assigned_agent = get_user_meta($target_id, 'bagli_agent_id', true);
-        if ($assigned_agent != $agent_id && !current_user_can('administrator')) {
+        $user = wp_get_current_user();
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if sales agent or authorized sales manager or admin
+        $is_authorized = ($assigned_agent == $agent_id) || 
+                        (in_array('sales_manager', $user->roles) && $allow_manager) ||
+                        current_user_can('administrator');
+        
+        if (!$is_authorized) {
             wp_die('Access denied to this customer');
         }
         

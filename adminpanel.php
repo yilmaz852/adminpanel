@@ -1505,6 +1505,10 @@ function b2b_adm_header($title) {
         
         .sidebar.collapsed .dropdown-menu .nav-link .nav-label{color:#F1F4FF}
         
+        .sidebar.collapsed .dropdown-menu .nav-link:hover{background:#EEF2FF;color:#151A2D}
+        
+        .sidebar.collapsed .dropdown-menu .nav-link:hover .nav-label{color:#151A2D}
+        
         .dropdown-menu .nav-item .nav-link.dropdown-title{display:none;color:#fff;padding:9px 15px}
         
         .dropdown-menu:has(.dropdown-link) .nav-item .dropdown-title{font-weight:500;padding:7px 15px}

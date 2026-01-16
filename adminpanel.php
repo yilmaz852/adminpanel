@@ -2709,7 +2709,13 @@ add_action('template_redirect', function () {
         <h4 style="margin:0 0 15px 0;color:var(--text)">Show/Hide Widgets</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="stats" checked> Statistics Overview
+                <input type="checkbox" class="widget-toggle" data-widget="sales-month" checked> Sales This Month
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="total-revenue" checked> Total Revenue
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="pending-approvals" checked> Pending Approvals
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="orders-summary" checked> Orders Summary
@@ -2730,7 +2736,13 @@ add_action('template_redirect', function () {
                 <input type="checkbox" class="widget-toggle" data-widget="agents" checked> Sales Agent Performance
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="charts" checked> Sales Charts
+                <input type="checkbox" class="widget-toggle" data-widget="sales-trend-chart" checked> Sales Trend Chart
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="order-status-chart" checked> Order Status Chart
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="top-products-chart" checked> Top Products Chart
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="quick-actions" checked> Quick Actions
@@ -2744,27 +2756,31 @@ add_action('template_redirect', function () {
 
     <div class="dashboard-widgets" id="dashboardWidgets">
 
-    <div class="dashboard-widget" data-widget="stats" draggable="true">
-    <div class="grid-main" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:30px">
+    <div class="dashboard-widget" data-widget="sales-month" draggable="true">
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Sales This Month</small><div style="font-size:32px;font-weight:800;color:#10b981"><?= wc_price($month_sales?:0) ?></div></div>
             <i class="fa-solid fa-chart-line" style="font-size:40px;color:#e5e7eb"></i>
         </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="total-revenue" draggable="true">
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Total Revenue</small><div style="font-size:32px;font-weight:800;color:#0f172a"><?= wc_price($total_sales?:0) ?></div></div>
             <i class="fa-solid fa-sack-dollar" style="font-size:40px;color:#e5e7eb"></i>
         </div>
-        <?php 
-        $pending_users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
-        $pending_count = count($pending_users);
-        ?>
+    </div>
+
+    <?php 
+    $pending_users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
+    $pending_count = count($pending_users);
+    ?>
+    <div class="dashboard-widget" data-widget="pending-approvals" draggable="true">
         <a href="<?= home_url('/b2b-panel/b2b-module') ?>" style="text-decoration:none;">
             <div class="card" style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);color:#fff;cursor:pointer;transition:transform 0.3s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
                 <div><small style="color:rgba(255,255,255,0.9);font-weight:600;text-transform:uppercase">Pending Approvals</small><div style="font-size:32px;font-weight:800;color:#fff"><?= $pending_count ?></div></div>
                 <i class="fa-solid fa-user-clock" style="font-size:40px;color:rgba(255,255,255,0.3)"></i>
             </div>
         </a>
-    </div>
     </div>
 
     <div class="dashboard-widget" data-widget="orders-summary" draggable="true">
@@ -2931,22 +2947,25 @@ add_action('template_redirect', function () {
     </div>
 
     <!-- Chart.js Dashboard Widgets -->
-    <div class="dashboard-widget" data-widget="charts" draggable="true">
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:30px;margin-top:30px;">
+    <div class="dashboard-widget" data-widget="sales-trend-chart" draggable="true">
         <div class="card">
             <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-area" style="color:#3b82f6;margin-right:10px;"></i>Sales Trend (Last 30 Days)</h3>
             <canvas id="salesTrendChart" height="80"></canvas>
         </div>
+    </div>
+    
+    <div class="dashboard-widget" data-widget="order-status-chart" draggable="true">
         <div class="card">
             <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-pie" style="color:#f59e0b;margin-right:10px;"></i>Order Status</h3>
             <canvas id="orderStatusChart"></canvas>
         </div>
     </div>
     
-    <div class="card" style="margin-top:30px;">
-        <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
-        <canvas id="topProductsChart" height="60"></canvas>
-    </div>
+    <div class="dashboard-widget" data-widget="top-products-chart" draggable="true">
+        <div class="card">
+            <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
+            <canvas id="topProductsChart" height="60"></canvas>
+        </div>
     </div>
     </div>
 

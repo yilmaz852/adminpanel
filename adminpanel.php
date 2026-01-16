@@ -2988,30 +2988,17 @@ add_action('template_redirect', function () {
     </div> <!-- End dashboard-widgets -->
 
     <style>
-    /* Dashboard Widgets Grid Layout */
-    .dashboard-widgets{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:30px}
-    .dashboard-widget{transition:opacity 0.3s ease}
+    /* Dashboard Widgets - Responsive Grid Layout */
+    .dashboard-widgets{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;margin-bottom:30px}
+    .dashboard-widget{transition:opacity 0.3s ease;min-height:300px;display:flex;flex-direction:column}
     .dashboard-widget.hidden{display:none}
     .dashboard-widget.dragging{opacity:0.5}
     .dashboard-widget.drag-over{border-top:3px solid var(--primary)}
     
-    /* Full-width widgets */
-    .dashboard-widget[data-widget="stats"],
-    .dashboard-widget[data-widget="status"],
-    .dashboard-widget[data-widget="charts"]{grid-column:1/-1}
-    
-    /* Side-by-side widgets on larger screens */
-    @media (min-width:900px){
-        .dashboard-widgets{grid-template-columns:repeat(2,1fr)}
-        .dashboard-widget[data-widget="stats"],
-        .dashboard-widget[data-widget="status"],
-        .dashboard-widget[data-widget="charts"]{grid-column:1/-1}
-    }
-    
-    /* Stack on mobile */
+    /* Mobile: Horizontal scrolling */
     @media (max-width:768px){
-        .dashboard-widgets{grid-template-columns:1fr}
-        .dashboard-widget{grid-column:1}
+        .dashboard-widgets{display:flex!important;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;gap:16px;padding-bottom:16px}
+        .dashboard-widget{flex-shrink:0;width:85vw;max-width:400px;scroll-snap-align:start;min-height:280px}
     }
     </style>
 

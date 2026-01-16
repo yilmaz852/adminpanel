@@ -2735,9 +2735,6 @@ add_action('template_redirect', function () {
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="quick-actions" checked> Quick Actions
             </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="system-status" checked> System Status
-            </label>
         </div>
         <p style="margin:15px 0 0 0;color:var(--text-muted);font-size:12px"><i class="fa-solid fa-info-circle"></i> Drag widgets to reorder them. Settings are saved automatically.</p>
     </div>
@@ -2907,32 +2904,6 @@ add_action('template_redirect', function () {
             <a href="<?= home_url('/b2b-panel/b2b-module') ?>" style="padding:15px;background:linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);color:white;border-radius:8px;text-decoration:none;text-align:center;font-weight:600;transition:transform 0.3s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
                 <i class="fa-solid fa-user-check"></i> Approvals
             </a>
-        </div>
-    </div>
-    </div>
-
-    <div class="dashboard-widget" data-widget="system-status" draggable="true">
-    <div class="card">
-        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
-            <i class="fa-solid fa-server" style="color:#10b981"></i> System Status
-        </h3>
-        <div style="display:grid;gap:15px">
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">WordPress Version</span>
-                <span style="font-weight:700"><?= get_bloginfo('version') ?></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">WooCommerce Version</span>
-                <span style="font-weight:700"><?= WC()->version ?></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">PHP Version</span>
-                <span style="font-weight:700"><?= phpversion() ?></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">Database</span>
-                <span style="font-weight:700;color:var(--success)"><i class="fa-solid fa-check-circle"></i> Connected</span>
-            </div>
         </div>
     </div>
     </div>

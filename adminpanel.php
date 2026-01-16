@@ -2709,13 +2709,7 @@ add_action('template_redirect', function () {
         <h4 style="margin:0 0 15px 0;color:var(--text)">Show/Hide Widgets</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="sales-month" checked> Sales This Month
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="total-revenue" checked> Total Revenue
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="pending-approvals" checked> Pending Approvals
+                <input type="checkbox" class="widget-toggle" data-widget="stats" checked> Statistics Overview
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="orders-summary" checked> Orders Summary
@@ -2736,19 +2730,13 @@ add_action('template_redirect', function () {
                 <input type="checkbox" class="widget-toggle" data-widget="agents" checked> Sales Agent Performance
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="sales-trend-chart" checked> Sales Trend Chart
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="order-status-chart" checked> Order Status Chart
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="top-products-chart" checked> Top Products Chart
+                <input type="checkbox" class="widget-toggle" data-widget="charts" checked> Sales Charts
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="quick-actions" checked> Quick Actions
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="notes" checked> Important Notes
+                <input type="checkbox" class="widget-toggle" data-widget="system-status" checked> System Status
             </label>
         </div>
         <p style="margin:15px 0 0 0;color:var(--text-muted);font-size:12px"><i class="fa-solid fa-info-circle"></i> Drag widgets to reorder them. Settings are saved automatically.</p>
@@ -2756,31 +2744,27 @@ add_action('template_redirect', function () {
 
     <div class="dashboard-widgets" id="dashboardWidgets">
 
-    <div class="dashboard-widget" data-widget="sales-month" draggable="true">
+    <div class="dashboard-widget" data-widget="stats" draggable="true">
+    <div class="grid-main" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:30px">
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Sales This Month</small><div style="font-size:32px;font-weight:800;color:#10b981"><?= wc_price($month_sales?:0) ?></div></div>
             <i class="fa-solid fa-chart-line" style="font-size:40px;color:#e5e7eb"></i>
         </div>
-    </div>
-
-    <div class="dashboard-widget" data-widget="total-revenue" draggable="true">
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Total Revenue</small><div style="font-size:32px;font-weight:800;color:#0f172a"><?= wc_price($total_sales?:0) ?></div></div>
             <i class="fa-solid fa-sack-dollar" style="font-size:40px;color:#e5e7eb"></i>
         </div>
-    </div>
-
-    <?php 
-    $pending_users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
-    $pending_count = count($pending_users);
-    ?>
-    <div class="dashboard-widget" data-widget="pending-approvals" draggable="true">
+        <?php 
+        $pending_users = get_users(['meta_key' => 'b2b_status', 'meta_value' => 'pending']);
+        $pending_count = count($pending_users);
+        ?>
         <a href="<?= home_url('/b2b-panel/b2b-module') ?>" style="text-decoration:none;">
             <div class="card" style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);color:#fff;cursor:pointer;transition:transform 0.3s;" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
                 <div><small style="color:rgba(255,255,255,0.9);font-weight:600;text-transform:uppercase">Pending Approvals</small><div style="font-size:32px;font-weight:800;color:#fff"><?= $pending_count ?></div></div>
                 <i class="fa-solid fa-user-clock" style="font-size:40px;color:rgba(255,255,255,0.3)"></i>
             </div>
         </a>
+    </div>
     </div>
 
     <div class="dashboard-widget" data-widget="orders-summary" draggable="true">
@@ -2927,6 +2911,32 @@ add_action('template_redirect', function () {
     </div>
     </div>
 
+    <div class="dashboard-widget" data-widget="system-status" draggable="true">
+    <div class="card">
+        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-server" style="color:#10b981"></i> System Status
+        </h3>
+        <div style="display:grid;gap:15px">
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">WordPress Version</span>
+                <span style="font-weight:700"><?= get_bloginfo('version') ?></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">WooCommerce Version</span>
+                <span style="font-weight:700"><?= WC()->version ?></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">PHP Version</span>
+                <span style="font-weight:700"><?= phpversion() ?></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">Database</span>
+                <span style="font-weight:700;color:var(--success)"><i class="fa-solid fa-check-circle"></i> Connected</span>
+            </div>
+        </div>
+    </div>
+    </div>
+
     <div class="dashboard-widget" data-widget="agents" draggable="true">
     <div class="card">
         <h3 style="margin-top:0">Sales Agent Performance</h3>
@@ -2947,76 +2957,24 @@ add_action('template_redirect', function () {
     </div>
 
     <!-- Chart.js Dashboard Widgets -->
-    <div class="dashboard-widget" data-widget="sales-trend-chart" draggable="true">
+    <div class="dashboard-widget" data-widget="charts" draggable="true">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:30px;margin-top:30px;">
         <div class="card">
             <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-area" style="color:#3b82f6;margin-right:10px;"></i>Sales Trend (Last 30 Days)</h3>
             <canvas id="salesTrendChart" height="80"></canvas>
         </div>
-    </div>
-    
-    <div class="dashboard-widget" data-widget="order-status-chart" draggable="true">
         <div class="card">
             <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-pie" style="color:#f59e0b;margin-right:10px;"></i>Order Status</h3>
             <canvas id="orderStatusChart"></canvas>
         </div>
     </div>
     
-    <div class="dashboard-widget" data-widget="top-products-chart" draggable="true">
-        <div class="card">
-            <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
-            <canvas id="topProductsChart" height="60"></canvas>
-        </div>
+    <div class="card" style="margin-top:30px;">
+        <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
+        <canvas id="topProductsChart" height="60"></canvas>
     </div>
     </div>
-
-    <!-- Important Notes Widget -->
-    <?php
-    $all_notes = get_option('b2b_notes', []);
-    $user_id = get_current_user_id();
-    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
-    
-    // Filter visible notes
-    $dashboard_notes = [];
-    foreach ($all_notes as $note_id => $note) {
-        if ($note['visibility'] == 'general') {
-            $dashboard_notes[$note_id] = $note;
-        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
-            $dashboard_notes[$note_id] = $note;
-        } elseif (current_user_can('manage_options')) {
-            $dashboard_notes[$note_id] = $note;
-        }
-    }
-    
-    // Show only latest 2 notes (half-width widget)
-    $dashboard_notes = array_slice($dashboard_notes, 0, 2, true);
-    
-    if (!empty($dashboard_notes)):
-    ?>
-    <div class="dashboard-widget dashboard-widget-half" data-widget="notes" draggable="true" style="max-width:100%;overflow:hidden;">
-    <div class="card" style="overflow:hidden;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;color:var(--text);"><i class="fa-solid fa-note-sticky" style="color:var(--primary);"></i> Important Notes</h3>
-            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:var(--primary);text-decoration:none;font-weight:600;">
-                View All <i class="fa-solid fa-arrow-right"></i>
-            </a>
-        </div>
-        <div class="notes-list" style="display:flex;flex-direction:column;gap:15px;">
-            <?php foreach ($dashboard_notes as $note_id => $note): ?>
-            <div class="note-card" style="width:100%;background:var(--bg);padding:15px;border-radius:8px;border-left:3px solid var(--primary);">
-                <h4 style="margin:0 0 8px 0;color:var(--text);font-size:14px;font-weight:600;"><?= esc_html($note['title']) ?></h4>
-                <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.5;">
-                    <?= esc_html(mb_strlen($note['content']) > 80 ? mb_substr($note['content'], 0, 80) . '...' : $note['content']) ?>
-                </p>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
-                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
-                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
     </div>
-    </div>
-    <?php endif; ?>
 
     </div> <!-- End dashboard-widgets -->
 
@@ -3025,40 +2983,6 @@ add_action('template_redirect', function () {
     .dashboard-widget.hidden{display:none}
     .dashboard-widget.dragging{opacity:0.5}
     .dashboard-widget.drag-over{border-top:3px solid var(--primary)}
-    
-    /* Half-width widgets for better layout */
-    .dashboard-widget-half{
-        width:100%;
-        max-width:100%;
-    }
-    
-    /* Grid for dashboard widgets - auto-fit with min 400px */
-    .dashboard-widgets{
-        display:grid;
-        grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));
-        gap:30px;
-        align-items:start;
-    }
-    
-    /* Make widgets same height when side-by-side */
-    .dashboard-widgets > .dashboard-widget{
-        height:100%;
-        display:flex;
-        flex-direction:column;
-    }
-    
-    .dashboard-widgets > .dashboard-widget > .card{
-        flex:1;
-        display:flex;
-        flex-direction:column;
-    }
-    
-    /* Responsive adjustments */
-    @media (max-width: 992px){
-        .dashboard-widgets{
-            grid-template-columns:1fr;
-        }
-    }
     </style>
 
     <script>
@@ -3069,80 +2993,79 @@ add_action('template_redirect', function () {
     });
     
     // Widget Visibility Toggle
-        const widgetToggles = document.querySelectorAll('.widget-toggle');
-        widgetToggles.forEach(toggle => {
-            // Load saved state
-            const widget = toggle.dataset.widget;
-            const isHidden = localStorage.getItem('dashboard_widget_' + widget) === 'hidden';
-            toggle.checked = !isHidden;
-            
-            const widgetEl = document.querySelector(`.dashboard-widget[data-widget="${widget}"]`);
-            if (isHidden && widgetEl) {
-                widgetEl.classList.add('hidden');
+    const widgetToggles = document.querySelectorAll('.widget-toggle');
+    widgetToggles.forEach(toggle => {
+        // Load saved state
+        const widget = toggle.dataset.widget;
+        const isHidden = localStorage.getItem('dashboard_widget_' + widget) === 'hidden';
+        toggle.checked = !isHidden;
+        
+        const widgetEl = document.querySelector(`.dashboard-widget[data-widget="${widget}"]`);
+        if (isHidden && widgetEl) {
+            widgetEl.classList.add('hidden');
+        }
+        
+        // Handle toggle change
+        toggle.addEventListener('change', function() {
+            if (widgetEl) {
+                if (this.checked) {
+                    widgetEl.classList.remove('hidden');
+                    localStorage.removeItem('dashboard_widget_' + widget);
+                } else {
+                    widgetEl.classList.add('hidden');
+                    localStorage.setItem('dashboard_widget_' + widget, 'hidden');
+                }
             }
-            
-            // Handle toggle change
-            toggle.addEventListener('change', function() {
-                if (widgetEl) {
-                    if (this.checked) {
-                        widgetEl.classList.remove('hidden');
-                        localStorage.removeItem('dashboard_widget_' + widget);
-                    } else {
-                        widgetEl.classList.add('hidden');
-                        localStorage.setItem('dashboard_widget_' + widget, 'hidden');
-                    }
-                }
-            });
-            });
-        
-        // Drag and Drop for Widget Reordering
-        const dashboardWidgets = document.getElementById('dashboardWidgets');
-        const widgets = document.querySelectorAll('.dashboard-widget');
-        
-        widgets.forEach(widget => {
-            widget.addEventListener('dragstart', function(e) {
-                this.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/html', this.innerHTML);
-            });
-            
-            widget.addEventListener('dragend', function() {
-                this.classList.remove('dragging');
-                document.querySelectorAll('.dashboard-widget').forEach(w => w.classList.remove('drag-over'));
-                saveWidgetOrder();
-            });
-            
-            widget.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                const dragging = document.querySelector('.dragging');
-                if (dragging && dragging !== this) {
-                    const rect = this.getBoundingClientRect();
-                    const midpoint = rect.top + rect.height / 2;
-                    if (e.clientY < midpoint) {
-                        this.parentNode.insertBefore(dragging, this);
-                    } else {
-                        this.parentNode.insertBefore(dragging, this.nextSibling);
-                    }
-                }
-            });
+        });
+    });
+    
+    // Drag and Drop for Widget Reordering
+    const dashboardWidgets = document.getElementById('dashboardWidgets');
+    const widgets = document.querySelectorAll('.dashboard-widget');
+    
+    widgets.forEach(widget => {
+        widget.addEventListener('dragstart', function(e) {
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.innerHTML);
         });
         
-        function saveWidgetOrder() {
-            const order = Array.from(document.querySelectorAll('.dashboard-widget')).map(w => w.dataset.widget);
-            localStorage.setItem('dashboardWidgetOrder', JSON.stringify(order));
-        }
-    
-        // Restore widget order on load
-        const savedOrder = localStorage.getItem('dashboardWidgetOrder');
-        if (savedOrder) {
-            const order = JSON.parse(savedOrder);
-            order.forEach(widgetName => {
-                const widget = document.querySelector(`.dashboard-widget[data-widget="${widgetName}"]`);
-                if (widget) {
-                    dashboardWidgets.appendChild(widget);
+        widget.addEventListener('dragend', function() {
+            this.classList.remove('dragging');
+            document.querySelectorAll('.dashboard-widget').forEach(w => w.classList.remove('drag-over'));
+            saveWidgetOrder();
+        });
+        
+        widget.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            const dragging = document.querySelector('.dragging');
+            if (dragging && dragging !== this) {
+                const rect = this.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                if (e.clientY < midpoint) {
+                    this.parentNode.insertBefore(dragging, this);
+                } else {
+                    this.parentNode.insertBefore(dragging, this.nextSibling);
                 }
-            });
-        }
+            }
+        });
+    });
+    
+    function saveWidgetOrder() {
+        const order = Array.from(document.querySelectorAll('.dashboard-widget')).map(w => w.dataset.widget);
+        localStorage.setItem('dashboardWidgetOrder', JSON.stringify(order));
+    }
+    
+    // Restore widget order on load
+    const savedOrder = localStorage.getItem('dashboardWidgetOrder');
+    if (savedOrder) {
+        const order = JSON.parse(savedOrder);
+        order.forEach(widgetName => {
+            const widget = document.querySelector(`.dashboard-widget[data-widget="${widgetName}"]`);
+            if (widget) {
+                dashboardWidgets.appendChild(widget);
+            }
+        });
     }
     </script>
 
@@ -3315,6 +3238,53 @@ add_action('template_redirect', function () {
         }
     });
     </script>
+    
+    <!-- Important Notes Widget -->
+    <?php
+    $all_notes = get_option('b2b_notes', []);
+    $user_id = get_current_user_id();
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter visible notes
+    $dashboard_notes = [];
+    foreach ($all_notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $dashboard_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $dashboard_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $dashboard_notes[$note_id] = $note;
+        }
+    }
+    
+    // Show only latest 3 notes
+    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
+    
+    if (!empty($dashboard_notes)):
+    ?>
+    <div class="card" style="margin-top:30px;background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
+            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
+                View All <i class="fa-solid fa-arrow-right"></i>
+            </a>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;">
+            <?php foreach ($dashboard_notes as $note_id => $note): ?>
+            <div style="background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
+                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
+                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
+                </p>
+                <div style="font-size:11px;color:#b45309;margin-top:8px;">
+                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
+                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php b2b_adm_footer(); exit;
 });

@@ -1403,26 +1403,45 @@ function b2b_adm_header($title) {
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        :root{--primary:#0f172a;--accent:#3b82f6;--bg:#f3f4f6;--white:#ffffff;--border:#e5e7eb;--text:#1f2937}
+        /* Hope UI Inspired Color Scheme */
+        :root{
+            --primary:#8f5fe8;
+            --primary-dark:#7239ea;
+            --accent:#3a57e8;
+            --accent-light:#4f7aed;
+            --success:#0abb87;
+            --warning:#ffbb33;
+            --danger:#ea6a12;
+            --info:#00cfe8;
+            --bg:#f8f9fa;
+            --white:#ffffff;
+            --border:#e5e7eb;
+            --text:#1f2937;
+            --text-light:#6c757d;
+            --sidebar-bg:#1e2139;
+            --sidebar-hover:#292d47;
+        }
         body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px}
         
-        .sidebar{width:260px;background:var(--primary);color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column}
-        .sidebar-head{padding:25px;color:var(--white);font-weight:700;font-size:1.2rem;border-bottom:1px solid rgba(255,255,255,0.1)}
+        .sidebar{width:260px;background:var(--sidebar-bg);color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,0.1)}
+        .sidebar-head{padding:25px;color:var(--white);font-weight:700;font-size:1.2rem;border-bottom:1px solid rgba(255,255,255,0.1);background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)}
         .sidebar-nav{padding:20px 10px;flex:1}
-        .sidebar-nav a{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:0.2s}
-        .sidebar-nav a:hover, .sidebar-nav a.active{background:rgba(255,255,255,0.1);color:var(--white)}
-        .sidebar-nav a.active{background:var(--accent)}
+        .sidebar-nav a{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease}
+        .sidebar-nav a:hover{background:var(--sidebar-hover);color:var(--white);transform:translateX(5px)}
+        .sidebar-nav a.active{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);box-shadow:0 4px 12px rgba(138,95,232,0.3)}
         .main{margin-left:260px;flex:1;padding:40px;width:100%}
         
-        .card{background:var(--white);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:25px;border:1px solid var(--border);margin-bottom:25px}
+        .card{background:var(--white);border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);padding:25px;border:none;margin-bottom:25px;transition:box-shadow 0.3s ease}
+        .card:hover{box-shadow:0 4px 16px rgba(0,0,0,0.12)}
         .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
-        .page-title{font-size:24px;font-weight:700;color:var(--primary);margin:0}
+        .page-title{font-size:28px;font-weight:700;background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:0}
         
-        input,select,textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box;margin-bottom:15px}
-        button{background:var(--accent);color:var(--white);border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;transition:0.2s}
-        button:hover{background:#2563eb}
-        button.secondary{background:var(--white);border:1px solid #d1d5db;color:#374151}
-        button.secondary:hover{background:#f9fafb}
+        input,select,textarea{width:100%;padding:12px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:15px;transition:border-color 0.3s ease}
+        input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(138,95,232,0.1)}
+        button{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.3s ease;box-shadow:0 4px 12px rgba(138,95,232,0.3)}
+        button:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(138,95,232,0.4)}
+        button.secondary{background:var(--white);border:1px solid #e0e0e0;color:#374151;box-shadow:none}
+        button.secondary:hover{background:#f9fafb;transform:none}
         
         table{width:100%;border-collapse:collapse;font-size:13px}
         th{background:#f8fafc;padding:12px;text-align:left;font-weight:600;color:#4b5563;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:11px}
@@ -1441,6 +1460,94 @@ function b2b_adm_header($title) {
         .col-dropdown.active { display:block; }
         .col-dropdown label { display:block; padding:5px 0; cursor:pointer; font-weight:normal; }
         .col-dropdown input { width:auto; margin-right:8px; }
+        
+        /* Multi-Select Dropdown for Order Status */
+        .multi-select-wrapper {
+            position: relative;
+            width: 100%;
+        }
+        .multi-select-display {
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.3s ease;
+            min-height: 45px;
+        }
+        .multi-select-display:hover {
+            border-color: var(--primary);
+        }
+        .multi-select-display.active {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(138,95,232,0.1);
+        }
+        .selected-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            flex: 1;
+        }
+        .selected-item-badge {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .selected-item-badge .remove {
+            cursor: pointer;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+        .selected-item-badge .remove:hover {
+            opacity: 1;
+        }
+        .multi-select-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            margin-top: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        .multi-select-dropdown.active {
+            display: block;
+        }
+        .multi-select-option {
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .multi-select-option:hover {
+            background: #f8f9fa;
+        }
+        .multi-select-option input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+        .multi-select-option label {
+            cursor: pointer;
+            margin: 0;
+            flex: 1;
+        }
 
         /* Dashboard Widgets */
         .dash-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:20px}
@@ -1558,76 +1665,69 @@ function b2b_adm_header($title) {
     <div class="sidebar">
         <div class="sidebar-head"><i class="fa-solid fa-shield-halved"></i> ADMIN PANEL V10</div>
         <div class="sidebar-nav">
-            <!-- Dashboard - Always visible at top -->
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
+            <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
+            <a href="<?= home_url('/b2b-panel/reports') ?>" class="<?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
             
-            <!-- ANALYTICS GROUP -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['reports','stock_planning','activity_log'])?'active':'' ?>" onclick="toggleSubmenu(this)" style="margin-top:15px;">
-                <i class="fa-solid fa-chart-line"></i> Analytics <i class="fa-solid fa-chevron-down"></i>
+            <!-- Stock Planning Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-boxes-stacked"></i> Stock Planning <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['reports','stock_planning','activity_log'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/reports') ?>" class="<?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>"><i class="fa-solid fa-chart-bar"></i> Sales Reports</a>
-                <a href="<?= home_url('/b2b-panel/stock-planning') ?>" class="<?= get_query_var('b2b_adm_page')=='stock_planning'?'active':'' ?>"><i class="fa-solid fa-chart-gantt"></i> Stock Analysis</a>
-                <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="<?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>"><i class="fa-solid fa-clipboard-list"></i> Activity Log</a>
-            </div>
-            
-            <!-- ORDERS & SALES GROUP -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['orders','customers','customer_edit','b2b_approvals'])?'active':'' ?>" onclick="toggleSubmenu(this)" style="margin-top:15px;">
-                <i class="fa-solid fa-shopping-cart"></i> Orders & Sales <i class="fa-solid fa-chevron-down"></i>
-            </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['orders','customers','customer_edit','b2b_approvals'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> All Orders</a>
-                <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
-                <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_approvals'?'active':'' ?>"><i class="fa-solid fa-user-check"></i> B2B Approvals</a>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/stock-planning') ?>" class="<?= get_query_var('b2b_adm_page')=='stock_planning'?'active':'' ?>"><i class="fa-solid fa-chart-gantt"></i> Sales Analysis</a>
+                <a href="<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>" class="<?= get_query_var('b2b_adm_page')=='supplier_orders'?'active':'' ?>"><i class="fa-solid fa-truck-ramp-box"></i> Supplier Orders</a>
             </div>
             
-            <!-- PRODUCTS & INVENTORY GROUP -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster','supplier_orders'])?'active':'' ?>" onclick="toggleSubmenu(this)" style="margin-top:15px;">
-                <i class="fa-solid fa-boxes-stacked"></i> Products & Inventory <i class="fa-solid fa-chevron-down"></i>
+            <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="<?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>"><i class="fa-solid fa-clipboard-list"></i> Activity Log</a>
+            
+            <!-- Products Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-tags"></i> Products <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster','supplier_orders'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'||get_query_var('b2b_adm_page')=='product_add_new'?'active':'' ?>"><i class="fa-solid fa-tags"></i> All Products</a>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/products') ?>" class="<?= get_query_var('b2b_adm_page')=='products'||get_query_var('b2b_adm_page')=='product_edit'||get_query_var('b2b_adm_page')=='product_add_new'?'active':'' ?>"><i class="fa-solid fa-list"></i> All Products</a>
                 <a href="<?= home_url('/b2b-panel/products/categories') ?>" class="<?= get_query_var('b2b_adm_page')=='products_categories'||get_query_var('b2b_adm_page')=='category_edit'?'active':'' ?>"><i class="fa-solid fa-folder-tree"></i> Categories</a>
                 <a href="<?= home_url('/b2b-panel/products/price-adjuster') ?>" class="<?= get_query_var('b2b_adm_page')=='price_adjuster'?'active':'' ?>"><i class="fa-solid fa-dollar-sign"></i> Price Adjuster</a>
-                <a href="<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>" class="<?= get_query_var('b2b_adm_page')=='supplier_orders'?'active':'' ?>"><i class="fa-solid fa-truck-ramp-box"></i> Supplier Orders</a>
                 <a href="<?= home_url('/b2b-panel/products/import') ?>" class="<?= get_query_var('b2b_adm_page')=='products_import'?'active':'' ?>"><i class="fa-solid fa-file-import"></i> Import</a>
                 <a href="<?= home_url('/b2b-panel/products/export') ?>" class="<?= get_query_var('b2b_adm_page')=='products_export'?'active':'' ?>"><i class="fa-solid fa-file-export"></i> Export</a>
             </div>
             
-            <!-- B2B MANAGEMENT GROUP -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['b2b_groups','b2b_roles','b2b_form_editor','b2b_settings'])?'active':'' ?>" onclick="toggleSubmenu(this)" style="margin-top:15px;">
-                <i class="fa-solid fa-layer-group"></i> B2B Management <i class="fa-solid fa-chevron-down"></i>
+            <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>"><i class="fa-solid fa-users"></i> Customers</a>
+            
+            <!-- B2B Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-layer-group"></i> B2B Module <i class="fa-solid fa-chevron-down"></i>
             </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['b2b_groups','b2b_roles','b2b_form_editor','b2b_settings'])?'active':'' ?>">
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/b2b-module') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_approvals'?'active':'' ?>"><i class="fa-solid fa-user-check"></i> Approvals</a>
                 <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_groups'?'active':'' ?>"><i class="fa-solid fa-users-gear"></i> Groups</a>
                 <a href="<?= home_url('/b2b-panel/b2b-module/roles') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_roles'?'active':'' ?>"><i class="fa-solid fa-user-tag"></i> Roles</a>
+                <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_settings'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> Settings</a>
                 <a href="<?= home_url('/b2b-panel/b2b-module/form-editor') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_form_editor'?'active':'' ?>"><i class="fa-solid fa-pen-to-square"></i> Form Editor</a>
-                <a href="<?= home_url('/b2b-panel/b2b-module/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='b2b_settings'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> B2B Settings</a>
             </div>
             
-            <!-- COMMUNICATIONS GROUP -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups','notes','support-tickets','support-ticket'])?'active':'' ?>" onclick="toggleSubmenu(this)" style="margin-top:15px;">
-                <i class="fa-solid fa-comments"></i> Communications <i class="fa-solid fa-chevron-down"></i>
-            </div>
-            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups','notes','support-tickets','support-ticket'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/messaging') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups'])?'active':'' ?>"><i class="fa-solid fa-envelope"></i> Messaging</a>
-                <a href="<?= home_url('/b2b-panel/notes') ?>" class="<?= get_query_var('b2b_adm_page')=='notes'?'active':'' ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
-                <?php if(current_user_can('manage_woocommerce')): ?>
-                <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
-                <?php endif; ?>
-            </div>
-            
-            <!-- CONFIGURATION GROUP -->
-            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" onclick="toggleSubmenu(this)" style="margin-top:15px;">
-                <i class="fa-solid fa-gear"></i> Configuration <i class="fa-solid fa-chevron-down"></i>
+            <!-- Settings Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-gear"></i> Settings <i class="fa-solid fa-chevron-down"></i>
             </div>
             <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>">
-                <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General Settings</a>
+                <a href="<?= home_url('/b2b-panel/settings') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_general'?'active':'' ?>"><i class="fa-solid fa-sliders"></i> General</a>
                 <a href="<?= home_url('/b2b-panel/settings/tax-exemption') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_tax'?'active':'' ?>"><i class="fa-solid fa-receipt"></i> Tax Exemption</a>
-                <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping Zones</a>
+                <a href="<?= home_url('/b2b-panel/settings/shipping') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['settings_shipping','shipping_zone_edit'])?'active':'' ?>"><i class="fa-solid fa-truck"></i> Shipping</a>
                 <a href="<?= home_url('/b2b-panel/settings/payments') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_payments'?'active':'' ?>"><i class="fa-solid fa-credit-card"></i> Payment Gateways</a>
-                <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent Setup</a>
+                <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>"><i class="fa-solid fa-user-tie"></i> Sales Agent</a>
             </div>
+            
+            <!-- Support Tickets Module -->
+            <?php if(current_user_can('manage_woocommerce')): ?>
+            <a href="<?= home_url('/b2b-panel/support-tickets') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['support-tickets','support-ticket'])?'active':'' ?>"><i class="fa-solid fa-headphones"></i> Support</a>
+            <?php endif; ?>
+            
+            <!-- Messaging Module -->
+            <a href="<?= home_url('/b2b-panel/messaging') ?>" class="<?= in_array(get_query_var('b2b_adm_page'), ['messaging','messaging_groups'])?'active':'' ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            
+            <!-- Notes Module -->
+            <a href="<?= home_url('/b2b-panel/notes') ?>" class="<?= get_query_var('b2b_adm_page')=='notes'?'active':'' ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
         </div>
         <div style="margin-top:auto;padding:20px">
             <a href="<?= wp_logout_url(home_url('/b2b-login')) ?>" style="color:#fca5a5;text-decoration:none;font-weight:600;display:flex;align-items:center;gap:10px"><i class="fa-solid fa-power-off"></i> Logout</a>
@@ -3250,12 +3350,40 @@ add_action('template_redirect', function () {
         
         <div>
             <label style="display:block;margin-bottom:5px;font-weight:600;">Order Status</label>
-            <?php foreach (wc_get_order_statuses() as $key => $label): 
-                $s = str_replace('wc-', '', $key); ?>
-            <div style="margin-bottom:2px;">
-                <input type="checkbox" name="status[]" value="<?= $s ?>" <?= in_array($s, $statuses) ? ' checked' : '' ?>> <?= $label ?>
+            <div class="multi-select-wrapper" id="orderStatusMultiSelect">
+                <div class="multi-select-display" onclick="toggleMultiSelect()">
+                    <div class="selected-items" id="selectedItemsDisplay">
+                        <?php if(empty($statuses)): ?>
+                        <span style="color:#9ca3af;">Select order statuses...</span>
+                        <?php else: 
+                            foreach($statuses as $s):
+                                $label = wc_get_order_statuses()['wc-'.$s] ?? $s;
+                        ?>
+                        <span class="selected-item-badge" data-value="<?= $s ?>">
+                            <?= esc_html($label) ?>
+                            <span class="remove" onclick="removeStatus(event, '<?= $s ?>')">×</span>
+                        </span>
+                        <?php endforeach; endif; ?>
+                    </div>
+                    <i class="fa-solid fa-chevron-down" style="color:#6c757d;"></i>
+                </div>
+                <div class="multi-select-dropdown" id="orderStatusDropdown">
+                    <?php foreach (wc_get_order_statuses() as $key => $label): 
+                        $s = str_replace('wc-', '', $key); 
+                        $checked = in_array($s, $statuses) ? 'checked' : '';
+                    ?>
+                    <div class="multi-select-option">
+                        <input type="checkbox" 
+                               name="status[]" 
+                               value="<?= $s ?>" 
+                               id="status_<?= $s ?>"
+                               <?= $checked ?>
+                               onchange="updateSelectedItems()">
+                        <label for="status_<?= $s ?>"><?= $label ?></label>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
             </div>
-            <?php endforeach; ?>
         </div>
         
         <div>
@@ -3390,6 +3518,61 @@ add_action('template_redirect', function () {
                 }
             });
         });
+    });
+    
+    // Multi-Select Dropdown Functions
+    function toggleMultiSelect() {
+        const dropdown = document.getElementById('orderStatusDropdown');
+        const display = document.querySelector('.multi-select-display');
+        dropdown.classList.toggle('active');
+        display.classList.toggle('active');
+    }
+    
+    function updateSelectedItems() {
+        const display = document.getElementById('selectedItemsDisplay');
+        const checkboxes = document.querySelectorAll('#orderStatusDropdown input[type="checkbox"]');
+        const selected = [];
+        
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                const label = checkbox.nextElementSibling.textContent;
+                selected.push({
+                    value: checkbox.value,
+                    label: label
+                });
+            }
+        });
+        
+        if (selected.length === 0) {
+            display.innerHTML = '<span style="color:#9ca3af;">Select order statuses...</span>';
+        } else {
+            display.innerHTML = selected.map(item => 
+                `<span class="selected-item-badge" data-value="${item.value}">
+                    ${item.label}
+                    <span class="remove" onclick="removeStatus(event, '${item.value}')">×</span>
+                </span>`
+            ).join('');
+        }
+    }
+    
+    function removeStatus(event, value) {
+        event.stopPropagation();
+        const checkbox = document.getElementById('status_' + value);
+        if (checkbox) {
+            checkbox.checked = false;
+            updateSelectedItems();
+        }
+    }
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(event) {
+        const wrapper = document.getElementById('orderStatusMultiSelect');
+        if (wrapper && !wrapper.contains(event.target)) {
+            const dropdown = document.getElementById('orderStatusDropdown');
+            const display = document.querySelector('.multi-select-display');
+            if (dropdown) dropdown.classList.remove('active');
+            if (display) display.classList.remove('active');
+        }
     });
     
     function exportStockPlanningCsv() {

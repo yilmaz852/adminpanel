@@ -1076,6 +1076,69 @@ add_action('wp_ajax_b2b_adm_get_details', function() {
     if($wh_a || $wh_b) {
         $logs_html = '<div style="background:#f1f5f9;padding:15px;margin-top:15px;font-size:12px;border-radius:6px;color:#475569;border:1px solid #e2e8f0;"><strong><i class="fa-solid fa-clock-rotate-left"></i> Warehouse Logs:</strong><br><div style="white-space:pre-wrap;margin-top:5px">'.esc_html(trim($wh_a . "\n" . $wh_b)).'</div></div>';
     }
+    
+    // 5. QUICKBOOKS SYNC STATUS - NEW SECTION
+    $qb_invoice = get_post_meta($oid, '_qbo_invoice_id', true) 
+               ?: get_post_meta($oid, '_quickbooks_invoice_id', true);
+    $qb_invoice_num = get_post_meta($oid, '_qbo_invoice_number', true);
+    $qb_sync_date = get_post_meta($oid, '_qbo_sync_date', true) 
+                 ?: get_post_meta($oid, '_quickbooks_sync_date', true);
+    $qb_synced = get_post_meta($oid, '_qbo_synced', true) 
+              ?: get_post_meta($oid, 'myworks_qbo_synced', true);
+    $qb_sync_status = get_post_meta($oid, '_qbo_sync_status', true);
+    
+    // Determine sync status
+    $is_synced = false;
+    if ($qb_invoice || $qb_synced == '1' || $qb_synced == 'yes' || $qb_sync_status == 'synced') {
+        $is_synced = true;
+    }
+    
+    $qb_html = '';
+    if ($is_synced || $qb_invoice || $qb_sync_date) {
+        $status_color = $is_synced ? '#10b981' : '#ef4444';
+        $status_icon = $is_synced ? 'fa-circle-check' : 'fa-circle-xmark';
+        $status_text = $is_synced ? 'Synced' : 'Not Synced';
+        
+        $qb_html = '<div style="margin-top:20px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:20px;">';
+        $qb_html .= '<h4 style="margin:0 0 15px 0;color:#0c4a6e;font-size:14px;border-bottom:1px solid #bae6fd;padding-bottom:10px;text-transform:uppercase">';
+        $qb_html .= '<i class="fa-solid fa-book"></i> QuickBooks Sync Status</h4>';
+        
+        $qb_html .= '<div style="display:grid;grid-template-columns:140px 1fr;gap:12px;font-size:13px;color:#334155">';
+        
+        // Status
+        $qb_html .= '<div style="font-weight:600">Status:</div>';
+        $qb_html .= '<div style="display:flex;align-items:center;gap:6px;color:'.$status_color.';font-weight:600">';
+        $qb_html .= '<i class="fa-solid '.$status_icon.'"></i> '.$status_text.'</div>';
+        
+        // Invoice ID
+        if ($qb_invoice) {
+            $qb_html .= '<div style="font-weight:600">Invoice ID:</div>';
+            $qb_html .= '<div style="font-family:monospace;color:#0c4a6e">'.esc_html($qb_invoice).'</div>';
+        }
+        
+        // Invoice Number
+        if ($qb_invoice_num) {
+            $qb_html .= '<div style="font-weight:600">Invoice Number:</div>';
+            $qb_html .= '<div style="font-family:monospace;color:#0c4a6e">'.esc_html($qb_invoice_num).'</div>';
+        }
+        
+        // Sync Date
+        if ($qb_sync_date) {
+            $formatted_date = is_numeric($qb_sync_date) 
+                ? date('d.m.Y H:i', $qb_sync_date) 
+                : date('d.m.Y H:i', strtotime($qb_sync_date));
+            $qb_html .= '<div style="font-weight:600">Last Sync:</div>';
+            $qb_html .= '<div>'.esc_html($formatted_date).'</div>';
+        }
+        
+        $qb_html .= '</div></div>';
+    } else {
+        // Not synced - show info box
+        $qb_html = '<div style="margin-top:20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:15px;text-align:center;">';
+        $qb_html .= '<i class="fa-solid fa-circle-xmark" style="font-size:24px;color:#94a3b8;display:block;margin-bottom:10px"></i>';
+        $qb_html .= '<span style="color:#64748b;font-size:13px">Not synced to QuickBooks yet</span>';
+        $qb_html .= '</div>';
+    }
 
     wp_send_json_success([
         'id' => $order->get_id(),
@@ -1084,8 +1147,8 @@ add_action('wp_ajax_b2b_adm_get_details', function() {
         'shipping' => $order->get_formatted_shipping_address() ?: 'No address',
         'items' => $items,
         'grand_total' => $order->get_formatted_order_total(),
-        // Notlar + Teslimat Bilgisi + Loglar (Hepsi birleşti)
-        'extra_html' => $notes . $ops_html . $logs_html 
+        // Notlar + Teslimat Bilgisi + Loglar + QB Status (Hepsi birleşti)
+        'extra_html' => $notes . $ops_html . $logs_html . $qb_html
     ]);
 });
 
@@ -2789,6 +2852,28 @@ add_action('template_redirect', function () {
         $note = esc_attr(get_post_meta($oid, '_'.$wh.'_notes', true));
         return "<button class='wh-btn' style='background:$col;width:100%;font-size:11px;padding:5px' data-id='$oid' data-wh='$wh' data-note='$note'>$txt</button>";
     }
+    
+    // QB Status Helper
+    function adm_qb_status($oid) {
+        // Check various meta keys that MyWorks QB Online plugin might use
+        $qb_invoice = get_post_meta($oid, '_qbo_invoice_id', true) 
+                   ?: get_post_meta($oid, '_quickbooks_invoice_id', true);
+        $qb_synced = get_post_meta($oid, '_qbo_synced', true) 
+                  ?: get_post_meta($oid, 'myworks_qbo_synced', true);
+        $qb_sync_status = get_post_meta($oid, '_qbo_sync_status', true);
+        
+        // Determine if synced
+        $is_synced = false;
+        if ($qb_invoice || $qb_synced == '1' || $qb_synced == 'yes' || $qb_sync_status == 'synced') {
+            $is_synced = true;
+        }
+        
+        $col = $is_synced ? '#10b981' : '#94a3b8';
+        $icon = $is_synced ? 'fa-circle-check' : 'fa-circle-xmark';
+        $txt = $is_synced ? 'Synced' : 'Not Synced';
+        
+        return "<div style='display:flex;align-items:center;gap:6px;font-size:12px;color:$col;font-weight:600'><i class='fa-solid $icon'></i> $txt</div>";
+    }
     ?>
 
     <!-- WIDER MODAL CSS -->
@@ -2812,8 +2897,9 @@ add_action('template_redirect', function () {
                         <label><input type="checkbox" checked data-col="2"> Customer</label>
                         <label><input type="checkbox" checked data-col="3"> Wh. A</label>
                         <label><input type="checkbox" checked data-col="4"> Wh. B</label>
-                        <label><input type="checkbox" checked data-col="5"> Status</label>
-                        <label><input type="checkbox" checked data-col="6"> Action</label>
+                        <label><input type="checkbox" checked data-col="5"> QB Status</label>
+                        <label><input type="checkbox" checked data-col="6"> Status</label>
+                        <label><input type="checkbox" checked data-col="7"> Action</label>
                     </div>
                 </div>
             </div>
@@ -2840,8 +2926,9 @@ add_action('template_redirect', function () {
                 <th data-col="2">Customer / Address</th>
                 <th data-col="3">Wh. A</th>
                 <th data-col="4">Wh. B</th>
-                <th data-col="5">Status</th>
-                <th data-col="6" style="text-align:right">Action</th>
+                <th data-col="5">QB Status</th>
+                <th data-col="6">Status</th>
+                <th data-col="7" style="text-align:right">Action</th>
             </tr></thead>
             <tbody>
             <?php if($query->have_posts()): while($query->have_posts()): $query->the_post(); $oid=get_the_ID(); $o=wc_get_order($oid); if(!$o) continue; 
@@ -2853,17 +2940,18 @@ add_action('template_redirect', function () {
                 <td data-col="2"><strong><?=$o->get_formatted_billing_full_name()?></strong><br><small style="color:#9ca3af"><?=$o->get_billing_city()?></small></td>
                 <td data-col="3"><?= adm_wh_btn($oid, 'warehouse_a') ?></td>
                 <td data-col="4"><?= adm_wh_btn($oid, 'warehouse_b') ?></td>
-                <td data-col="5" style="width:160px">
+                <td data-col="5"><?= adm_qb_status($oid) ?></td>
+                <td data-col="6" style="width:160px">
                     <select onchange="updateStatus(<?=$oid?>, this.value)" style="padding:5px;font-size:12px;margin:0">
                         <?php foreach($all_statuses as $k=>$v): $slug=str_replace('wc-','',$k); ?><option value="<?=$slug?>" <?=selected('wc-'.$o->get_status(),$k)?>><?=$v?></option><?php endforeach; ?>
                     </select>
                 </td>
-                <td data-col="6" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
+                <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
                     <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px"><i class="fa-regular fa-eye"></i></button>
                     <?=$pdf_btn?>
                 </td>
             </tr>
-            <?php endwhile; else: ?><tr><td colspan="7" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
+            <?php endwhile; else: ?><tr><td colspan="8" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
             </tbody>
         </table>
         <?php if($query->max_num_pages > 1) echo "<div style='margin-top:20px;text-align:center'>".paginate_links(['base'=>add_query_arg('paged','%#%'),'format'=>'','current'=>$paged,'total'=>$query->max_num_pages])."</div>"; ?>

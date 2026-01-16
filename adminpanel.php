@@ -1476,6 +1476,8 @@ function b2b_adm_header($title) {
         
         .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:0;pointer-events:none}
         
+        .sidebar.collapsed .dropdown-menu .nav-link .nav-label{opacity:1 !important;pointer-events:auto !important}
+        
         .sidebar.collapsed .nav-link .dropdown-icon{transition:opacity 0.3s 0s ease}
         
         .sidebar-nav .secondary-nav{position:absolute;bottom:35px;width:100%;background:#151A2D}
@@ -1499,7 +1501,9 @@ function b2b_adm_header($title) {
         
         .dropdown-menu .nav-item .nav-link{color:#F1F4FF;padding:9px 15px}
         
-        .sidebar.collapsed .dropdown-menu .nav-link{padding:7px 15px}
+        .sidebar.collapsed .dropdown-menu .nav-link{padding:7px 15px;color:#F1F4FF}
+        
+        .sidebar.collapsed .dropdown-menu .nav-link .nav-label{color:#F1F4FF}
         
         .dropdown-menu .nav-item .nav-link.dropdown-title{display:none;color:#fff;padding:9px 15px}
         

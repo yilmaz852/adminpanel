@@ -1446,7 +1446,7 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
         .sidebar-nav{padding:20px 10px;flex:1;overflow-y:auto;overflow-x:visible}
         .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;cursor:pointer}
-        .menu-item-wrapper{position:relative;display:block}
+        .nav-item.dropdown-container{position:relative;display:block}
         .sidebar-nav a i, .submenu-toggle > i:first-child{min-width:20px;text-align:center;font-size:18px}
         .sidebar-nav a .menu-text, .submenu-toggle .menu-text{transition:opacity 0.2s ease}
         .sidebar.collapsed .sidebar-nav a .menu-text, .sidebar.collapsed .submenu-toggle .menu-text{opacity:0;width:0;overflow:hidden}
@@ -1454,9 +1454,9 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
         /* Collapsed submenu - CSS-only hover approach */
-        .sidebar.collapsed .submenu{position:absolute;top:0;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:99999;transition:opacity 0s;overflow:visible !important;max-height:none !important}
-        .sidebar.collapsed .submenu-toggle:hover + .submenu,.sidebar.collapsed .menu-item-wrapper:hover .submenu{opacity:1;pointer-events:auto;transition:opacity 0.3s ease}
-        .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto}
+        .sidebar.collapsed .submenu{position:absolute;top:-10px;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:99999;transition:0s;overflow:visible !important;max-height:none !important}
+        .sidebar.collapsed .nav-item:hover > .submenu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
+        .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto;transform:translateY(12px)}
         /* Solid white text and icons */
         .sidebar.collapsed .submenu a,.sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#ffffff !important;opacity:1 !important;font-weight:500}
         .sidebar.collapsed .submenu a:hover{background:rgba(255,255,255,.1)}
@@ -1757,7 +1757,7 @@ function b2b_adm_header($title) {
             </a>
             
             <!-- Stock Planning Module with Submenu -->
-            <div class="menu-item-wrapper">
+            <div class="nav-item dropdown-container">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="Stock Planning">
                 <i class="fa-solid fa-boxes-stacked"></i> <span class="menu-text">Stock Planning</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1776,7 +1776,7 @@ function b2b_adm_header($title) {
             </a>
             
             <!-- Products Module with Submenu -->
-            <div class="menu-item-wrapper">
+            <div class="nav-item dropdown-container">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="Products">
                 <i class="fa-solid fa-tags"></i> <span class="menu-text">Products</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1804,7 +1804,7 @@ function b2b_adm_header($title) {
             </a>
             
             <!-- B2B Module with Submenu -->
-            <div class="menu-item-wrapper">
+            <div class="nav-item dropdown-container">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="B2B Module">
                 <i class="fa-solid fa-layer-group"></i> <span class="menu-text">B2B Module</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1828,7 +1828,7 @@ function b2b_adm_header($title) {
             </div>
             
             <!-- Settings Module with Submenu -->
-            <div class="menu-item-wrapper">
+            <div class="nav-item dropdown-container">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="Settings">
                 <i class="fa-solid fa-gear"></i> <span class="menu-text">Settings</span> <i class="fa-solid fa-chevron-down"></i>
             </div>

@@ -1464,9 +1464,11 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a:hover::after, .sidebar.collapsed .submenu-toggle:hover::after{opacity:1}
         
         /* Collapsed Sidebar - Hover Submenu */
-        .sidebar.collapsed .submenu{display:none !important;position:absolute;left:100%;background:var(--sidebar-bg);min-width:200px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
+        .sidebar.collapsed .submenu{display:none !important;position:absolute;left:100%;background:rgba(30,41,59,0.98);min-width:220px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
         .sidebar.collapsed .submenu.show{display:block !important}
-        .sidebar.collapsed .submenu a{display:block;padding:12px 15px;margin-bottom:5px}
+        .sidebar.collapsed .submenu a{display:block;padding:12px 15px;margin-bottom:5px;color:#fff !important;opacity:0.9;transition:all 0.2s ease}
+        .sidebar.collapsed .submenu a:hover{opacity:1;background:rgba(255,255,255,0.1);border-radius:6px}
+        .sidebar.collapsed .submenu a i{color:#fff !important}
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1917,6 +1919,16 @@ function b2b_adm_header($title) {
             sidebar.classList.add('collapsed');
             body.classList.add('sidebar-collapsed');
             localStorage.setItem('sidebarCollapsed', 'true');
+            
+            // Reset all submenu states when collapsing
+            document.querySelectorAll('.submenu').forEach(sub => {
+                sub.classList.remove('active', 'show');
+                sub.style.top = '';
+                sub.style.left = '';
+            });
+            document.querySelectorAll('.submenu-toggle').forEach(toggle => {
+                toggle.classList.remove('active');
+            });
         }
     }
     

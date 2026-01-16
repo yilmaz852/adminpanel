@@ -1403,25 +1403,37 @@ function b2b_adm_header($title) {
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        /* Hope UI Inspired Color Scheme */
+        /* Hope UI Design System - Refined & Optimized */
         :root{
             --primary:#8f5fe8;
             --primary-dark:#7239ea;
+            --primary-light:#a78bfa;
             --accent:#3a57e8;
             --accent-light:#4f7aed;
             --success:#0abb87;
+            --success-light:#e0f7f0;
             --warning:#ffbb33;
+            --warning-light:#fff8e6;
             --danger:#ea6a12;
+            --danger-light:#ffeee6;
             --info:#00cfe8;
+            --info-light:#e0f7fd;
             --bg:#f8f9fa;
+            --bg-light:#ffffff;
             --white:#ffffff;
             --border:#e5e7eb;
+            --border-light:#f0f1f3;
             --text:#1f2937;
             --text-light:#6c757d;
+            --text-muted:#9ca3af;
             --sidebar-bg:#1e2139;
             --sidebar-hover:#292d47;
+            --shadow-sm:0 1px 2px 0 rgba(0,0,0,0.05);
+            --shadow:0 4px 6px -1px rgba(0,0,0,0.1);
+            --shadow-lg:0 10px 15px -3px rgba(0,0,0,0.1);
+            --shadow-xl:0 20px 25px -5px rgba(0,0,0,0.1);
         }
-        body{margin:0;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px}
+        body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
         
         .sidebar{width:260px;background:var(--sidebar-bg);color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,0.1);transition:width 0.3s ease}
         .sidebar.collapsed{width:80px}
@@ -1446,10 +1458,10 @@ function b2b_adm_header($title) {
         .main{margin-left:260px;flex:1;padding:40px;width:100%;transition:margin-left 0.3s ease}
         body.sidebar-collapsed .main{margin-left:80px}
         
-        .card{background:var(--white);border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);padding:25px;border:none;margin-bottom:25px;transition:box-shadow 0.3s ease}
-        .card:hover{box-shadow:0 4px 16px rgba(0,0,0,0.12)}
-        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
-        .page-title{font-size:28px;font-weight:700;background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:0}
+        .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
+        .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
+        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:32px;padding-bottom:16px;border-bottom:2px solid var(--border-light)}
+        .page-title{font-size:28px;font-weight:700;background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:0;letter-spacing:-0.5px}
         
         input,select,textarea{width:100%;padding:12px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:15px;transition:border-color 0.3s ease}
         input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(138,95,232,0.1)}
@@ -1458,16 +1470,24 @@ function b2b_adm_header($title) {
         button.secondary{background:var(--white);border:1px solid #e0e0e0;color:#374151;box-shadow:none}
         button.secondary:hover{background:#f9fafb;transform:none}
         
-        table{width:100%;border-collapse:collapse;font-size:13px}
-        th{background:#f8fafc;padding:12px;text-align:left;font-weight:600;color:#4b5563;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:11px}
-        td{padding:12px;border-bottom:1px solid var(--border);vertical-align:middle}
+        table{width:100%;border-collapse:collapse;font-size:13px;background:var(--white)}
+        th{background:linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);padding:14px 12px;text-align:left;font-weight:600;color:#4b5563;border-bottom:2px solid var(--border);text-transform:uppercase;font-size:11px;letter-spacing:0.5px}
+        td{padding:14px 12px;border-bottom:1px solid var(--border-light);vertical-align:middle;color:var(--text)}
+        tr:hover td{background:var(--bg);transition:background 0.2s ease}
         
-        /* Stats Box (Warehouse Style) */
-        .stats-box { background:#eff6ff; border:1px solid #dbeafe; color:#1e40af; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:30px; }
-        .stat-item { display:flex; flex-direction:column; }
-        .stat-label { font-size:11px; text-transform:uppercase; color:#60a5fa; font-weight:700 }
-        .stat-val { font-size:20px; font-weight:600; line-height:1.2 }
-        .stat-oldest { color: #dc2626; }
+        /* Stats Box - Enhanced */
+        .stats-box {background:linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);border:1px solid #bae6fd;color:#0c4a6e;padding:20px;border-radius:12px;margin-bottom:24px;display:flex;align-items:center;gap:32px;box-shadow:var(--shadow-sm)}
+        .stat-item {display:flex;flex-direction:column;gap:4px}
+        .stat-label {font-size:11px;text-transform:uppercase;color:#0284c7;font-weight:700;letter-spacing:0.5px}
+        .stat-val {font-size:24px;font-weight:700;line-height:1;color:#0c4a6e}
+        .stat-oldest {color:#dc2626}
+        
+        /* Badge Styles */
+        .badge {display:inline-flex;align-items:center;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;line-height:1}
+        .badge-success {background:var(--success-light);color:var(--success)}
+        .badge-warning {background:var(--warning-light);color:#d97706}
+        .badge-danger {background:var(--danger-light);color:var(--danger)}
+        .badge-info {background:var(--info-light);color:#0284c7}
 
         /* Column Edit Dropdown */
         .col-toggler { position:relative; display:inline-block; }

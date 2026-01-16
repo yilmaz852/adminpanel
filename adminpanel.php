@@ -1453,12 +1453,13 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:12px;justify-content:center}
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
-        /* Collapsed submenu - CSS-only hover approach */
-        .sidebar.collapsed .submenu{position:absolute;top:-10px;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:99999;transition:0s;overflow:visible !important;max-height:none !important}
-        .sidebar.collapsed .nav-item:hover > .submenu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
-        .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto;transform:translateY(12px)}
+        /* Collapsed submenu - CSS-only hover approach (reference pattern) */
+        .sidebar.collapsed .submenu{position:absolute;top:-10px;left:100%;opacity:0;height:auto !important;padding-right:10px;overflow-y:unset;pointer-events:none;border-radius:0 10px 10px 0;background:#1e293b;transition:0s}
+        .sidebar.collapsed .submenu:has(a){padding:7px 10px 7px 24px}
+        .sidebar.sidebar.collapsed .nav-item:hover > .submenu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
         /* Solid white text and icons */
-        .sidebar.collapsed .submenu a,.sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#ffffff !important;opacity:1 !important;font-weight:500}
+        .sidebar.collapsed .submenu a{color:#F1F4FF;padding:7px 15px}
+        .sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#F1F4FF}
         .sidebar.collapsed .submenu a:hover{background:rgba(255,255,255,.1)}
         /* Tooltip for menu items without submenu */
         .sidebar.collapsed .sidebar-nav > a::after{content:attr(data-title);position:fixed;left:80px;padding:10px 14px;background:#1e293b;color:#fff;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.2s;z-index:9999}

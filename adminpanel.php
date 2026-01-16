@@ -1446,7 +1446,7 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
         .sidebar-nav{padding:20px 10px;flex:1;overflow-y:auto;overflow-x:visible}
         .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;cursor:pointer}
-        .submenu-toggle{position:relative}
+        .menu-item-wrapper{position:relative}
         .sidebar-nav a i, .submenu-toggle > i:first-child{min-width:20px;text-align:center;font-size:18px}
         .sidebar-nav a .menu-text, .submenu-toggle .menu-text{transition:opacity 0.2s ease}
         .sidebar.collapsed .sidebar-nav a .menu-text, .sidebar.collapsed .submenu-toggle .menu-text{opacity:0;width:0;overflow:hidden}
@@ -1756,6 +1756,7 @@ function b2b_adm_header($title) {
             </a>
             
             <!-- Stock Planning Module with Submenu -->
+            <div class="menu-item-wrapper">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="Stock Planning">
                 <i class="fa-solid fa-boxes-stacked"></i> <span class="menu-text">Stock Planning</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1767,12 +1768,14 @@ function b2b_adm_header($title) {
                     <i class="fa-solid fa-truck-ramp-box"></i> <span class="menu-text">Supplier Orders</span>
                 </a>
             </div>
+            </div>
             
             <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="<?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>" data-title="Activity Log">
                 <i class="fa-solid fa-clipboard-list"></i> <span class="menu-text">Activity Log</span>
             </a>
             
             <!-- Products Module with Submenu -->
+            <div class="menu-item-wrapper">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['products','product_edit','product_add_new','products_import','products_export','products_categories','category_edit','price_adjuster'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="Products">
                 <i class="fa-solid fa-tags"></i> <span class="menu-text">Products</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1793,12 +1796,14 @@ function b2b_adm_header($title) {
                     <i class="fa-solid fa-file-export"></i> <span class="menu-text">Export</span>
                 </a>
             </div>
+            </div>
             
             <a href="<?= home_url('/b2b-panel/customers') ?>" class="<?= get_query_var('b2b_adm_page')=='customers'||get_query_var('b2b_adm_page')=='customer_edit'?'active':'' ?>" data-title="Customers">
                 <i class="fa-solid fa-users"></i> <span class="menu-text">Customers</span>
             </a>
             
             <!-- B2B Module with Submenu -->
+            <div class="menu-item-wrapper">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="B2B Module">
                 <i class="fa-solid fa-layer-group"></i> <span class="menu-text">B2B Module</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1819,8 +1824,10 @@ function b2b_adm_header($title) {
                     <i class="fa-solid fa-pen-to-square"></i> <span class="menu-text">Form Editor</span>
                 </a>
             </div>
+            </div>
             
             <!-- Settings Module with Submenu -->
+            <div class="menu-item-wrapper">
             <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['settings_general','settings_tax','settings_shipping','shipping_zone_edit','settings_sales_agent','settings_payments'])?'active':'' ?>" onclick="toggleSubmenu(this)" data-title="Settings">
                 <i class="fa-solid fa-gear"></i> <span class="menu-text">Settings</span> <i class="fa-solid fa-chevron-down"></i>
             </div>
@@ -1840,6 +1847,7 @@ function b2b_adm_header($title) {
                 <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="<?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>" data-title="Sales Agent">
                     <i class="fa-solid fa-user-tie"></i> <span class="menu-text">Sales Agent</span>
                 </a>
+            </div>
             </div>
             
             <!-- Support Tickets Module -->

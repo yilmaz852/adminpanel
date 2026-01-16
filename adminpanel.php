@@ -2979,6 +2979,71 @@ add_action('template_redirect', function () {
     </div>
     </div>
 
+    <!-- Important Notes Widget -->
+    <?php
+    $all_notes = get_option('b2b_notes', []);
+    $user_id = get_current_user_id();
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter visible notes
+    $dashboard_notes = [];
+    foreach ($all_notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $dashboard_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $dashboard_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $dashboard_notes[$note_id] = $note;
+        }
+    }
+    
+    // Show only latest 3 notes
+    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
+    
+    if (!empty($dashboard_notes)):
+    ?>
+    <div class="dashboard-widget" data-widget="notes" draggable="true" style="max-width:100%;overflow:hidden;">
+    <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
+            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
+                View All <i class="fa-solid fa-arrow-right"></i>
+            </a>
+        </div>
+        <div class="notes-container" style="display:flex;overflow-x:auto;gap:15px;padding-bottom:10px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;">
+            <?php foreach ($dashboard_notes as $note_id => $note): ?>
+            <div class="note-card" style="flex-shrink:0;width:300px;min-width:300px;background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
+                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
+                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
+                </p>
+                <div style="font-size:11px;color:#b45309;margin-top:8px;">
+                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
+                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <style>
+        .notes-container::-webkit-scrollbar {
+            height: 6px;
+        }
+        .notes-container::-webkit-scrollbar-track {
+            background: #fde68a;
+            border-radius: 3px;
+        }
+        .notes-container::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            border-radius: 3px;
+        }
+        .notes-container::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+        }
+        </style>
+    </div>
+    </div>
+    <?php endif; ?>
+
     </div> <!-- End dashboard-widgets -->
 
     <style>
@@ -3241,71 +3306,6 @@ add_action('template_redirect', function () {
         }
     });
     </script>
-    
-    <!-- Important Notes Widget -->
-    <?php
-    $all_notes = get_option('b2b_notes', []);
-    $user_id = get_current_user_id();
-    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
-    
-    // Filter visible notes
-    $dashboard_notes = [];
-    foreach ($all_notes as $note_id => $note) {
-        if ($note['visibility'] == 'general') {
-            $dashboard_notes[$note_id] = $note;
-        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
-            $dashboard_notes[$note_id] = $note;
-        } elseif (current_user_can('manage_options')) {
-            $dashboard_notes[$note_id] = $note;
-        }
-    }
-    
-    // Show only latest 3 notes
-    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
-    
-    if (!empty($dashboard_notes)):
-    ?>
-    <div class="dashboard-widget" data-widget="notes" draggable="true" style="max-width:100%;overflow:hidden;">
-    <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);overflow:hidden;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
-            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
-                View All <i class="fa-solid fa-arrow-right"></i>
-            </a>
-        </div>
-        <div class="notes-container" style="display:flex;overflow-x:auto;gap:15px;padding-bottom:10px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;">
-            <?php foreach ($dashboard_notes as $note_id => $note): ?>
-            <div class="note-card" style="flex-shrink:0;width:300px;min-width:300px;background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
-                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
-                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
-                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
-                </p>
-                <div style="font-size:11px;color:#b45309;margin-top:8px;">
-                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
-                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-        <style>
-        .notes-container::-webkit-scrollbar {
-            height: 6px;
-        }
-        .notes-container::-webkit-scrollbar-track {
-            background: #fde68a;
-            border-radius: 3px;
-        }
-        .notes-container::-webkit-scrollbar-thumb {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-            border-radius: 3px;
-        }
-        .notes-container::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-        }
-        </style>
-    </div>
-    </div>
-    <?php endif; ?>
 
     <?php b2b_adm_footer(); exit;
 });

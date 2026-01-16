@@ -1454,7 +1454,7 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
         /* Collapsed submenu - CSS-only hover approach */
-        .sidebar.collapsed .submenu{position:absolute;top:0;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;transition:opacity 0s}
+        .sidebar.collapsed .submenu{position:absolute;top:0;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;transition:opacity 0s;overflow:visible !important;max-height:none !important}
         .sidebar.collapsed .submenu-toggle:hover + .submenu{opacity:1;pointer-events:auto;transition:opacity 0.3s ease}
         .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto}
         /* Solid white text and icons */
@@ -1633,7 +1633,8 @@ function b2b_adm_header($title) {
         .submenu-toggle.active{background:rgba(255,255,255,0.1);color:var(--white);}
         .submenu-toggle i.fa-chevron-down{transition:transform 0.3s;font-size:10px;margin-left:auto;}
         .submenu-toggle.active i.fa-chevron-down{transform:rotate(180deg);}
-        .submenu{max-height:0;overflow:hidden;transition:max-height 0.4s ease;padding-left:15px;}
+        .submenu{max-height:0;transition:max-height 0.4s ease;padding-left:15px;}
+        .sidebar:not(.collapsed) .submenu{overflow:hidden}
         .submenu.active{max-height:500px;}
         .submenu a{padding:10px 15px;font-size:13px;margin-bottom:3px;}
         

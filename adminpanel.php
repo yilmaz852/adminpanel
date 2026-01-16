@@ -2735,6 +2735,9 @@ add_action('template_redirect', function () {
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="quick-actions" checked> Quick Actions
             </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="notes" checked> Important Notes
+            </label>
         </div>
         <p style="margin:15px 0 0 0;color:var(--text-muted);font-size:12px"><i class="fa-solid fa-info-circle"></i> Drag widgets to reorder them. Settings are saved automatically.</p>
     </div>
@@ -2946,6 +2949,55 @@ add_action('template_redirect', function () {
     </div>
     </div>
     </div>
+
+    <!-- Important Notes Widget -->
+    <?php
+    $all_notes = get_option('b2b_notes', []);
+    $user_id = get_current_user_id();
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter visible notes
+    $dashboard_notes = [];
+    foreach ($all_notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $dashboard_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $dashboard_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $dashboard_notes[$note_id] = $note;
+        }
+    }
+    
+    // Show only latest 3 notes
+    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
+    
+    if (!empty($dashboard_notes)):
+    ?>
+    <div class="dashboard-widget" data-widget="notes" draggable="true">
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <h3 style="margin:0;color:var(--text);"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
+            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:var(--primary);text-decoration:none;font-weight:600;">
+                View All <i class="fa-solid fa-arrow-right"></i>
+            </a>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;">
+            <?php foreach ($dashboard_notes as $note_id => $note): ?>
+            <div style="background:var(--bg);padding:15px;border-radius:8px;border-left:3px solid var(--primary);">
+                <h4 style="margin:0 0 8px 0;color:var(--text);"><?= esc_html($note['title']) ?></h4>
+                <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.5;">
+                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
+                </p>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
+                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    </div>
+    <?php endif; ?>
 
     </div> <!-- End dashboard-widgets -->
 
@@ -3210,53 +3262,6 @@ add_action('template_redirect', function () {
     });
     </script>
     
-    <!-- Important Notes Widget -->
-    <?php
-    $all_notes = get_option('b2b_notes', []);
-    $user_id = get_current_user_id();
-    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
-    
-    // Filter visible notes
-    $dashboard_notes = [];
-    foreach ($all_notes as $note_id => $note) {
-        if ($note['visibility'] == 'general') {
-            $dashboard_notes[$note_id] = $note;
-        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
-            $dashboard_notes[$note_id] = $note;
-        } elseif (current_user_can('manage_options')) {
-            $dashboard_notes[$note_id] = $note;
-        }
-    }
-    
-    // Show only latest 3 notes
-    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
-    
-    if (!empty($dashboard_notes)):
-    ?>
-    <div class="card" style="margin-top:30px;background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
-            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
-                View All <i class="fa-solid fa-arrow-right"></i>
-            </a>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;">
-            <?php foreach ($dashboard_notes as $note_id => $note): ?>
-            <div style="background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
-                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
-                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
-                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
-                </p>
-                <div style="font-size:11px;color:#b45309;margin-top:8px;">
-                    <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
-                    <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-    <?php endif; ?>
-
     <?php b2b_adm_footer(); exit;
 });
 

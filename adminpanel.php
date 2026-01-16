@@ -1937,6 +1937,11 @@ function b2b_adm_header($title) {
             const submenu = toggle.nextElementSibling;
             
             if (submenu && submenu.classList.contains('submenu')) {
+                // Remove any active class initially when sidebar is collapsed
+                if (sidebar.classList.contains('collapsed')) {
+                    submenu.classList.remove('active');
+                }
+                
                 // Mouse enter on toggle
                 toggle.addEventListener('mouseenter', function() {
                     if (sidebar.classList.contains('collapsed')) {
@@ -1946,8 +1951,11 @@ function b2b_adm_header($title) {
                             const sidebarRect = sidebar.getBoundingClientRect();
                             const relativeTop = toggleRect.top - sidebarRect.top + sidebar.scrollTop;
                             
+                            // Set position and display
                             submenu.style.top = relativeTop + 'px';
+                            submenu.style.left = '100%';
                             submenu.classList.add('show');
+                            submenu.classList.remove('active'); // Remove active to ensure hover styling takes precedence
                         }, 100);
                     }
                 });

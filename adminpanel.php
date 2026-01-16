@@ -10155,8 +10155,10 @@ function sa_render_customers_page() {
                         ?>
                         <tr>
                             <td>
-                                <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
-                                <strong><a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;"><?= esc_html($customer->display_name) ?></a></strong>
+                                <a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;display:inline-flex;align-items:center;">
+                                    <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
+                                    <strong><?= esc_html($customer->display_name) ?></strong>
+                                </a>
                             </td>
                             <td class="col-email"><?= esc_html($customer->user_email) ?></td>
                             <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
@@ -10351,7 +10353,7 @@ function sa_render_customer_detail_page() {
         </div>
         
         <!-- Main Content -->
-        <div class="main">
+        <div class="main-content">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
@@ -11091,8 +11093,7 @@ function sa_render_new_order_page() {
         </div>
         
         <!-- Main Content -->
-        <div class="main">
-        <div class="container">
+        <div class="main-content">
         <div class="container">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>

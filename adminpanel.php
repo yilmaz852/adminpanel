@@ -3050,10 +3050,12 @@ add_action('template_redirect', function () {
     
     // Date range calculation
     $today = current_time('Y-m-d');
+    $date_error = '';
     if ($start_date && $end_date) {
         $this_start = date_create_from_format('d.m.Y', $start_date) ?: date_create($start_date);
         $this_end = date_create_from_format('d.m.Y', $end_date) ?: date_create($end_date);
         if (!$this_start || !$this_end) {
+            $date_error = 'Invalid date format. Using default year range. Please use dd.mm.yyyy format.';
             $this_start = "$year-01-01";
             $this_end = "$year-" . date('m-d', strtotime($today));
         } else {
@@ -3181,8 +3183,8 @@ add_action('template_redirect', function () {
     
     foreach ($detail as $r) {
         $total_stock = $r['stock'] + $r['ordered_qty'];
-        $avg = $date_diff > 0 ? ($r['qty'] / $date_diff) : 0;
-        $left = $avg > 0 ? ($total_stock / $avg) : 999;
+        $avg = $date_diff > 0 ? round($r['qty'] / $date_diff, 3) : 0;
+        $left = $avg > 0 ? round($total_stock / $avg, 1) : 999;
         
         if ($total_stock <= 0) $zero_stock++;
         if ($avg > 0 && $left < $min_supply_days) {
@@ -3209,6 +3211,12 @@ add_action('template_redirect', function () {
     <div class="page-header">
         <h1 class="page-title">Stock Planning - Sales Analysis</h1>
     </div>
+    
+    <?php if ($date_error): ?>
+    <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:12px;border-radius:4px;margin-bottom:20px;">
+        ⚠️ <?= esc_html($date_error) ?>
+    </div>
+    <?php endif; ?>
     
     <!-- Filter Form -->
     <form method="get" style="margin-bottom:20px;padding:15px;background:#f9f9f9;border:1px solid #ddd;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;">

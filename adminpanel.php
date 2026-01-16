@@ -2911,32 +2911,6 @@ add_action('template_redirect', function () {
     </div>
     </div>
 
-    <div class="dashboard-widget" data-widget="system-status" draggable="true">
-    <div class="card">
-        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
-            <i class="fa-solid fa-server" style="color:#10b981"></i> System Status
-        </h3>
-        <div style="display:grid;gap:15px">
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">WordPress Version</span>
-                <span style="font-weight:700"><?= get_bloginfo('version') ?></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">WooCommerce Version</span>
-                <span style="font-weight:700"><?= WC()->version ?></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">PHP Version</span>
-                <span style="font-weight:700"><?= phpversion() ?></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
-                <span style="color:var(--text-light)">Database</span>
-                <span style="font-weight:700;color:var(--success)"><i class="fa-solid fa-check-circle"></i> Connected</span>
-            </div>
-        </div>
-    </div>
-    </div>
-
     <div class="dashboard-widget" data-widget="agents" draggable="true">
     <div class="card">
         <h3 style="margin-top:0">Sales Agent Performance</h3>

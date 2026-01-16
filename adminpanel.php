@@ -1445,11 +1445,12 @@ function b2b_adm_header($title) {
         .sidebar-toggle:hover{background:rgba(255,255,255,0.1);border-radius:6px}
         .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
         .sidebar-nav{padding:20px 10px;flex:1;overflow-y:auto;overflow-x:visible}
-        .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;position:relative;cursor:pointer}
+        .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;cursor:pointer}
+        .submenu-toggle{position:relative}
         .sidebar-nav a i, .submenu-toggle > i:first-child{min-width:20px;text-align:center;font-size:18px}
         .sidebar-nav a .menu-text, .submenu-toggle .menu-text{transition:opacity 0.2s ease}
         .sidebar.collapsed .sidebar-nav a .menu-text, .sidebar.collapsed .submenu-toggle .menu-text{opacity:0;width:0;overflow:hidden}
-        .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:12px;justify-content:center;position:relative}
+        .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:12px;justify-content:center}
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
         /* Collapsed submenu - CSS-only hover approach */

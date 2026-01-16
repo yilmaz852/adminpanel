@@ -3265,8 +3265,8 @@ add_action('template_redirect', function () {
     
     if (!empty($dashboard_notes)):
     ?>
-    <div class="dashboard-widget" data-widget="notes" draggable="true">
-    <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);">
+    <div class="dashboard-widget" data-widget="notes" draggable="true" style="max-width:100%;overflow:hidden;">
+    <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);overflow:hidden;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
             <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
             <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">

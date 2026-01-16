@@ -1436,7 +1436,7 @@ function b2b_adm_header($title) {
         body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
         
         .sidebar{width:260px;background:var(--sidebar-bg);color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,0.1);transition:width 0.3s ease;left:0}
-        .sidebar.collapsed{width:80px}
+        .sidebar.collapsed{width:80px;overflow:visible !important;z-index:1000 !important}
         .sidebar-head{padding:25px;color:var(--white);font-weight:700;font-size:1.2rem;border-bottom:1px solid rgba(255,255,255,0.1);background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);display:flex;align-items:center;justify-content:space-between;transition:padding 0.3s ease}
         .sidebar.collapsed .sidebar-head{padding:25px 10px;justify-content:center}
         .sidebar-head-title{transition:opacity 0.2s ease;white-space:nowrap}
@@ -1454,7 +1454,7 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
         /* Collapsed submenu - CSS-only hover approach */
-        .sidebar.collapsed .submenu{position:absolute;top:0;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;transition:opacity 0s;overflow:visible !important;max-height:none !important}
+        .sidebar.collapsed .submenu{position:absolute;top:0;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:99999;transition:opacity 0s;overflow:visible !important;max-height:none !important}
         .sidebar.collapsed .submenu-toggle:hover + .submenu{opacity:1;pointer-events:auto;transition:opacity 0.3s ease}
         .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto}
         /* Solid white text and icons */

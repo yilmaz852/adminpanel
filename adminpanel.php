@@ -11465,9 +11465,22 @@ function init_nmi_gateway_class() {
             $this->api_username = $this->get_option('api_username');
             $this->api_password = $this->get_option('api_password');
             $this->test_mode = 'yes' === $this->get_option('test_mode');
+            $this->capture_mode = $this->get_option('capture_mode', 'sale');
+            $this->debug_mode = 'yes' === $this->get_option('debug_mode');
+            $this->allowed_card_types = $this->get_option('allowed_card_types', array('visa', 'mastercard', 'amex', 'discover'));
             
             // Save settings
             add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
+        }
+        
+        /**
+         * Log debug messages
+         */
+        private function log($message) {
+            if ($this->debug_mode && function_exists('wc_get_logger')) {
+                $logger = wc_get_logger();
+                $logger->debug($message, array('source' => 'nmi-gateway'));
+            }
         }
         
         public function init_form_fields() {
@@ -11511,6 +11524,39 @@ function init_nmi_gateway_class() {
                     'type' => 'password',
                     'description' => 'Your NMI API password (optional, if required).',
                     'default' => '',
+                    'desc_tip' => true
+                ),
+                'capture_mode' => array(
+                    'title' => 'Capture Mode',
+                    'type' => 'select',
+                    'description' => 'Choose when to capture payment.',
+                    'default' => 'sale',
+                    'options' => array(
+                        'sale' => 'Authorize & Capture (Immediate)',
+                        'auth' => 'Authorize Only (Manual Capture Required)'
+                    ),
+                    'desc_tip' => true
+                ),
+                'debug_mode' => array(
+                    'title' => 'Debug Logging',
+                    'type' => 'checkbox',
+                    'label' => 'Enable debug logging',
+                    'default' => 'no',
+                    'description' => 'Log gateway requests and responses for troubleshooting. <strong>WARNING:</strong> This will log sensitive data including card numbers. Only enable temporarily for debugging.'
+                ),
+                'allowed_card_types' => array(
+                    'title' => 'Allowed Card Types',
+                    'type' => 'multiselect',
+                    'description' => 'Select which card types to accept.',
+                    'default' => array('visa', 'mastercard', 'amex', 'discover'),
+                    'options' => array(
+                        'visa' => 'Visa',
+                        'mastercard' => 'MasterCard',
+                        'amex' => 'American Express',
+                        'discover' => 'Discover',
+                        'diners' => 'Diners Club',
+                        'jcb' => 'JCB'
+                    ),
                     'desc_tip' => true
                 )
             );
@@ -11648,7 +11694,7 @@ function init_nmi_gateway_class() {
             
             $post_data = array(
                 'security_key' => $this->api_username,
-                'type' => 'sale',
+                'type' => $this->capture_mode, // Use configured capture mode (sale or auth)
                 'ccnumber' => str_replace(' ', '', $card_number),
                 'ccexp' => $exp_month . $exp_year,
                 'cvv' => $card_cvv,
@@ -11664,6 +11710,14 @@ function init_nmi_gateway_class() {
                 'orderid' => $order->get_order_number()
             );
             
+            // Log request if debug mode enabled
+            if ($this->debug_mode) {
+                $log_data = $post_data;
+                $log_data['ccnumber'] = '****' . substr($log_data['ccnumber'], -4);
+                $log_data['cvv'] = '***';
+                $this->log('NMI Payment Request: ' . json_encode($log_data));
+            }
+            
             // Send API request
             $response = wp_remote_post($api_url, array(
                 'body' => $post_data,
@@ -11672,6 +11726,7 @@ function init_nmi_gateway_class() {
             ));
             
             if (is_wp_error($response)) {
+                $this->log('NMI Payment Error: ' . $response->get_error_message());
                 return array(
                     'success' => false,
                     'error' => $response->get_error_message(),
@@ -11681,6 +11736,11 @@ function init_nmi_gateway_class() {
             
             $body = wp_remote_retrieve_body($response);
             parse_str($body, $parsed_response);
+            
+            // Log response if debug mode enabled
+            if ($this->debug_mode) {
+                $this->log('NMI Payment Response: ' . $body);
+            }
             
             // Check response
             if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
@@ -11817,17 +11877,29 @@ add_action('template_redirect', function () {
     // Handle settings save
     $message = '';
     if (isset($_POST['save_nmi_settings']) && wp_verify_nonce($_POST['nmi_settings_nonce'], 'save_nmi_settings')) {
-        if ($nmi_gateway) {
-            $nmi_gateway->settings['enabled'] = isset($_POST['nmi_enabled']) ? 'yes' : 'no';
-            $nmi_gateway->settings['title'] = sanitize_text_field($_POST['nmi_title']);
-            $nmi_gateway->settings['description'] = sanitize_textarea_field($_POST['nmi_description']);
-            $nmi_gateway->settings['test_mode'] = isset($_POST['nmi_test_mode']) ? 'yes' : 'no';
-            $nmi_gateway->settings['api_username'] = sanitize_text_field($_POST['nmi_api_username']);
-            $nmi_gateway->settings['api_password'] = sanitize_text_field($_POST['nmi_api_password']);
-            
-            update_option('woocommerce_nmi_gateway_settings', $nmi_gateway->settings);
-            $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Payment gateway settings saved.</div>';
+        // Update settings in the options table
+        $settings = array(
+            'enabled' => isset($_POST['nmi_enabled']) ? 'yes' : 'no',
+            'title' => sanitize_text_field($_POST['nmi_title']),
+            'description' => sanitize_textarea_field($_POST['nmi_description']),
+            'test_mode' => isset($_POST['nmi_test_mode']) ? 'yes' : 'no',
+            'api_username' => sanitize_text_field($_POST['nmi_api_username']),
+            'api_password' => sanitize_text_field($_POST['nmi_api_password']),
+            'capture_mode' => sanitize_text_field($_POST['nmi_capture_mode'] ?? 'sale'),
+            'debug_mode' => isset($_POST['nmi_debug_mode']) ? 'yes' : 'no',
+            'allowed_card_types' => isset($_POST['nmi_allowed_card_types']) && is_array($_POST['nmi_allowed_card_types']) 
+                ? array_map('sanitize_text_field', $_POST['nmi_allowed_card_types']) 
+                : array('visa', 'mastercard', 'amex', 'discover')
+        );
+        
+        update_option('woocommerce_nmi_gateway_settings', $settings);
+        
+        // Clear WooCommerce cache to reflect changes
+        if (function_exists('wc_delete_shop_order_transients')) {
+            wc_delete_shop_order_transients();
         }
+        
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Payment gateway settings saved and activated in WooCommerce.</div>';
     }
     
     // Get current settings
@@ -11838,6 +11910,9 @@ add_action('template_redirect', function () {
     $test_mode = isset($settings['test_mode']) && $settings['test_mode'] === 'yes';
     $api_username = $settings['api_username'] ?? '';
     $api_password = $settings['api_password'] ?? '';
+    $capture_mode = $settings['capture_mode'] ?? 'sale';
+    $debug_mode = isset($settings['debug_mode']) && $settings['debug_mode'] === 'yes';
+    $allowed_card_types = $settings['allowed_card_types'] ?? array('visa', 'mastercard', 'amex', 'discover');
     
     // Get transaction logs
     global $wpdb;
@@ -11894,10 +11969,51 @@ add_action('template_redirect', function () {
                 <small style="color:#6b7280;display:block;margin-top:5px;">Your NMI API username/security key from NMI account</small>
             </div>
             
-            <div style="margin-bottom:25px;">
+            <div style="margin-bottom:20px;">
                 <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Password (Optional)</label>
                 <input type="password" name="nmi_api_password" value="<?= esc_attr($api_password) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
                 <small style="color:#6b7280;display:block;margin-top:5px;">Optional API password if required by your NMI account</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Capture Mode</label>
+                <select name="nmi_capture_mode" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <option value="sale" <?= $capture_mode === 'sale' ? 'selected' : '' ?>>Authorize & Capture (Immediate)</option>
+                    <option value="auth" <?= $capture_mode === 'auth' ? 'selected' : '' ?>>Authorize Only (Manual Capture Required)</option>
+                </select>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Choose when to capture payment. "Authorize Only" requires manual capture in NMI portal.</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_debug_mode" value="1" <?= checked($debug_mode, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Enable Debug Logging</span>
+                </label>
+                <small style="color:#ef4444;margin-left:30px;display:block;margin-top:5px;"><strong>WARNING:</strong> Debug mode logs sensitive data including card numbers. Only enable temporarily for troubleshooting.</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Allowed Card Types</label>
+                <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;max-width:500px;">
+                    <?php 
+                    $card_types = array(
+                        'visa' => 'Visa',
+                        'mastercard' => 'MasterCard',
+                        'amex' => 'American Express',
+                        'discover' => 'Discover',
+                        'diners' => 'Diners Club',
+                        'jcb' => 'JCB'
+                    );
+                    foreach ($card_types as $type => $label): 
+                    ?>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" name="nmi_allowed_card_types[]" value="<?= esc_attr($type) ?>" 
+                               <?= in_array($type, $allowed_card_types) ? 'checked' : '' ?>>
+                        <?= esc_html($label) ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Select which card types to accept at checkout</small>
             </div>
             
             <button type="submit" name="save_nmi_settings" class="btn-primary" style="padding:12px 30px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">

@@ -2736,9 +2736,6 @@ add_action('template_redirect', function () {
                 <input type="checkbox" class="widget-toggle" data-widget="quick-actions" checked> Quick Actions
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="system-status" checked> System Status
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="notes" checked> Important Notes
             </label>
         </div>
@@ -2997,27 +2994,27 @@ add_action('template_redirect', function () {
         }
     }
     
-    // Show only latest 3 notes
-    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
+    // Show only latest 2 notes (half-width widget)
+    $dashboard_notes = array_slice($dashboard_notes, 0, 2, true);
     
     if (!empty($dashboard_notes)):
     ?>
-    <div class="dashboard-widget" data-widget="notes" draggable="true" style="max-width:100%;overflow:hidden;">
-    <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);overflow:hidden;">
+    <div class="dashboard-widget dashboard-widget-half" data-widget="notes" draggable="true" style="max-width:100%;overflow:hidden;">
+    <div class="card" style="overflow:hidden;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-            <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
-            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
+            <h3 style="margin:0;color:var(--text);"><i class="fa-solid fa-note-sticky" style="color:var(--primary);"></i> Important Notes</h3>
+            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:var(--primary);text-decoration:none;font-weight:600;">
                 View All <i class="fa-solid fa-arrow-right"></i>
             </a>
         </div>
         <div class="notes-container" style="display:flex;overflow-x:auto;gap:15px;padding-bottom:10px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;">
             <?php foreach ($dashboard_notes as $note_id => $note): ?>
-            <div class="note-card" style="flex-shrink:0;width:300px;min-width:300px;background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
-                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
-                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
-                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
+            <div class="note-card" style="flex-shrink:0;width:100%;min-width:200px;background:var(--bg);padding:15px;border-radius:8px;border-left:3px solid var(--primary);">
+                <h4 style="margin:0 0 8px 0;color:var(--text);font-size:14px;font-weight:600;"><?= esc_html($note['title']) ?></h4>
+                <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.5;">
+                    <?= esc_html(mb_strlen($note['content']) > 80 ? mb_substr($note['content'], 0, 80) . '...' : $note['content']) ?>
                 </p>
-                <div style="font-size:11px;color:#b45309;margin-top:8px;">
+                <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
                     <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
                     <i class="fa-solid fa-clock"></i> <?= date('d.m.Y', strtotime($note['created'])) ?>
                 </div>
@@ -3029,15 +3026,15 @@ add_action('template_redirect', function () {
             height: 6px;
         }
         .notes-container::-webkit-scrollbar-track {
-            background: #fde68a;
+            background: var(--border);
             border-radius: 3px;
         }
         .notes-container::-webkit-scrollbar-thumb {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            background: var(--primary);
             border-radius: 3px;
         }
         .notes-container::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            background: var(--accent);
         }
         </style>
     </div>
@@ -3051,6 +3048,40 @@ add_action('template_redirect', function () {
     .dashboard-widget.hidden{display:none}
     .dashboard-widget.dragging{opacity:0.5}
     .dashboard-widget.drag-over{border-top:3px solid var(--primary)}
+    
+    /* Half-width widgets for better layout */
+    .dashboard-widget-half{
+        width:100%;
+        max-width:100%;
+    }
+    
+    /* Grid for dashboard widgets - auto-fit with min 400px */
+    .dashboard-widgets{
+        display:grid;
+        grid-template-columns:repeat(auto-fit, minmax(400px, 1fr));
+        gap:30px;
+        align-items:start;
+    }
+    
+    /* Make widgets same height when side-by-side */
+    .dashboard-widgets > .dashboard-widget{
+        height:100%;
+        display:flex;
+        flex-direction:column;
+    }
+    
+    .dashboard-widgets > .dashboard-widget > .card{
+        flex:1;
+        display:flex;
+        flex-direction:column;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 992px){
+        .dashboard-widgets{
+            grid-template-columns:1fr;
+        }
+    }
     </style>
 
     <script>

@@ -1464,10 +1464,9 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a:hover::after, .sidebar.collapsed .submenu-toggle:hover::after{opacity:1}
         
         /* Collapsed Sidebar - Hover Submenu */
-        .sidebar.collapsed .submenu{display:none !important;position:absolute;left:100%;background:var(--sidebar-bg);min-width:220px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
+        .sidebar.collapsed .submenu{display:none !important;position:absolute;left:100%;background:var(--sidebar-bg);min-width:200px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
         .sidebar.collapsed .submenu.show{display:block !important}
-        .sidebar.collapsed .submenu a{display:block;padding:12px 16px;margin-bottom:5px;white-space:normal;opacity:1 !important;width:auto !important}
-        .sidebar.collapsed .submenu a .menu-text{opacity:1 !important;width:auto !important;overflow:visible !important}
+        .sidebar.collapsed .submenu a{display:block;padding:12px 15px;margin-bottom:5px}
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1705,9 +1704,7 @@ function b2b_adm_header($title) {
             .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
             .sidebar-nav a, .submenu-toggle{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
             .sidebar-nav a .menu-text, .submenu-toggle .menu-text{opacity:1 !important;width:auto !important;overflow:visible !important}
-            .submenu-toggle{display:flex !important;justify-content:space-between;align-items:center}
-            .submenu-toggle i.fa-chevron-down{display:inline-block !important;margin-left:auto;opacity:1 !important}
-            .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:14px 16px;justify-content:space-between}
+            .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:14px 16px;justify-content:flex-start}
             .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:inline-block !important}
             .sidebar.collapsed .submenu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0}
             .sidebar.collapsed .sidebar-nav a::after, .sidebar.collapsed .submenu-toggle::after{display:none}
@@ -1719,10 +1716,7 @@ function b2b_adm_header($title) {
             .page-header .page-title{display:none}
             .page-header button,.page-header a{width:100%;margin:0}
             .dash-grid{grid-template-columns:repeat(2, 1fr);gap:12px}
-            .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:20px}
-            .table-responsive table{min-width:800px}
-            .dashboard-widgets{grid-template-columns:1fr !important;gap:20px}
-            .dashboard-widget{overflow-x:auto}
+            .table-responsive{overflow-x:auto}
             table{font-size:12px;min-width:650px}
             th,td{padding:10px 8px}
             .stats-box{flex-wrap:wrap;gap:12px}
@@ -2744,9 +2738,6 @@ add_action('template_redirect', function () {
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                 <input type="checkbox" class="widget-toggle" data-widget="system-status" checked> System Status
             </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                <input type="checkbox" class="widget-toggle" data-widget="notes" checked> Important Notes
-            </label>
         </div>
         <p style="margin:15px 0 0 0;color:var(--text-muted);font-size:12px"><i class="fa-solid fa-info-circle"></i> Drag widgets to reorder them. Settings are saved automatically.</p>
     </div>
@@ -2988,18 +2979,10 @@ add_action('template_redirect', function () {
     </div> <!-- End dashboard-widgets -->
 
     <style>
-    /* Dashboard Widgets - Responsive Grid Layout */
-    .dashboard-widgets{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;margin-bottom:30px}
-    .dashboard-widget{transition:opacity 0.3s ease;min-height:300px;display:flex;flex-direction:column}
+    .dashboard-widget{margin-bottom:30px;transition:opacity 0.3s ease}
     .dashboard-widget.hidden{display:none}
     .dashboard-widget.dragging{opacity:0.5}
     .dashboard-widget.drag-over{border-top:3px solid var(--primary)}
-    
-    /* Mobile: Horizontal scrolling */
-    @media (max-width:768px){
-        .dashboard-widgets{display:flex!important;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;gap:16px;padding-bottom:16px}
-        .dashboard-widget{flex-shrink:0;width:85vw;max-width:400px;scroll-snap-align:start;min-height:280px}
-    }
     </style>
 
     <script>
@@ -3274,25 +3257,24 @@ add_action('template_redirect', function () {
         }
     }
     
-    // Show only latest 5 notes
-    $dashboard_notes_limited = array_slice($dashboard_notes, 0, 5, true);
+    // Show only latest 3 notes
+    $dashboard_notes = array_slice($dashboard_notes, 0, 3, true);
     
-    if (!empty($dashboard_notes_limited)):
+    if (!empty($dashboard_notes)):
     ?>
-    <div class="dashboard-widget" data-widget="notes" draggable="true">
-    <div class="card" style="background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);max-height:450px;display:flex;flex-direction:column;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-shrink:0;">
+    <div class="card" style="margin-top:30px;background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
             <h3 style="margin:0;color:#92400e;"><i class="fa-solid fa-note-sticky"></i> Important Notes</h3>
-            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;font-size:13px;">
+            <a href="<?= home_url('/b2b-panel/notes') ?>" style="color:#92400e;text-decoration:none;font-weight:600;">
                 View All <i class="fa-solid fa-arrow-right"></i>
             </a>
         </div>
-        <div style="overflow-y:auto;flex:1;padding-right:8px;" class="notes-scroll">
-            <?php foreach ($dashboard_notes_limited as $note_id => $note): ?>
-            <div style="background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;margin-bottom:12px;">
-                <h4 style="margin:0 0 8px 0;color:#78350f;font-size:15px;"><?= esc_html($note['title']) ?></h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:15px;">
+            <?php foreach ($dashboard_notes as $note_id => $note): ?>
+            <div style="background:#fffbeb;padding:15px;border-radius:8px;border-left:3px solid #f59e0b;">
+                <h4 style="margin:0 0 8px 0;color:#78350f;"><?= esc_html($note['title']) ?></h4>
                 <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
-                    <?= esc_html(mb_strlen($note['content']) > 80 ? mb_substr($note['content'], 0, 80) . '...' : $note['content']) ?>
+                    <?= esc_html(mb_strlen($note['content']) > 100 ? mb_substr($note['content'], 0, 100) . '...' : $note['content']) ?>
                 </p>
                 <div style="font-size:11px;color:#b45309;margin-top:8px;">
                     <i class="fa-solid fa-user"></i> <?= esc_html($note['author']) ?> • 
@@ -3302,13 +3284,6 @@ add_action('template_redirect', function () {
             <?php endforeach; ?>
         </div>
     </div>
-    </div>
-    <style>
-    .notes-scroll::-webkit-scrollbar{width:6px}
-    .notes-scroll::-webkit-scrollbar-track{background:#fde68a;border-radius:3px}
-    .notes-scroll::-webkit-scrollbar-thumb{background:#f59e0b;border-radius:3px}
-    .notes-scroll::-webkit-scrollbar-thumb:hover{background:#d97706}
-    </style>
     <?php endif; ?>
 
     <?php b2b_adm_footer(); exit;
@@ -12213,11 +12188,9 @@ function sa_render_orders_page() {
             .form-group { flex: 1; min-width: 150px; }
             .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
             .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
-            .pagination { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-            .pagination a, .pagination span { padding: 10px 16px; border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: var(--text); transition: all 0.3s ease; font-weight: 500; }
-            .pagination a:hover { background: var(--bg); border-color: var(--primary); color: var(--primary); transform: translateY(-2px); }
-            .pagination span.current, .pagination a.active { background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); color: var(--white); border-color: transparent; box-shadow: 0 4px 12px rgba(138,95,232,0.3); }
-            .pagination .prev, .pagination .next { font-weight: 600; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
             .col-toggle { position: relative; display: inline-block; }
             .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
             .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; margin-top: 5px; }
@@ -12489,11 +12462,9 @@ function sa_render_commissions_page() {
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
             th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
-            .pagination { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-            .pagination a, .pagination span { padding: 10px 16px; border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: var(--text); transition: all 0.3s ease; font-weight: 500; }
-            .pagination a:hover { background: var(--bg); border-color: var(--primary); color: var(--primary); transform: translateY(-2px); }
-            .pagination span.current, .pagination a.active { background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); color: var(--white); border-color: transparent; box-shadow: 0 4px 12px rgba(138,95,232,0.3); }
-            .pagination .prev, .pagination .next { font-weight: 600; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
         </style>
     </head>
     <body>

@@ -76,13 +76,17 @@ add_action('init', function () {
     // Notes Module
     add_rewrite_rule('^b2b-panel/notes/?$', 'index.php?b2b_adm_page=notes', 'top');
 
+    // Stock Planning Module (V12 - New)
+    add_rewrite_rule('^b2b-panel/stock-planning/?$', 'index.php?b2b_adm_page=stock_planning', 'top');
+    add_rewrite_rule('^b2b-panel/stock-planning/supplier-orders/?$', 'index.php?b2b_adm_page=supplier_orders', 'top');
+
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures messaging and notes module rewrites are properly registered
-    if (!get_option('b2b_rewrite_v21_payments')) {
+    // Fixed version that ensures stock planning module rewrites are properly registered
+    if (!get_option('b2b_rewrite_v22_stock_planning')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v21_payments', true);
+        update_option('b2b_rewrite_v22_stock_planning', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v20_messaging_notes');
+        delete_option('b2b_rewrite_v21_payments');
     }
 });
 
@@ -547,6 +551,208 @@ add_action('wp_ajax_b2b_quick_edit_stock', function() {
     }
     
     wp_send_json_success(['updated' => $success_count]);
+});
+
+/* =====================================================
+   3A1B. STOCK PLANNING MODULE - DATABASE & UTILITIES
+===================================================== */
+// Create supplier orders table
+register_activation_hook(__FILE__, 'b2b_create_supplier_orders_table');
+function b2b_create_supplier_orders_table() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_supplier_orders';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        id VARCHAR(50) PRIMARY KEY,
+        sku VARCHAR(100) NOT NULL,
+        product_id BIGINT DEFAULT 0,
+        name TEXT NOT NULL,
+        ordered_qty INT NOT NULL DEFAULT 0,
+        order_date DATE,
+        note TEXT,
+        added_by VARCHAR(100),
+        added_at DATETIME,
+        received TINYINT(1) DEFAULT 0,
+        received_at DATETIME,
+        INDEX idx_sku (sku),
+        INDEX idx_received (received),
+        INDEX idx_order_date (order_date)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+// Ensure table exists on init
+add_action('admin_init', 'b2b_create_supplier_orders_table');
+
+// Helper: Get supplier orders from database
+function b2b_get_supplier_orders() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_supplier_orders';
+    return $wpdb->get_results("SELECT * FROM $table_name ORDER BY received ASC, order_date DESC", ARRAY_A);
+}
+
+// Helper: Save supplier order
+function b2b_save_supplier_order($data) {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_supplier_orders';
+    
+    if (isset($data['id']) && $wpdb->get_var($wpdb->prepare("SELECT id FROM $table_name WHERE id = %s", $data['id']))) {
+        // Update existing
+        $wpdb->update($table_name, $data, ['id' => $data['id']]);
+    } else {
+        // Insert new
+        if (!isset($data['id'])) {
+            $data['id'] = uniqid('sup_', true);
+        }
+        $wpdb->insert($table_name, $data);
+    }
+    return $data['id'];
+}
+
+// Helper: Delete supplier order
+function b2b_delete_supplier_order($id) {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_supplier_orders';
+    return $wpdb->delete($table_name, ['id' => $id]);
+}
+
+/* =====================================================
+   3A1C. AJAX: STOCK PLANNING - SKU SEARCH
+===================================================== */
+add_action('wp_ajax_b2b_search_sku', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json([]);
+        return;
+    }
+    
+    $term = sanitize_text_field($_POST['term'] ?? '');
+    $result = [];
+    
+    // Search by SKU first
+    $args = [
+        'status' => 'publish',
+        'limit' => 10,
+        'return' => 'ids',
+        'sku' => $term,
+    ];
+    
+    $ids = wc_get_products($args);
+    
+    // If no results, search by name
+    if (empty($ids)) {
+        $ids = get_posts([
+            'post_type' => ['product', 'product_variation'],
+            'post_status' => 'publish',
+            'posts_per_page' => 10,
+            's' => $term,
+            'fields' => 'ids'
+        ]);
+    }
+    
+    foreach ($ids as $pid) {
+        $product = wc_get_product($pid);
+        if ($product) {
+            $result[] = [
+                'id' => $pid,
+                'sku' => $product->get_sku() ?: $pid,
+                'name' => $product->get_name(),
+            ];
+        }
+    }
+    
+    wp_send_json($result);
+});
+
+/* =====================================================
+   3A1D. AJAX: ADD BULK SUPPLY ORDERS
+===================================================== */
+add_action('wp_ajax_b2b_add_supply_bulk', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    check_ajax_referer('b2b_add_supply_bulk', '_b2b_nonce');
+    
+    $items = $_POST['items'] ?? [];
+    $user = wp_get_current_user()->user_login;
+    
+    foreach ($items as $item) {
+        if (empty($item['sku']) || empty($item['name'])) continue;
+        
+        $data = [
+            'id' => uniqid('sup_', true),
+            'sku' => sanitize_text_field($item['sku']),
+            'product_id' => intval($item['product_id'] ?? 0),
+            'name' => sanitize_text_field($item['name']),
+            'ordered_qty' => intval($item['ordered_qty']),
+            'order_date' => date('Y-m-d'),
+            'note' => 'Auto from stock planning report',
+            'added_by' => $user,
+            'added_at' => current_time('mysql'),
+            'received' => 0,
+        ];
+        
+        b2b_save_supplier_order($data);
+    }
+    
+    wp_send_json_success();
+});
+
+/* =====================================================
+   3A1E. AJAX: MARK RECEIVED
+===================================================== */
+add_action('wp_ajax_b2b_mark_received', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    check_ajax_referer('b2b_mark_received', '_b2b_nonce');
+    
+    $item_id = sanitize_text_field($_POST['item_id'] ?? '');
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_supplier_orders';
+    
+    // Get the order
+    $order = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %s", $item_id), ARRAY_A);
+    
+    if (!$order) {
+        wp_send_json_error('Order not found');
+        return;
+    }
+    
+    // Mark as received
+    $wpdb->update(
+        $table_name,
+        [
+            'received' => 1,
+            'received_at' => current_time('mysql')
+        ],
+        ['id' => $item_id]
+    );
+    
+    // Update product stock if product_id exists
+    if ($order['product_id'] > 0) {
+        $product = wc_get_product($order['product_id']);
+        if ($product) {
+            $current_stock = $product->get_stock_quantity() ?: 0;
+            $new_stock = $current_stock + intval($order['ordered_qty']);
+            
+            $product->set_manage_stock(true);
+            $product->set_stock_quantity($new_stock);
+            $product->save();
+            
+            // Log the change
+            b2b_adm_add_log($order['product_id'], 'stock', $current_stock, $new_stock, 'Supplier Order Received: ' . $order['sku']);
+        }
+    }
+    
+    wp_send_json_success();
 });
 
 /* =====================================================
@@ -1355,6 +1561,16 @@ function b2b_adm_header($title) {
             <a href="<?= home_url('/b2b-panel') ?>" class="<?= get_query_var('b2b_adm_page')=='dashboard'?'active':'' ?>"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
             <a href="<?= home_url('/b2b-panel/orders') ?>" class="<?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>"><i class="fa-solid fa-box"></i> Orders</a>
             <a href="<?= home_url('/b2b-panel/reports') ?>" class="<?= get_query_var('b2b_adm_page')=='reports'?'active':'' ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            
+            <!-- Stock Planning Module with Submenu -->
+            <div class="submenu-toggle <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>" onclick="toggleSubmenu(this)">
+                <i class="fa-solid fa-boxes-stacked"></i> Stock Planning <i class="fa-solid fa-chevron-down"></i>
+            </div>
+            <div class="submenu <?= in_array(get_query_var('b2b_adm_page'), ['stock_planning','supplier_orders'])?'active':'' ?>">
+                <a href="<?= home_url('/b2b-panel/stock-planning') ?>" class="<?= get_query_var('b2b_adm_page')=='stock_planning'?'active':'' ?>"><i class="fa-solid fa-chart-gantt"></i> Sales Analysis</a>
+                <a href="<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>" class="<?= get_query_var('b2b_adm_page')=='supplier_orders'?'active':'' ?>"><i class="fa-solid fa-truck-ramp-box"></i> Supplier Orders</a>
+            </div>
+            
             <a href="<?= home_url('/b2b-panel/activity-log') ?>" class="<?= get_query_var('b2b_adm_page')=='activity_log'?'active':'' ?>"><i class="fa-solid fa-clipboard-list"></i> Activity Log</a>
             
             <!-- Products Module with Submenu -->
@@ -2811,6 +3027,612 @@ add_action('template_redirect', function () {
         </table>
     </div>
     <?php endif; ?>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   7C. PAGE: STOCK PLANNING - SALES ANALYSIS
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'stock_planning') return;
+    b2b_adm_guard();
+    
+    global $wpdb;
+    
+    // Form inputs
+    $year = intval($_GET['year'] ?? date('Y'));
+    $statuses = $_GET['status'] ?? ['completed', 'processing'];
+    $start_date = $_GET['start_date'] ?? '';
+    $end_date = $_GET['end_date'] ?? '';
+    $min_supply_days = intval($_GET['min_supply_days'] ?? 80);
+    $stock_threshold = intval($_GET['stock_threshold'] ?? 0);
+    
+    // Date range calculation
+    $today = current_time('Y-m-d');
+    if ($start_date && $end_date) {
+        $this_start = date_create_from_format('d.m.Y', $start_date) ?: date_create($start_date);
+        $this_end = date_create_from_format('d.m.Y', $end_date) ?: date_create($end_date);
+        if (!$this_start || !$this_end) {
+            $this_start = "$year-01-01";
+            $this_end = "$year-" . date('m-d', strtotime($today));
+        } else {
+            $this_start = $this_start->format('Y-m-d');
+            $this_end = $this_end->format('Y-m-d');
+        }
+    } else {
+        $this_start = "$year-01-01";
+        $this_end = "$year-" . date('m-d', strtotime($today));
+    }
+    
+    $date_diff = (strtotime($this_end) - strtotime($this_start)) / 86400 + 1;
+    
+    // Get orders
+    $order_statuses = array_map(function($s){ return 'wc-'.$s; }, $statuses);
+    $status_placeholders = implode(',', array_fill(0, count($order_statuses), '%s'));
+    $order_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT ID FROM {$wpdb->posts}
+         WHERE post_type = 'shop_order'
+         AND post_status IN ($status_placeholders)
+         AND post_date >= %s AND post_date <= %s",
+        ...array_merge($order_statuses, [$this_start . " 00:00:00", $this_end . " 23:59:59"])
+    ));
+    
+    $detail = [];
+    $total_net = $total_tax = $total_gross = 0;
+    
+    if (!empty($order_ids)) {
+        $placeholders = implode(',', array_fill(0, count($order_ids), '%d'));
+        
+        // Get order items
+        $order_items = $wpdb->get_results($wpdb->prepare(
+            "SELECT oi.order_item_id, oi.order_id,
+                oim_product.meta_value as product_id,
+                oim_variation.meta_value as variation_id,
+                oim_qty.meta_value as qty,
+                oim_total.meta_value as net,
+                oim_tax.meta_value as tax
+             FROM {$wpdb->prefix}woocommerce_order_items oi
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_product ON oi.order_item_id = oim_product.order_item_id AND oim_product.meta_key = '_product_id'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_variation ON oi.order_item_id = oim_variation.order_item_id AND oim_variation.meta_key = '_variation_id'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_total ON oi.order_item_id = oim_total.order_item_id AND oim_total.meta_key = '_line_total'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_tax ON oi.order_item_id = oim_tax.order_item_id AND oim_tax.meta_key = '_line_tax'
+             WHERE oi.order_id IN ($placeholders)
+             AND oi.order_item_type = 'line_item'",
+            $order_ids
+        ));
+        
+        // Process items
+        foreach ($order_items as $item) {
+            $pid = $item->variation_id && $item->variation_id != '0' ? intval($item->variation_id) : intval($item->product_id);
+            if (!$pid) continue;
+            
+            $product = wc_get_product($pid);
+            if (!$product) continue;
+            
+            $sku = $product->get_sku() ?: $pid;
+            $name = $product->get_name();
+            $cat = implode(', ', wp_get_post_terms($pid, 'product_cat', ['fields' => 'names'])) ?: '-';
+            
+            if (!isset($detail[$sku])) {
+                $detail[$sku] = [
+                    'sku' => $sku,
+                    'product_id' => $pid,
+                    'name' => $name,
+                    'category' => $cat,
+                    'qty' => 0,
+                    'net' => 0,
+                    'tax' => 0,
+                    'gross' => 0,
+                    'stock' => $product->get_stock_quantity() ?: 0,
+                    'ordered_qty' => 0,
+                    'ordered_note' => '',
+                    'received' => 0,
+                ];
+            }
+            
+            $qty = floatval($item->qty);
+            $net = floatval($item->net);
+            $tax = floatval($item->tax);
+            $gross = $net + $tax;
+            
+            $detail[$sku]['qty'] += $qty;
+            $detail[$sku]['net'] += $net;
+            $detail[$sku]['tax'] += $tax;
+            $detail[$sku]['gross'] += $gross;
+            
+            $total_net += $net;
+            $total_tax += $tax;
+            $total_gross += $gross;
+        }
+    }
+    
+    // Get supplier orders
+    $sup_list = b2b_get_supplier_orders();
+    foreach ($sup_list as $sup) {
+        $sku = $sup['sku'];
+        
+        if (!isset($detail[$sku])) {
+            $detail[$sku] = [
+                'sku' => $sku,
+                'product_id' => intval($sup['product_id']),
+                'name' => $sup['name'],
+                'category' => '',
+                'qty' => 0,
+                'net' => 0,
+                'tax' => 0,
+                'gross' => 0,
+                'stock' => 0,
+                'ordered_qty' => 0,
+                'ordered_note' => '',
+                'received' => intval($sup['received']),
+            ];
+        }
+        
+        $detail[$sku]['ordered_qty'] += intval($sup['ordered_qty']);
+        $detail[$sku]['ordered_note'] .= ($detail[$sku]['ordered_note'] ? ' | ' : '') . ($sup['order_date'] ? $sup['order_date'] : '') . ($sup['note'] ? ': ' . $sup['note'] : '');
+        $detail[$sku]['received'] = intval($sup['received']);
+    }
+    
+    // Calculate widgets
+    $zero_stock = $supply_passed = $supply_soon = 0;
+    $auto_supply_items = [];
+    
+    foreach ($detail as $r) {
+        $total_stock = $r['stock'] + $r['ordered_qty'];
+        $avg = $date_diff > 0 ? ($r['qty'] / $date_diff) : 0;
+        $left = $avg > 0 ? ($total_stock / $avg) : 999;
+        
+        if ($total_stock <= 0) $zero_stock++;
+        if ($avg > 0 && $left < $min_supply_days) {
+            $supply_passed++;
+            if (empty($r['ordered_qty']) && !$r['received']) {
+                $auto_supply_items[] = [
+                    'sku' => $r['sku'],
+                    'product_id' => $r['product_id'],
+                    'name' => $r['name'],
+                    'ordered_qty' => max(1, round($avg * $min_supply_days)),
+                ];
+            }
+        }
+        if ($avg > 0 && $left >= $min_supply_days && $left < ($min_supply_days + 10)) $supply_soon++;
+    }
+    
+    b2b_adm_header('Stock Planning - Sales Analysis');
+    ?>
+    
+    <!-- DataTables CSS & JS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    
+    <div class="page-header">
+        <h1 class="page-title">Stock Planning - Sales Analysis</h1>
+    </div>
+    
+    <!-- Filter Form -->
+    <form method="get" style="margin-bottom:20px;padding:15px;background:#f9f9f9;border:1px solid #ddd;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;">
+        <input type="hidden" name="b2b_adm_page" value="stock_planning">
+        
+        <div>
+            <label style="display:block;margin-bottom:5px;font-weight:600;">Year</label>
+            <select name="year" style="padding:8px;border:1px solid #ddd;border-radius:4px;">
+                <?php for($y = date('Y'); $y >= 2020; $y--): ?>
+                <option value="<?= $y ?>" <?= selected($year, $y, false) ?>><?= $y ?></option>
+                <?php endfor; ?>
+            </select>
+        </div>
+        
+        <div>
+            <label style="display:block;margin-bottom:5px;font-weight:600;">Start Date</label>
+            <input type="text" name="start_date" value="<?= esc_attr($start_date) ?>" placeholder="dd.mm.yyyy" style="padding:8px;border:1px solid #ddd;border-radius:4px;">
+        </div>
+        
+        <div>
+            <label style="display:block;margin-bottom:5px;font-weight:600;">End Date</label>
+            <input type="text" name="end_date" value="<?= esc_attr($end_date) ?>" placeholder="dd.mm.yyyy" style="padding:8px;border:1px solid #ddd;border-radius:4px;">
+        </div>
+        
+        <div>
+            <label style="display:block;margin-bottom:5px;font-weight:600;">Order Status</label>
+            <?php foreach (wc_get_order_statuses() as $key => $label): 
+                $s = str_replace('wc-', '', $key); ?>
+            <div style="margin-bottom:2px;">
+                <input type="checkbox" name="status[]" value="<?= $s ?>" <?= in_array($s, $statuses) ? ' checked' : '' ?>> <?= $label ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        
+        <div>
+            <label style="display:block;margin-bottom:5px;font-weight:600;">Min Supply Days</label>
+            <input type="number" name="min_supply_days" value="<?= esc_attr($min_supply_days) ?>" style="width:100px;padding:8px;border:1px solid #ddd;border-radius:4px;">
+        </div>
+        
+        <button class="button button-primary" style="height:38px;padding:0 20px;">Generate Report</button>
+        <a href="<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>" class="button" style="height:38px;padding:10px 20px;text-decoration:none;">Go to Supplier Orders</a>
+    </form>
+    
+    <!-- Summary Widgets -->
+    <div style="display:flex;gap:20px;margin-bottom:25px;flex-wrap:wrap;">
+        <div style="background:#fff;border:1px solid #ddd;padding:18px;flex:1;text-align:center;min-width:160px;">
+            <div style="font-size:14px;color:#888;">Net</div>
+            <div style="font-size:2em;font-weight:600;"><?= wc_price($total_net) ?></div>
+        </div>
+        <div style="background:#fff;border:1px solid #ddd;padding:18px;flex:1;text-align:center;min-width:160px;">
+            <div style="font-size:14px;color:#888;">Tax</div>
+            <div style="font-size:2em;font-weight:600;"><?= wc_price($total_tax) ?></div>
+        </div>
+        <div style="background:#fff;border:1px solid #ddd;padding:18px;flex:1;text-align:center;min-width:160px;">
+            <div style="font-size:14px;color:#888;">Gross</div>
+            <div style="font-size:2em;font-weight:600;"><?= wc_price($total_gross) ?></div>
+        </div>
+    </div>
+    
+    <div style="display:flex;gap:20px;margin-bottom:25px;flex-wrap:wrap;">
+        <div style="background:#f8f8f8;border:1px solid #ddd;padding:18px;flex:1;text-align:center;min-width:160px;">
+            <div style="font-size:14px;color:#888;">Zero Stock Products</div>
+            <div style="font-size:2em;font-weight:600;"><?= $zero_stock ?></div>
+        </div>
+        <div style="background:#fbeaea;border:1px solid #e99;padding:18px;flex:1;text-align:center;min-width:160px;">
+            <div style="font-size:14px;color:#c00;">Supply Passed</div>
+            <div style="font-size:2em;font-weight:600;"><?= $supply_passed ?></div>
+        </div>
+        <div style="background:#fffbe9;border:1px solid #e9c;padding:18px;flex:1;text-align:center;min-width:160px;">
+            <div style="font-size:14px;color:#e9a500;">Supply < 10 days</div>
+            <div style="font-size:2em;font-weight:600;"><?= $supply_soon ?></div>
+        </div>
+    </div>
+    
+    <!-- Auto Supply Button -->
+    <?php if (!empty($auto_supply_items)): 
+        $nonce = wp_create_nonce('b2b_add_supply_bulk'); ?>
+    <button type="button" class="button b2b-add-supply-btn" style="margin-bottom:20px;background:#e77;color:white;padding:10px 24px;font-size:1.1em;" data-items='<?= json_encode($auto_supply_items) ?>' data-nonce="<?= $nonce ?>">
+        Add <?= count($auto_supply_items) ?> Products to Supplier Orders
+    </button>
+    <?php endif; ?>
+    
+    <!-- Export Button -->
+    <button onclick="exportStockPlanningCsv()" class="button" style="margin-bottom:10px;">Export CSV</button>
+    
+    <!-- Data Table -->
+    <table id="stock-planning-table" class="display widefat" style="width:100%;">
+        <thead>
+            <tr>
+                <th>SKU</th>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Qty Sold</th>
+                <th>Revenue</th>
+                <th>Stock</th>
+                <th>Ordered Qty</th>
+                <th>Order Note</th>
+                <th>Days</th>
+                <th>Avg/Day</th>
+                <th>Days Left</th>
+                <th>Gap</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($detail as $r): 
+                $total_stock = $r['stock'] + $r['ordered_qty'];
+                $avg = $date_diff > 0 ? round($r['qty'] / $date_diff, 3) : 0;
+                $left = $avg > 0 ? round($total_stock / $avg) : '-';
+                $gap = is_numeric($left) ? $left - $min_supply_days : '-';
+                
+                $style = '';
+                if ($total_stock <= 0) {
+                    $style = ' style="background:#ffd5d5"';
+                } elseif (is_numeric($left) && $left < $min_supply_days) {
+                    $style = ' style="background:#ffbbbb"';
+                } elseif (is_numeric($left) && $left >= $min_supply_days && $left < ($min_supply_days + 10)) {
+                    $style = ' style="background:#fffbe9"';
+                }
+                
+                $received_class = $r['received'] ? ' class="stock-received"' : '';
+            ?>
+            <tr<?= $style ?><?= $received_class ?>>
+                <td><?= esc_html($r['sku']) ?></td>
+                <td><?= esc_html($r['name']) ?></td>
+                <td><?= esc_html($r['category']) ?></td>
+                <td><?= $r['qty'] ?></td>
+                <td><?= wc_price($r['gross']) ?></td>
+                <td><?= $r['stock'] ?></td>
+                <td><?= $r['ordered_qty'] ?></td>
+                <td><?= esc_html($r['ordered_note']) ?></td>
+                <td><?= $date_diff ?></td>
+                <td><?= $avg ?></td>
+                <td><?= $left ?></td>
+                <td><?= $gap ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    
+    <script>
+    jQuery(function($) {
+        // Initialize DataTable
+        $('#stock-planning-table').DataTable({
+            pageLength: 25,
+            order: [[10, 'asc']], // Sort by Days Left
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/en-GB.json' }
+        });
+        
+        // Add supply bulk button handler
+        $('.b2b-add-supply-btn').on('click', function() {
+            var items = $(this).data('items');
+            var nonce = $(this).data('nonce');
+            
+            $.post('<?= admin_url('admin-ajax.php') ?>', {
+                action: 'b2b_add_supply_bulk',
+                items: items,
+                _b2b_nonce: nonce
+            }, function(resp) {
+                if (resp.success) {
+                    alert('Products added to supplier orders!');
+                    window.location.href = '<?= home_url('/b2b-panel/stock-planning/supplier-orders') ?>';
+                } else {
+                    alert('Error occurred!');
+                }
+            });
+        });
+    });
+    
+    function exportStockPlanningCsv() {
+        var csv = [];
+        var rows = document.querySelectorAll("#stock-planning-table tr");
+        for (var i = 0; i < rows.length; i++) {
+            var row = [], cols = rows[i].querySelectorAll("td, th");
+            for (var j = 0; j < cols.length; j++)
+                row.push('"' + cols[j].innerText.replace(/"/g, '""') + '"');
+            csv.push(row.join(","));
+        }
+        var csvContent = "data:text/csv;charset=utf-8," + csv.join("\n");
+        var link = document.createElement("a");
+        link.setAttribute("href", encodeURI(csvContent));
+        link.setAttribute("download", "stock-planning-report.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    </script>
+    
+    <style>
+    .stock-received {
+        background: #e0f7e1 !important;
+        opacity: 0.7;
+    }
+    </style>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/* =====================================================
+   7D. PAGE: SUPPLIER ORDERS MANAGEMENT
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'supplier_orders') return;
+    b2b_adm_guard();
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'b2b_supplier_orders';
+    
+    // Handle form add
+    if (!empty($_POST['b2b_supplier_add'])) {
+        check_admin_referer('b2b_supplier_add', 'b2b_supplier_nonce');
+        
+        $sku = sanitize_text_field($_POST['sku']);
+        $name = sanitize_text_field($_POST['name']);
+        $product_id = intval($_POST['product_id']);
+        $ordered_qty = intval($_POST['ordered_qty']);
+        $order_date = sanitize_text_field($_POST['order_date']);
+        $note = sanitize_textarea_field($_POST['note']);
+        $user = wp_get_current_user()->user_login;
+        
+        if ($sku && $ordered_qty > 0) {
+            $data = [
+                'id' => uniqid('sup_', true),
+                'sku' => $sku,
+                'product_id' => $product_id,
+                'name' => $name,
+                'ordered_qty' => $ordered_qty,
+                'order_date' => $order_date,
+                'note' => $note,
+                'added_by' => $user,
+                'added_at' => current_time('mysql'),
+                'received' => 0,
+            ];
+            
+            b2b_save_supplier_order($data);
+            echo '<div class="notice notice-success"><p>Supplier order added successfully.</p></div>';
+        }
+    }
+    
+    // Handle delete
+    if (!empty($_GET['delete']) && !empty($_GET['id'])) {
+        check_admin_referer('b2b_supplier_del_' . $_GET['id']);
+        b2b_delete_supplier_order(sanitize_text_field($_GET['id']));
+        echo '<div class="notice notice-success"><p>Supplier order deleted.</p></div>';
+    }
+    
+    // Handle edit
+    if (isset($_POST['b2b_supplier_edit'])) {
+        check_admin_referer('b2b_supplier_edit', 'b2b_supplier_nonce_edit');
+        
+        $item_id = sanitize_text_field($_POST['edit_item_id']);
+        $new_quantity = intval($_POST['edit_ordered_qty']);
+        
+        if ($new_quantity > 0) {
+            $wpdb->update($table_name, ['ordered_qty' => $new_quantity], ['id' => $item_id]);
+            echo '<div class="notice notice-success"><p>Supplier order updated.</p></div>';
+        } else {
+            echo '<div class="notice notice-error"><p>Quantity must be greater than zero.</p></div>';
+        }
+    }
+    
+    // Get all supplier orders
+    $list = b2b_get_supplier_orders();
+    
+    b2b_adm_header('Supplier Orders Management');
+    ?>
+    
+    <!-- DataTables CSS & JS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    
+    <div class="page-header">
+        <h1 class="page-title">Supplier Orders Management</h1>
+    </div>
+    
+    <p style="margin-bottom:20px;">Add products to this list for which you placed a supplier order. These will be reflected in the stock planning report and considered in supply calculations.</p>
+    
+    <!-- SKU Search & Add Form -->
+    <form method="post" style="margin-bottom:30px;padding:20px;background:#f7f7f7;border:1px solid #ddd;border-radius:8px;max-width:100%;position:relative;">
+        <?php wp_nonce_field('b2b_supplier_add', 'b2b_supplier_nonce'); ?>
+        <h3 style="margin-top:0;">Add Product to Supplier Order</h3>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="position:relative;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">SKU</label>
+                <input type="text" id="b2b-product-sku-search" name="sku" placeholder="Search SKU" autocomplete="off" required style="width:140px;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                <div id="b2b-product-search-results" style="display:none;position:absolute;background:#fff;border:1px solid #ccc;max-height:200px;overflow:auto;z-index:99;width:220px;"></div>
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Product Name</label>
+                <input type="text" id="b2b-product-name" name="name" placeholder="Product Name" style="width:200px;padding:8px;border:1px solid #ddd;border-radius:4px;" readonly>
+            </div>
+            <input type="hidden" id="b2b-product-id" name="product_id" value="">
+            <div>
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Ordered Qty</label>
+                <input type="number" name="ordered_qty" placeholder="Qty" min="1" required style="width:100px;padding:8px;border:1px solid #ddd;border-radius:4px;">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Order Date</label>
+                <input type="date" name="order_date" style="width:150px;padding:8px;border:1px solid #ddd;border-radius:4px;" value="<?= date('Y-m-d') ?>">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Note</label>
+                <input type="text" name="note" placeholder="Optional note" style="width:180px;padding:8px;border:1px solid #ddd;border-radius:4px;">
+            </div>
+            <button name="b2b_supplier_add" class="button button-primary" style="height:38px;padding:0 20px;">Add Order</button>
+        </div>
+    </form>
+    
+    <!-- Supplier Orders Table -->
+    <h2>Supplier Orders List</h2>
+    <table id="supplier-orders-table" class="display widefat" style="width:100%;">
+        <thead>
+            <tr>
+                <th>SKU</th>
+                <th>Name</th>
+                <th>Ordered Qty</th>
+                <th>Order Date</th>
+                <th>Note</th>
+                <th>Added By</th>
+                <th>Added At</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($list as $row): ?>
+            <tr <?= $row['received'] ? 'style="background:#e0f7e1;opacity:0.7;"' : '' ?>>
+                <td><?= esc_html($row['sku']) ?></td>
+                <td><?= esc_html($row['name']) ?></td>
+                <td>
+                    <?php if (!$row['received']): ?>
+                    <form method="post" style="display:inline-block;">
+                        <?php wp_nonce_field('b2b_supplier_edit', 'b2b_supplier_nonce_edit'); ?>
+                        <input type="hidden" name="edit_item_id" value="<?= esc_attr($row['id']) ?>">
+                        <input type="number" name="edit_ordered_qty" value="<?= esc_attr($row['ordered_qty']) ?>" style="width:70px;padding:4px;">
+                        <button type="submit" name="b2b_supplier_edit" class="button button-small">Save</button>
+                    </form>
+                    <?php else: ?>
+                    <?= esc_html($row['ordered_qty']) ?>
+                    <?php endif; ?>
+                </td>
+                <td><?= esc_html($row['order_date']) ?></td>
+                <td><?= esc_html($row['note']) ?></td>
+                <td><?= esc_html($row['added_by']) ?></td>
+                <td><?= esc_html($row['added_at']) ?></td>
+                <td>
+                    <?php if (!$row['received']): 
+                        $nonce = wp_create_nonce('b2b_mark_received'); ?>
+                    <button class="button b2b-mark-received-btn" data-item-id="<?= esc_attr($row['id']) ?>" data-nonce="<?= esc_attr($nonce) ?>">Mark Received</button>
+                    <a href="<?= esc_url(add_query_arg(['delete' => 1, 'id' => $row['id']])) ?>&_wpnonce=<?= wp_create_nonce('b2b_supplier_del_' . $row['id']) ?>" class="button" onclick="return confirm('Are you sure?');">Delete</a>
+                    <?php else: ?>
+                    <span style="color:green;font-weight:600;">✓ Received</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    
+    <script>
+    jQuery(function($) {
+        // Initialize DataTable
+        $('#supplier-orders-table').DataTable({
+            pageLength: 25,
+            order: [[0, 'asc']],
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/en-GB.json' }
+        });
+        
+        // SKU Search
+        $('#b2b-product-sku-search').on('input', function() {
+            var val = $(this).val();
+            if (val.length < 2) {
+                $('#b2b-product-search-results').hide().empty();
+                return;
+            }
+            
+            $.post('<?= admin_url('admin-ajax.php') ?>', {
+                action: 'b2b_search_sku',
+                term: val
+            }, function(data) {
+                var out = '';
+                if (data.length) {
+                    data.forEach(function(row) {
+                        out += '<div class="b2b-search-result" style="padding:8px;cursor:pointer;border-bottom:1px solid #eee;" data-sku="' + row.sku + '" data-name="' + row.name + '" data-product-id="' + row.id + '">' + row.sku + ' - ' + row.name + '</div>';
+                    });
+                } else {
+                    out = '<div style="padding:8px;">No product found</div>';
+                }
+                $('#b2b-product-search-results').html(out).show();
+            });
+        });
+        
+        $(document).on('click', '.b2b-search-result', function() {
+            var sku = $(this).attr('data-sku');
+            var name = $(this).attr('data-name');
+            var productId = $(this).attr('data-product-id');
+            $('#b2b-product-sku-search').val(sku);
+            $('#b2b-product-name').val(name);
+            $('#b2b-product-id').val(productId);
+            $('#b2b-product-search-results').hide().empty();
+        });
+        
+        // Mark as received
+        $('.b2b-mark-received-btn').on('click', function() {
+            var itemId = $(this).data('item-id');
+            var nonce = $(this).data('nonce');
+            
+            if (!confirm('Mark this order as received? This will update the product stock.')) {
+                return;
+            }
+            
+            $.post('<?= admin_url('admin-ajax.php') ?>', {
+                action: 'b2b_mark_received',
+                item_id: itemId,
+                _b2b_nonce: nonce
+            }, function(resp) {
+                if (resp.success) {
+                    alert('Order marked as received and stock updated!');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (resp.data || 'Unknown error'));
+                }
+            });
+        });
+    });
+    </script>
     
     <?php b2b_adm_footer(); exit;
 });

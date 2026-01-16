@@ -1435,28 +1435,37 @@ function b2b_adm_header($title) {
         }
         body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
         
-        .sidebar{width:260px;background:var(--sidebar-bg);color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,0.1);transition:width 0.3s ease}
+        .sidebar{width:260px;background:var(--sidebar-bg);color:#9ca3af;flex-shrink:0;position:fixed;height:100%;z-index:100;display:flex;flex-direction:column;box-shadow:0 0 20px rgba(0,0,0,0.1);transition:width 0.3s ease;left:0}
         .sidebar.collapsed{width:80px}
         .sidebar-head{padding:25px;color:var(--white);font-weight:700;font-size:1.2rem;border-bottom:1px solid rgba(255,255,255,0.1);background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);display:flex;align-items:center;justify-content:space-between;transition:padding 0.3s ease}
         .sidebar.collapsed .sidebar-head{padding:25px 10px;justify-content:center}
         .sidebar-head-title{transition:opacity 0.2s ease;white-space:nowrap}
         .sidebar.collapsed .sidebar-head-title{opacity:0;width:0;overflow:hidden}
-        .sidebar-toggle{background:transparent;border:none;color:var(--white);font-size:18px;cursor:pointer;padding:8px;transition:transform 0.3s ease;display:flex;align-items:center;justify-content:center}
+        .sidebar-toggle{background:transparent;border:none;color:var(--white);font-size:18px;cursor:pointer;padding:8px;transition:transform 0.3s ease;display:flex;align-items:center;justify-content:center;flex-shrink:0}
         .sidebar-toggle:hover{background:rgba(255,255,255,0.1);border-radius:6px}
         .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
-        .sidebar-nav{padding:20px 10px;flex:1;overflow-y:auto;overflow-x:hidden}
-        .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;position:relative}
+        .sidebar-nav{padding:20px 10px;flex:1;overflow-y:auto;overflow-x:visible}
+        .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;position:relative;cursor:pointer}
         .sidebar-nav a i, .submenu-toggle > i:first-child{min-width:20px;text-align:center;font-size:18px}
         .sidebar-nav a .menu-text, .submenu-toggle .menu-text{transition:opacity 0.2s ease}
         .sidebar.collapsed .sidebar-nav a .menu-text, .sidebar.collapsed .submenu-toggle .menu-text{opacity:0;width:0;overflow:hidden}
         .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:12px;justify-content:center;position:relative}
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
-        .sidebar.collapsed .submenu{display:none}
+        .sidebar.collapsed .submenu{display:none !important}
         .sidebar-nav a:hover{background:var(--sidebar-hover);color:var(--white);transform:translateX(5px)}
+        .sidebar.collapsed .sidebar-nav a:hover, .sidebar.collapsed .submenu-toggle:hover{transform:none}
         .sidebar-nav a.active{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);box-shadow:0 4px 12px rgba(138,95,232,0.3)}
-        .main{margin-left:260px;flex:1;padding:40px;width:100%;transition:margin-left 0.3s ease}
-        body.sidebar-collapsed .main{margin-left:80px}
+        .main{margin-left:260px;flex:1;padding:40px;width:calc(100% - 260px);transition:all 0.3s ease;box-sizing:border-box}
+        body.sidebar-collapsed .main{margin-left:80px;width:calc(100% - 80px)}
+        
+        /* Collapsed Sidebar Tooltip & Hover Menu */
+        .sidebar.collapsed .sidebar-nav a::after, .sidebar.collapsed .submenu-toggle::after{content:attr(data-title);position:absolute;left:100%;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.9);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;white-space:nowrap;margin-left:10px;opacity:0;pointer-events:none;transition:opacity 0.2s ease;z-index:1000}
+        .sidebar.collapsed .sidebar-nav a:hover::after, .sidebar.collapsed .submenu-toggle:hover::after{opacity:1}
+        
+        /* Collapsed Sidebar - Hover Submenu */
+        .sidebar.collapsed .submenu-toggle:hover + .submenu{display:block !important;position:absolute;left:100%;top:0;background:var(--sidebar-bg);min-width:200px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
+        .sidebar.collapsed .submenu-toggle:hover + .submenu a{display:block;padding:12px 15px;margin-bottom:5px}
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1675,12 +1684,20 @@ function b2b_adm_header($title) {
             .mobile-header{display:block}
             body{flex-direction:column;overflow-x:hidden}
             .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
+            .sidebar.collapsed{width:75%;max-width:300px}
             .sidebar.mobile-open{transform:translateX(0)}
-            .sidebar-nav{padding:80px 15px 20px 15px;display:block}
+            .sidebar-toggle{display:none}
+            .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
             .sidebar-nav a, .submenu-toggle{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
+            .sidebar-nav a .menu-text, .submenu-toggle .menu-text{opacity:1 !important;width:auto !important;overflow:visible !important}
+            .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:14px 16px;justify-content:flex-start}
+            .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:inline-block !important}
+            .sidebar.collapsed .submenu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0}
+            .sidebar.collapsed .sidebar-nav a::after, .sidebar.collapsed .submenu-toggle::after{display:none}
             .submenu{padding-left:20px}
             .submenu a{padding:10px 16px;font-size:14px}
             .main{margin-left:0;padding:16px;padding-top:72px;width:100%;max-width:100%;overflow-x:hidden}
+            body.sidebar-collapsed .main{margin-left:0;width:100%}
             .page-header{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:16px}
             .page-header .page-title{display:none}
             .page-header button,.page-header a{width:100%;margin:0}
@@ -1863,6 +1880,11 @@ function b2b_adm_header($title) {
     var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
     
     function toggleSubmenu(el) {
+        const sidebar = document.querySelector('.sidebar');
+        // Don't toggle submenu in collapsed mode - let hover handle it
+        if (sidebar.classList.contains('collapsed')) {
+            return;
+        }
         el.classList.toggle('active');
         el.nextElementSibling.classList.toggle('active');
     }
@@ -1891,6 +1913,53 @@ function b2b_adm_header($title) {
             document.querySelector('.sidebar').classList.add('collapsed');
             document.body.classList.add('sidebar-collapsed');
         }
+        
+        // Hover submenu for collapsed sidebar
+        const sidebar = document.querySelector('.sidebar');
+        const submenuToggles = document.querySelectorAll('.submenu-toggle');
+        
+        submenuToggles.forEach(toggle => {
+            let hoverTimeout;
+            const submenu = toggle.nextElementSibling;
+            
+            if (submenu && submenu.classList.contains('submenu')) {
+                // Mouse enter on toggle
+                toggle.addEventListener('mouseenter', function() {
+                    if (sidebar.classList.contains('collapsed')) {
+                        hoverTimeout = setTimeout(() => {
+                            submenu.style.display = 'block';
+                        }, 100);
+                    }
+                });
+                
+                // Mouse leave on toggle
+                toggle.addEventListener('mouseleave', function() {
+                    clearTimeout(hoverTimeout);
+                    if (sidebar.classList.contains('collapsed')) {
+                        setTimeout(() => {
+                            if (!submenu.matches(':hover') && !toggle.matches(':hover')) {
+                                submenu.style.display = '';
+                            }
+                        }, 200);
+                    }
+                });
+                
+                // Mouse enter on submenu
+                submenu.addEventListener('mouseenter', function() {
+                    clearTimeout(hoverTimeout);
+                    if (sidebar.classList.contains('collapsed')) {
+                        this.style.display = 'block';
+                    }
+                });
+                
+                // Mouse leave on submenu
+                submenu.addEventListener('mouseleave', function() {
+                    if (sidebar.classList.contains('collapsed')) {
+                        this.style.display = '';
+                    }
+                });
+            }
+        });
     });
     
     // Mobile menu toggle

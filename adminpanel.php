@@ -6170,7 +6170,7 @@ add_action('template_redirect', function () {
    12F. SALES AGENT SETTINGS PAGE (Admin V10 Panel)
 ===================================================== */
 add_action('template_redirect', function () {
-    if (get_query_var('b2b_adm_page') !== 'sales_agent') return;
+    if (get_query_var('b2b_adm_page') !== 'settings_sales_agent') return;
     b2b_adm_guard();
     b2b_adm_header('Sales Agent Settings');
     

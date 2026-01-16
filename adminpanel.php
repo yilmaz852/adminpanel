@@ -2981,9 +2981,9 @@ add_action('template_redirect', function () {
                 View All <i class="fa-solid fa-arrow-right"></i>
             </a>
         </div>
-        <div class="notes-container" style="display:flex;overflow-x:auto;gap:15px;padding-bottom:10px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;">
+        <div class="notes-list" style="display:flex;flex-direction:column;gap:15px;">
             <?php foreach ($dashboard_notes as $note_id => $note): ?>
-            <div class="note-card" style="flex-shrink:0;width:100%;min-width:200px;background:var(--bg);padding:15px;border-radius:8px;border-left:3px solid var(--primary);">
+            <div class="note-card" style="width:100%;background:var(--bg);padding:15px;border-radius:8px;border-left:3px solid var(--primary);">
                 <h4 style="margin:0 0 8px 0;color:var(--text);font-size:14px;font-weight:600;"><?= esc_html($note['title']) ?></h4>
                 <p style="margin:0;font-size:13px;color:var(--text-muted);line-height:1.5;">
                     <?= esc_html(mb_strlen($note['content']) > 80 ? mb_substr($note['content'], 0, 80) . '...' : $note['content']) ?>
@@ -2995,22 +2995,6 @@ add_action('template_redirect', function () {
             </div>
             <?php endforeach; ?>
         </div>
-        <style>
-        .notes-container::-webkit-scrollbar {
-            height: 6px;
-        }
-        .notes-container::-webkit-scrollbar-track {
-            background: var(--border);
-            border-radius: 3px;
-        }
-        .notes-container::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border-radius: 3px;
-        }
-        .notes-container::-webkit-scrollbar-thumb:hover {
-            background: var(--accent);
-        }
-        </style>
     </div>
     </div>
     <?php endif; ?>

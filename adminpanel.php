@@ -11136,15 +11136,6 @@ function sa_render_new_order_page() {
     $user = wp_get_current_user();
     if (!current_user_can('administrator')) {
         $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
-        if ($assigned_agent != $user->ID) {
-            wp_die('Access denied to this customer');
-        }
-    }
-    
-    // Verify agent has access to this customer
-    $user = wp_get_current_user();
-    if (!current_user_can('administrator')) {
-        $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
         $allow_manager = get_option('sales_manager_can_order', 0);
         
         // Check if user is sales manager and setting is enabled

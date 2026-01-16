@@ -1453,9 +1453,9 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
         /* Collapsed submenu - CSS-only hover approach */
-        .sidebar.collapsed .submenu{position:absolute;top:-10px;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;transition:0s}
-        .sidebar.collapsed .submenu-toggle:hover + .submenu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
-        .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto;transform:translateY(12px)}
+        .sidebar.collapsed .submenu{position:absolute;top:0;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;transition:opacity 0s}
+        .sidebar.collapsed .submenu-toggle:hover + .submenu{opacity:1;pointer-events:auto;transition:opacity 0.3s ease}
+        .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto}
         /* Solid white text and icons */
         .sidebar.collapsed .submenu a,.sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#ffffff !important;opacity:1 !important;font-weight:500}
         .sidebar.collapsed .submenu a:hover{background:rgba(255,255,255,.1)}

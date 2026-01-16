@@ -1446,7 +1446,7 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
         .sidebar-nav{padding:20px 10px;flex:1;overflow-y:auto;overflow-x:visible}
         .sidebar-nav a, .submenu-toggle{display:flex;align-items:center;gap:12px;padding:12px 15px;color:inherit;text-decoration:none;border-radius:8px;margin-bottom:5px;transition:all 0.3s ease;white-space:nowrap;cursor:pointer}
-        .menu-item-wrapper{position:relative}
+        .menu-item-wrapper{position:relative;display:block}
         .sidebar-nav a i, .submenu-toggle > i:first-child{min-width:20px;text-align:center;font-size:18px}
         .sidebar-nav a .menu-text, .submenu-toggle .menu-text{transition:opacity 0.2s ease}
         .sidebar.collapsed .sidebar-nav a .menu-text, .sidebar.collapsed .submenu-toggle .menu-text{opacity:0;width:0;overflow:hidden}
@@ -1461,8 +1461,8 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .submenu a,.sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#ffffff !important;opacity:1 !important;font-weight:500}
         .sidebar.collapsed .submenu a:hover{background:rgba(255,255,255,.1)}
         /* Tooltip for menu items without submenu */
-        .sidebar.collapsed .sidebar-nav a:not(.submenu-toggle)::after{content:attr(data-title);position:fixed;left:80px;padding:10px 14px;background:#1e293b;color:#fff;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.2s;z-index:9999}
-        .sidebar.collapsed .sidebar-nav a:not(.submenu-toggle):hover::after{opacity:1}
+        .sidebar.collapsed .sidebar-nav > a::after{content:attr(data-title);position:fixed;left:80px;padding:10px 14px;background:#1e293b;color:#fff;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:.2s;z-index:9999}
+        .sidebar.collapsed .sidebar-nav > a:hover::after{opacity:1}
         .sidebar-nav a:hover{background:var(--sidebar-hover);color:var(--white);transform:translateX(5px)}
         .sidebar.collapsed .sidebar-nav a:hover, .sidebar.collapsed .submenu-toggle:hover{transform:none}
         .sidebar-nav a.active{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);box-shadow:0 4px 12px rgba(138,95,232,0.3)}

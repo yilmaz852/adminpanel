@@ -9510,7 +9510,13 @@ add_action('template_redirect', function () {
             $agent = wp_get_current_user();
             if (!current_user_can('administrator')) {
                 $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
-                if ($assigned_agent != $agent->ID) {
+                $allow_manager = get_option('sales_manager_can_order', 0);
+                
+                // Check if user is sales manager and setting is enabled
+                if (in_array('sales_manager', $agent->roles) && $allow_manager) {
+                    // Sales manager can access if setting is enabled
+                } else if ($assigned_agent != $agent->ID) {
+                    // Not the assigned agent and not an authorized manager
                     wp_die('Access denied to this customer');
                 }
             }
@@ -10119,9 +10125,14 @@ function sa_render_customers_page() {
     // Get agent's customers
     global $wpdb;
     $agent_id = $user->ID;
+    $view_all_customers = get_option('sales_view_all_customers', 0);
     
-    // If sales manager, get all customers from subordinate agents
-    if ($is_manager) {
+    // If sales manager with "View All Customers" setting enabled
+    if ($is_manager && $view_all_customers) {
+        // Get all users with customer role
+        $customers = get_users(['role' => 'customer']);
+        $customer_ids = wp_list_pluck($customers, 'ID');
+    } else if ($is_manager) {
         // Get all sales agents who have this manager assigned
         $agent_ids = $wpdb->get_col($wpdb->prepare(
             "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_manager_id' AND meta_value = %d",
@@ -10146,9 +10157,12 @@ function sa_render_customers_page() {
         ));
     }
     
-    $customers = [];
-    if (!empty($customer_ids)) {
-        $customers = get_users(['include' => $customer_ids]);
+    // Get final customers list if not already set
+    if (!isset($customers)) {
+        $customers = [];
+        if (!empty($customer_ids)) {
+            $customers = get_users(['include' => $customer_ids]);
+        }
     }
     
     ?>

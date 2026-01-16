@@ -1905,72 +1905,58 @@ function b2b_adm_header($title) {
     }
     
     // Restore sidebar state from localStorage on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        const sidebarCollapsed = localStorage.getItem('sidebarCollapsed');
-        if (sidebarCollapsed === 'true') {
-            document.querySelector('.sidebar').classList.add('collapsed');
-            document.body.classList.add('sidebar-collapsed');
-        }
+    const sidebarCollapsed = localStorage.getItem('sidebarCollapsed');
+    if (sidebarCollapsed === 'true') {
+        document.querySelector('.sidebar').classList.add('collapsed');
+        document.body.classList.add('sidebar-collapsed');
+    }
+    
+    // Hover submenu for collapsed sidebar - execute immediately (DOM already loaded, script at end of body)
+    const sidebar = document.querySelector('.sidebar');
+    const submenuToggles = document.querySelectorAll('.submenu-toggle');
+    
+    submenuToggles.forEach(toggle => {
+        const submenu = toggle.nextElementSibling;
         
-        // Hover submenu for collapsed sidebar
-        const sidebar = document.querySelector('.sidebar');
-        const submenuToggles = document.querySelectorAll('.submenu-toggle');
-        
-        submenuToggles.forEach(toggle => {
-            let hoverTimeout;
-            const submenu = toggle.nextElementSibling;
+        if (submenu && submenu.classList.contains('submenu')) {
+            // Remove any active class initially when sidebar is collapsed
+            if (sidebar.classList.contains('collapsed')) {
+                submenu.classList.remove('active');
+            }
             
-            if (submenu && submenu.classList.contains('submenu')) {
-                // Remove any active class initially when sidebar is collapsed
+            // Mouse enter on toggle
+            toggle.addEventListener('mouseenter', function() {
                 if (sidebar.classList.contains('collapsed')) {
+                    // Use getBoundingClientRect for fixed positioning
+                    const toggleRect = toggle.getBoundingClientRect();
+                    
+                    // Set fixed position
+                    submenu.style.position = 'fixed';
+                    submenu.style.top = toggleRect.top + 'px';
+                    submenu.style.left = '80px'; // collapsed sidebar width
+                    submenu.classList.add('show');
                     submenu.classList.remove('active');
                 }
-                
-                // Mouse enter on toggle
-                toggle.addEventListener('mouseenter', function() {
-                    if (sidebar.classList.contains('collapsed')) {
-                        hoverTimeout = setTimeout(() => {
-                            // Use getBoundingClientRect for fixed positioning
-                            const toggleRect = toggle.getBoundingClientRect();
-                            
-                            // Set fixed position
-                            submenu.style.position = 'fixed';
-                            submenu.style.top = toggleRect.top + 'px';
-                            submenu.style.left = '80px'; // collapsed sidebar width
-                            submenu.classList.add('show');
-                            submenu.classList.remove('active'); // Remove active to ensure hover styling takes precedence
-                        }, 100);
-                    }
-                });
-                
-                // Mouse leave on toggle
-                toggle.addEventListener('mouseleave', function() {
-                    clearTimeout(hoverTimeout);
-                    if (sidebar.classList.contains('collapsed')) {
-                        setTimeout(() => {
-                            if (!submenu.matches(':hover') && !toggle.matches(':hover')) {
-                                submenu.classList.remove('show');
-                            }
-                        }, 200);
-                    }
-                });
-                
-                // Mouse enter on submenu
-                submenu.addEventListener('mouseenter', function() {
-                    clearTimeout(hoverTimeout);
-                    if (sidebar.classList.contains('collapsed')) {
-                        this.classList.add('show');
-                    }
-                });
-                
-                // Mouse leave on submenu
-                submenu.addEventListener('mouseleave', function() {
-                    if (sidebar.classList.contains('collapsed')) {
-                        this.classList.remove('show');
-                    }
-                });
-            }
-        });
+            });
+            
+            // Mouse leave on toggle
+            toggle.addEventListener('mouseleave', function() {
+                if (sidebar.classList.contains('collapsed')) {
+                    setTimeout(() => {
+                        if (!submenu.matches(':hover')) {
+                            submenu.classList.remove('show');
+                        }
+                    }, 100);
+                }
+            });
+            
+            // Mouse leave on submenu
+            submenu.addEventListener('mouseleave', function() {
+                if (sidebar.classList.contains('collapsed')) {
+                    this.classList.remove('show');
+                }
+            });
+        }
     });
     
     // Mobile menu toggle

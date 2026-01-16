@@ -6210,6 +6210,8 @@ add_action('template_redirect', function () {
             update_option('sales_commission_rate', floatval($_POST['sales_commission_rate']));
             update_option('sales_stale_days', intval($_POST['sales_stale_days']));
             update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
+            update_option('sales_manager_can_order', isset($_POST['sales_manager_can_order']) ? 1 : 0);
+            update_option('sales_view_all_customers', isset($_POST['sales_view_all_customers']) ? 1 : 0);
             
             echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0;"><i class="fa-solid fa-check-circle"></i> Settings saved successfully!</div>';
         }
@@ -6220,6 +6222,8 @@ add_action('template_redirect', function () {
     $commission_rate = get_option('sales_commission_rate', 10);
     $stale_days = get_option('sales_stale_days', 30);
     $merge_products = get_option('sales_merge_products', 0);
+    $manager_can_order = get_option('sales_manager_can_order', 0);
+    $view_all_customers = get_option('sales_view_all_customers', 0);
     ?>
     
     <div class="page-header">
@@ -6279,7 +6283,7 @@ add_action('template_redirect', function () {
                 <p style="color:#6b7280;font-size:12px;margin:5px 0 0 0;">Mark customer as inactive after this many days without activity</p>
             </div>
             
-            <div style="margin-bottom:0;">
+            <div style="margin-bottom:15px;">
                 <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
                     <input type="checkbox" name="sales_merge_products" value="1" <?= checked($merge_products, 1, false) ?> 
                            style="width:18px;height:18px;cursor:pointer;">
@@ -6288,6 +6292,28 @@ add_action('template_redirect', function () {
                     </span>
                 </label>
                 <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Automatically combine duplicate products into a single cart item</p>
+            </div>
+            
+            <div style="margin-bottom:15px;padding-top:15px;border-top:1px solid #e5e7eb;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_manager_can_order" value="1" <?= checked($manager_can_order, 1, false) ?> 
+                           style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:600;color:#374151;">
+                        <i class="fa-solid fa-user-shield"></i> Sales Managers Can Create Orders for Agent Customers
+                    </span>
+                </label>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Allow sales managers to place orders on behalf of customers assigned to sales agents</p>
+            </div>
+            
+            <div style="margin-bottom:0;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_view_all_customers" value="1" <?= checked($view_all_customers, 1, false) ?> 
+                           style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:600;color:#374151;">
+                        <i class="fa-solid fa-users-viewfinder"></i> View All Customers (Customer Role)
+                    </span>
+                </label>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Sales agents and managers can view all customers with "customer" role, not just assigned ones</p>
             </div>
         </div>
         
@@ -10353,7 +10379,13 @@ function sa_render_customer_detail_page() {
     $user = wp_get_current_user();
     if (!current_user_can('administrator')) {
         $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
-        if ($assigned_agent != $user->ID) {
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if user is sales manager and setting is enabled
+        if (in_array('sales_manager', $user->roles) && $allow_manager) {
+            // Sales manager can access if setting is enabled
+        } else if ($assigned_agent != $user->ID) {
+            // Not the assigned agent and not an authorized manager
             wp_die('Access denied to this customer');
         }
     }
@@ -10430,14 +10462,20 @@ function sa_render_customer_detail_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
-            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
-            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
-            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
-            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+            <div class="sidebar-header">
+                <i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?>
+            </div>
+            <div class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+                <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+                <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+                <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            </div>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+            </div>
         </div>
         
         <!-- Main Content -->
@@ -11089,6 +11127,21 @@ function sa_render_new_order_page() {
         }
     }
     
+    // Verify agent has access to this customer
+    $user = wp_get_current_user();
+    if (!current_user_can('administrator')) {
+        $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if user is sales manager and setting is enabled
+        if (in_array('sales_manager', $user->roles) && $allow_manager) {
+            // Sales manager can access if setting is enabled
+        } else if ($assigned_agent != $user->ID) {
+            // Not the assigned agent and not an authorized manager
+            wp_die('Access denied to this customer');
+        }
+    }
+    
     $panel_title = get_option('sales_panel_title', 'Agent Panel');
     $wc_cust = new WC_Customer($customer_id);
     $b_addr = sa_get_full_address($customer_id, 'billing');
@@ -11170,14 +11223,20 @@ function sa_render_new_order_page() {
         
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
-            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
-            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
-            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
-            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
-            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
-            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+            <div class="sidebar-header">
+                <i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?>
+            </div>
+            <div class="sidebar-nav">
+                <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+                <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+                <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+                <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+                <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            </div>
+            <div class="sidebar-footer">
+                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+            </div>
         </div>
         
         <!-- Main Content -->

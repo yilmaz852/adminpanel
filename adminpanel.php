@@ -3062,87 +3062,89 @@ add_action('template_redirect', function () {
     </style>
 
     <script>
-    // Dashboard Screen Options
-    document.getElementById('screenOptionsToggle').addEventListener('click', function() {
-        const panel = document.getElementById('screenOptionsPanel');
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    });
-    
-    // Widget Visibility Toggle
-    const widgetToggles = document.querySelectorAll('.widget-toggle');
-    widgetToggles.forEach(toggle => {
-        // Load saved state
-        const widget = toggle.dataset.widget;
-        const isHidden = localStorage.getItem('dashboard_widget_' + widget) === 'hidden';
-        toggle.checked = !isHidden;
+    document.addEventListener('DOMContentLoaded', function() {
+        // Dashboard Screen Options
+        document.getElementById('screenOptionsToggle').addEventListener('click', function() {
+            const panel = document.getElementById('screenOptionsPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
         
-        const widgetEl = document.querySelector(`.dashboard-widget[data-widget="${widget}"]`);
-        if (isHidden && widgetEl) {
-            widgetEl.classList.add('hidden');
+        // Widget Visibility Toggle
+        const widgetToggles = document.querySelectorAll('.widget-toggle');
+        widgetToggles.forEach(toggle => {
+            // Load saved state
+            const widget = toggle.dataset.widget;
+            const isHidden = localStorage.getItem('dashboard_widget_' + widget) === 'hidden';
+            toggle.checked = !isHidden;
+            
+            const widgetEl = document.querySelector(`.dashboard-widget[data-widget="${widget}"]`);
+            if (isHidden && widgetEl) {
+                widgetEl.classList.add('hidden');
+            }
+            
+            // Handle toggle change
+            toggle.addEventListener('change', function() {
+                if (widgetEl) {
+                    if (this.checked) {
+                        widgetEl.classList.remove('hidden');
+                        localStorage.removeItem('dashboard_widget_' + widget);
+                    } else {
+                        widgetEl.classList.add('hidden');
+                        localStorage.setItem('dashboard_widget_' + widget, 'hidden');
+                    }
+                }
+            });
+            });
+        
+        // Drag and Drop for Widget Reordering
+        const dashboardWidgets = document.getElementById('dashboardWidgets');
+        const widgets = document.querySelectorAll('.dashboard-widget');
+        
+        widgets.forEach(widget => {
+            widget.addEventListener('dragstart', function(e) {
+                this.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/html', this.innerHTML);
+            });
+            
+            widget.addEventListener('dragend', function() {
+                this.classList.remove('dragging');
+                document.querySelectorAll('.dashboard-widget').forEach(w => w.classList.remove('drag-over'));
+                saveWidgetOrder();
+            });
+            
+            widget.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                const dragging = document.querySelector('.dragging');
+                if (dragging && dragging !== this) {
+                    const rect = this.getBoundingClientRect();
+                    const midpoint = rect.top + rect.height / 2;
+                    if (e.clientY < midpoint) {
+                        this.parentNode.insertBefore(dragging, this);
+                    } else {
+                        this.parentNode.insertBefore(dragging, this.nextSibling);
+                    }
+                }
+            });
+        });
+        
+        function saveWidgetOrder() {
+            const order = Array.from(document.querySelectorAll('.dashboard-widget')).map(w => w.dataset.widget);
+            localStorage.setItem('dashboardWidgetOrder', JSON.stringify(order));
         }
-        
-        // Handle toggle change
-        toggle.addEventListener('change', function() {
-            if (widgetEl) {
-                if (this.checked) {
-                    widgetEl.classList.remove('hidden');
-                    localStorage.removeItem('dashboard_widget_' + widget);
-                } else {
-                    widgetEl.classList.add('hidden');
-                    localStorage.setItem('dashboard_widget_' + widget, 'hidden');
+    
+        // Restore widget order on load
+        const savedOrder = localStorage.getItem('dashboardWidgetOrder');
+        if (savedOrder) {
+            const order = JSON.parse(savedOrder);
+            order.forEach(widgetName => {
+                const widget = document.querySelector(`.dashboard-widget[data-widget="${widgetName}"]`);
+                if (widget) {
+                    dashboardWidgets.appendChild(widget);
                 }
-            }
-        });
-    });
-    
-    // Drag and Drop for Widget Reordering
-    const dashboardWidgets = document.getElementById('dashboardWidgets');
-    const widgets = document.querySelectorAll('.dashboard-widget');
-    
-    widgets.forEach(widget => {
-        widget.addEventListener('dragstart', function(e) {
-            this.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/html', this.innerHTML);
-        });
-        
-        widget.addEventListener('dragend', function() {
-            this.classList.remove('dragging');
-            document.querySelectorAll('.dashboard-widget').forEach(w => w.classList.remove('drag-over'));
-            saveWidgetOrder();
-        });
-        
-        widget.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            const dragging = document.querySelector('.dragging');
-            if (dragging && dragging !== this) {
-                const rect = this.getBoundingClientRect();
-                const midpoint = rect.top + rect.height / 2;
-                if (e.clientY < midpoint) {
-                    this.parentNode.insertBefore(dragging, this);
-                } else {
-                    this.parentNode.insertBefore(dragging, this.nextSibling);
-                }
-            }
-        });
-    });
-    
-    function saveWidgetOrder() {
-        const order = Array.from(document.querySelectorAll('.dashboard-widget')).map(w => w.dataset.widget);
-        localStorage.setItem('dashboardWidgetOrder', JSON.stringify(order));
-    }
-    
-    // Restore widget order on load
-    const savedOrder = localStorage.getItem('dashboardWidgetOrder');
-    if (savedOrder) {
-        const order = JSON.parse(savedOrder);
-        order.forEach(widgetName => {
-            const widget = document.querySelector(`.dashboard-widget[data-widget="${widgetName}"]`);
-            if (widget) {
-                dashboardWidgets.appendChild(widget);
-            }
-        });
-    }
+            });
+        }
+    }); // End DOMContentLoaded
     </script>
 
     <script>

@@ -11251,6 +11251,20 @@ function sa_render_new_order_page() {
                 <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
             </div>
             
+            <?php
+            // Show sales manager indicator if applicable
+            $current_user = wp_get_current_user();
+            $assigned_agent_id = get_user_meta($customer_id, 'bagli_agent_id', true);
+            if (in_array('sales_manager', $current_user->roles) && $assigned_agent_id != $current_user->ID):
+                $assigned_agent = get_userdata($assigned_agent_id);
+            ?>
+            <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 15px;margin-bottom:20px;border-radius:6px;">
+                <i class="fa-solid fa-info-circle" style="color:#3b82f6;margin-right:8px;"></i>
+                <strong style="color:#1e40af;">Sales Manager View:</strong> 
+                <span style="color:#475569;">Creating order for customer assigned to <strong><?= esc_html($assigned_agent->display_name ?? 'Unknown Agent') ?></strong></span>
+            </div>
+            <?php endif; ?>
+            
             <div class="card">
                 <h2><i class="fa-solid fa-cart-shopping"></i> New Order: <?= esc_html($customer->display_name) ?></h2>
                 <div class="customer-widgets">
@@ -12344,8 +12358,14 @@ function sa_search_products_callback() {
     if ($cid > 0 && !current_user_can('administrator')) {
         $agent_id = get_current_user_id();
         $customer_agent = get_user_meta($cid, 'bagli_agent_id', true);
+        $user = wp_get_current_user();
+        $allow_manager = get_option('sales_manager_can_order', 0);
         
-        if ($customer_agent != $agent_id) {
+        // Check if sales agent or authorized sales manager
+        $is_authorized = ($customer_agent == $agent_id) || 
+                        (in_array('sales_manager', $user->roles) && $allow_manager);
+        
+        if (!$is_authorized) {
             wp_send_json_error('Access denied to this customer');
         }
     }
@@ -12593,7 +12613,15 @@ add_action('init', function () {
         
         // Verify agent has access to this customer
         $assigned_agent = get_user_meta($target_id, 'bagli_agent_id', true);
-        if ($assigned_agent != $agent_id && !current_user_can('administrator')) {
+        $user = wp_get_current_user();
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if sales agent or authorized sales manager or admin
+        $is_authorized = ($assigned_agent == $agent_id) || 
+                        (in_array('sales_manager', $user->roles) && $allow_manager) ||
+                        current_user_can('administrator');
+        
+        if (!$is_authorized) {
             wp_die('Access denied to this customer');
         }
         

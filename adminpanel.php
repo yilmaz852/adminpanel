@@ -10424,28 +10424,22 @@ function sa_render_customer_detail_page() {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
-            
-            /* Sidebar Styles */
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
-            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
-            .sidebar-nav { padding: 20px 0; }
-            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
-            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar-nav a.active { background: #4f46e5; color: white; }
-            .sidebar-nav a i { width: 20px; margin-right: 12px; }
-            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-            
-            /* Mobile Toggle */
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            
-            /* Main Content */
-            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
-            .container { max-width: 1400px; margin: 0 auto; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
             .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
             .info-item { padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
@@ -10458,43 +10452,25 @@ function sa_render_customer_detail_page() {
             .btn:hover { background: #059669; }
             .btn-secondary { background: #6b7280; }
             .btn-secondary:hover { background: #4b5563; }
-            
-            /* Mobile Responsive */
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
-                .mobile-toggle { display: block; }
-                .main-content { margin-left: 0; padding: 80px 20px 20px; }
-            }
         </style>
     </head>
     <body>
-        <!-- Mobile Toggle Button -->
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        
-        <!-- Sidebar -->
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
         <div class="sidebar">
-            <div class="sidebar-header">
-                <i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?>
-            </div>
-            <div class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-                <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
-                <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
-                <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
-                <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
-            </div>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <!-- Main Content -->
-        <div class="main-content">
-        <div class="container">
+        <div class="main">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
             </div>
@@ -10552,7 +10528,6 @@ function sa_render_customer_detail_page() {
                 </table>
                 <?php endif; ?>
             </div>
-        </div>
         </div>
     </body>
     </html>
@@ -11166,28 +11141,22 @@ function sa_render_new_order_page() {
         <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Inter', sans-serif; background: #f3f4f6; color: #1f2937; display: flex; min-height: 100vh; }
-            
-            /* Sidebar Styles */
-            .sidebar { width: 250px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; transition: transform 0.3s ease; z-index: 1000; }
-            .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-            .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; }
-            .sidebar-header .user-name { font-size: 14px; opacity: 0.8; }
-            .sidebar-nav { padding: 20px 0; }
-            .sidebar-nav a { display: flex; align-items: center; padding: 12px 20px; color: rgba(255,255,255,0.8); text-decoration: none; transition: all 0.2s; }
-            .sidebar-nav a:hover { background: rgba(255,255,255,0.1); color: white; }
-            .sidebar-nav a.active { background: #4f46e5; color: white; }
-            .sidebar-nav a i { width: 20px; margin-right: 12px; }
-            .sidebar-footer { position: absolute; bottom: 0; width: 100%; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-            
-            /* Mobile Toggle */
-            .mobile-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; background: #4f46e5; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; }
-            
-            /* Main Content */
-            .main-content { margin-left: 250px; flex: 1; padding: 40px; }
-            .container { max-width: 1400px; margin: 0 auto; }
-            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
             .card h2 { margin-bottom: 20px; color: #1f2937; }
             .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
             .btn:hover { background: #059669; }
@@ -11210,43 +11179,25 @@ function sa_render_new_order_page() {
             .select2-container .select2-selection--single { height: 38px; border-color: #d1d5db; display: flex; align-items: center; }
             textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px; }
             input[type="text"], input[type="number"], select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
-            
-            /* Mobile Responsive */
-            @media (max-width: 768px) {
-                .sidebar { transform: translateX(-100%); }
-                .sidebar.active { transform: translateX(0); }
-                .mobile-toggle { display: block; }
-                .main-content { margin-left: 0; padding: 80px 20px 20px; }
-            }
         </style>
     </head>
     <body>
-        <!-- Mobile Toggle Button -->
-        <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        
-        <!-- Sidebar -->
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
         <div class="sidebar">
-            <div class="sidebar-header">
-                <i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?>
-            </div>
-            <div class="sidebar-nav">
-                <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-                <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
-                <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
-                <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
-                <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
-                <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
-            </div>
-            <div class="sidebar-footer">
-                <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
-            </div>
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
         </div>
         
-        <!-- Main Content -->
-        <div class="main-content">
-        <div class="container">
+        <div class="main">
             <div style="margin-bottom: 20px;">
                 <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
             </div>
@@ -11475,7 +11426,7 @@ function sa_render_new_order_page() {
             }
         });
         </script>
-        </div>
+    </div>
     </body>
     </html>
     <?php

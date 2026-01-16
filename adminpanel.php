@@ -10601,3 +10601,4538 @@ function b2b_page_my_support_tickets() {
             <option value="">All Status</option>
             <option value="new" <?php selected($status_filter, 'new'); ?>>New</option>
             <option value="open" <?php selected($status_filter, 'open'); ?>>Open</option>
+            <option value="pending" <?php selected($status_filter, 'pending'); ?>>Pending</option>
+            <option value="resolved" <?php selected($status_filter, 'resolved'); ?>>Resolved</option>
+            <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed</option>
+        </select>
+    </div>
+    
+    <div class="ticket-list">
+        <?php if(empty($tickets)): ?>
+        <div class="ticket-item">No tickets found. <a href="?b2b_adm_page=create-support-ticket">Create your first ticket</a></div>
+        <?php else: ?>
+        <?php foreach($tickets as $ticket): ?>
+        <div class="ticket-item">
+            <h3>
+                <a href="?b2b_adm_page=view-support-ticket&ticket_id=<?php echo $ticket->ticket_id; ?>">
+                    <?php echo esc_html($ticket->subject); ?>
+                </a>
+            </h3>
+            <div class="ticket-meta-inline">
+                <span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span> |
+                Ticket: <?php echo esc_html($ticket->ticket_number); ?> |
+                Category: <?php echo ucfirst($ticket->category); ?> |
+                Priority: <?php echo ucfirst($ticket->priority); ?> |
+                Created: <?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: Create Support Ticket Page
+function b2b_page_create_support_ticket() {
+    $current_user = wp_get_current_user();
+    
+    // Get customer's recent orders
+    $orders = wc_get_orders([
+        'customer_id' => $current_user->ID,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    b2b_adm_header('Create Support Ticket');
+    ?>
+    <style>
+    .ticket-form { background: white; padding: 30px; border-radius: 8px; max-width: 800px; }
+    .form-field { margin-bottom: 20px; }
+    .form-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+    .form-field input, .form-field select, .form-field textarea {
+        width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;
+    }
+    </style>
+    
+    <div class="ticket-form">
+        <h2>Create New Support Ticket</h2>
+        
+        <div class="form-field">
+            <label>Subject *</label>
+            <input type="text" id="ticketSubject" placeholder="Brief description of your issue">
+        </div>
+        
+        <div class="form-field">
+            <label>Category *</label>
+            <select id="ticketCategory">
+                <option value="general">General Question</option>
+                <option value="order">Order Issue</option>
+                <option value="product">Product Question</option>
+                <option value="delivery">Delivery Issue</option>
+                <option value="billing">Billing/Payment</option>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Priority</label>
+            <select id="ticketPriority">
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Related Order (Optional)</label>
+            <select id="ticketOrder">
+                <option value="0">No order selected</option>
+                <?php foreach($orders as $order): ?>
+                <option value="<?php echo $order->get_id(); ?>">
+                    Order #<?php echo $order->get_order_number(); ?> - <?php echo $order->get_date_created()->format('Y-m-d'); ?> - <?php echo $order->get_formatted_order_total(); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <div class="form-field">
+            <label>Message *</label>
+            <textarea id="ticketMessage" rows="8" placeholder="Please describe your issue in detail..."></textarea>
+        </div>
+        
+        <button onclick="createTicket()" class="button button-primary">Submit Ticket</button>
+        <a href="?b2b_adm_page=my-support" class="button">Cancel</a>
+    </div>
+    
+    <script>
+    function createTicket() {
+        const subject = jQuery('#ticketSubject').val();
+        const message = jQuery('#ticketMessage').val();
+        const category = jQuery('#ticketCategory').val();
+        const priority = jQuery('#ticketPriority').val();
+        const order_id = jQuery('#ticketOrder').val();
+        
+        if(!subject || !message) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_create_ticket',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                subject: subject,
+                message: message,
+                category: category,
+                priority: priority,
+                order_id: order_id
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Ticket created! Ticket number: ' + response.data.ticket_number);
+                    window.location.href = '?b2b_adm_page=my-support';
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed. Please check your connection and try again.');
+                console.error('AJAX Error:', xhr, status, error);
+            }
+        });
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// Customer: View Support Ticket Page
+function b2b_page_view_support_ticket() {
+    $current_user = wp_get_current_user();
+    $ticket_id = intval($_GET['ticket_id'] ?? 0);
+    
+    global $wpdb;
+    $table_tickets = $wpdb->prefix . 'b2b_support_tickets';
+    $table_replies = $wpdb->prefix . 'b2b_support_replies';
+    
+    $ticket = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table_tickets WHERE ticket_id = %d AND customer_id = %d",
+        $ticket_id, $current_user->ID
+    ));
+    
+    if(!$ticket) {
+        wp_die('Ticket not found or access denied');
+    }
+    
+    // Get only public replies
+    $replies = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table_replies WHERE ticket_id = %d AND is_internal = 0 ORDER BY created_at ASC",
+        $ticket_id
+    ));
+    
+    $order = $ticket->order_id ? wc_get_order($ticket->order_id) : null;
+    
+    b2b_adm_header('Ticket: ' . $ticket->ticket_number);
+    ?>
+    <div class="ticket-header">
+        <h2><?php echo esc_html($ticket->subject); ?></h2>
+        <div class="ticket-meta">
+            <div class="ticket-meta-item">
+                <label>Ticket Number:</label>
+                <value><?php echo esc_html($ticket->ticket_number); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Category:</label>
+                <value><?php echo ucfirst($ticket->category); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Priority:</label>
+                <value><?php echo ucfirst($ticket->priority); ?></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Status:</label>
+                <value><span class="status-badge status-<?php echo $ticket->status; ?>"><?php echo ucfirst($ticket->status); ?></span></value>
+            </div>
+            <div class="ticket-meta-item">
+                <label>Created:</label>
+                <value><?php echo date('Y-m-d H:i', strtotime($ticket->created_at)); ?></value>
+            </div>
+        </div>
+    </div>
+    
+    <?php if($order): ?>
+    <div class="order-info">
+        <h3>🛒 Related Order: #<?php echo $order->get_order_number(); ?></h3>
+        <p><strong>Date:</strong> <?php echo $order->get_date_created()->format('Y-m-d H:i'); ?> | 
+           <strong>Status:</strong> <?php echo $order->get_status(); ?> | 
+           <strong>Total:</strong> <?php echo $order->get_formatted_order_total(); ?></p>
+    </div>
+    <?php endif; ?>
+    
+    <div class="messages-container">
+        <h3>Conversation</h3>
+        <?php foreach($replies as $reply): 
+            $author = get_userdata($reply->user_id);
+        ?>
+        <div class="message">
+            <div class="message-header">
+                <span class="message-author"><?php echo $author ? esc_html($author->display_name) : 'Unknown'; ?></span>
+                <span class="message-time"><?php echo date('Y-m-d H:i', strtotime($reply->created_at)); ?></span>
+            </div>
+            <div class="message-content"><?php echo nl2br(esc_html($reply->message)); ?></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <?php if($ticket->status != 'closed'): ?>
+    <div class="reply-form">
+        <h3>Add Message</h3>
+        <textarea id="replyMessage" rows="5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;"></textarea>
+        <button onclick="addReply()" class="button button-primary" style="margin-top: 10px;">Send Message</button>
+    </div>
+    
+    <script>
+    function addReply() {
+        const message = jQuery('#replyMessage').val();
+        
+        if(!message) {
+            alert('Please enter a message');
+            return;
+        }
+        
+        jQuery.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'b2b_add_ticket_reply',
+                nonce: '<?php echo wp_create_nonce('b2b_ajax_nonce'); ?>',
+                ticket_id: <?php echo $ticket_id; ?>,
+                message: message,
+                is_internal: 0
+            },
+            success: function(response) {
+                if(response.success) {
+                    alert('Message sent!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            },
+            error: function(xhr, status, error) {
+                alert('Request failed. Please check your connection and try again.');
+                console.error('AJAX Error:', xhr, status, error);
+            }
+        });
+    }
+    </script>
+    <?php endif; ?>
+    
+    <?php
+    b2b_adm_footer();
+}
+
+// End of B2B Support Ticket Module - Menu items added directly in sidebar HTML above
+
+/* =====================================================
+   SALES AGENT SYSTEM INTEGRATION (V1.0)
+===================================================== */
+
+/**
+ * PHASE 1: ROLES & ROUTING
+ * Add sales agent/manager roles and URL routing
+ */
+
+// Add sales agent roles and capabilities in init
+add_action('init', function () {
+    // Create sales agent roles if they don't exist
+    if (!get_role('sales_agent')) {
+        add_role('sales_agent', 'Sales Agent', ['read' => true]);
+    }
+    
+    if (!get_role('sales_manager')) {
+        add_role('sales_manager', 'Sales Manager', ['read' => true]);
+    }
+
+    // Add capabilities to sales roles and administrator
+    $roles = ['sales_agent', 'sales_manager', 'administrator'];
+    foreach ($roles as $role_name) {
+        $role = get_role($role_name);
+        if ($role) {
+            $role->add_cap('view_sales_panel');
+            $role->add_cap('switch_to_customer');
+            $role->add_cap('create_sales_order');
+        }
+    }
+
+    // Add sales panel URL rewrite rules
+    add_rewrite_rule('^sales-login/?$', 'index.php?sales_login=1', 'top');
+    add_rewrite_rule('^sales-panel/?$', 'index.php?sales_panel=dashboard', 'top');
+    add_rewrite_rule('^sales-panel/dashboard/?$', 'index.php?sales_panel=dashboard', 'top');
+    add_rewrite_rule('^sales-panel/customers/?$', 'index.php?sales_panel=customers', 'top');
+    add_rewrite_rule('^sales-panel/customer/([0-9]+)/?$', 'index.php?sales_panel=customer_detail&customer_id=$matches[1]', 'top');
+    add_rewrite_rule('^sales-panel/orders/?$', 'index.php?sales_panel=orders', 'top');
+    add_rewrite_rule('^sales-panel/commissions/?$', 'index.php?sales_panel=commissions', 'top');
+    add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
+    add_rewrite_rule('^sales-panel/messaging/?$', 'index.php?sales_panel=messaging', 'top');
+    add_rewrite_rule('^sales-panel/notes/?$', 'index.php?sales_panel=notes', 'top');
+
+    // Flush rewrite rules and refresh capabilities once
+    if (!get_option('sales_agent_flush_v3_messaging')) {
+        flush_rewrite_rules();
+        
+        // Force refresh of role capabilities
+        $roles_to_update = ['sales_agent', 'sales_manager', 'administrator'];
+        foreach ($roles_to_update as $role_name) {
+            $role = get_role($role_name);
+            if ($role) {
+                // Remove and re-add to ensure capability is properly set
+                $role->remove_cap('view_sales_panel');
+                $role->remove_cap('switch_to_customer');
+                $role->remove_cap('create_sales_order');
+                
+                $role->add_cap('view_sales_panel');
+                $role->add_cap('switch_to_customer');
+                $role->add_cap('create_sales_order');
+            }
+        }
+        
+        update_option('sales_agent_flush_v3_messaging', true);
+        delete_option('sales_agent_flush_v2'); // Clean up old marker
+        delete_option('sales_agent_flush_v1'); // Clean up old marker
+    }
+}, 20); // Run after main b2b panel init
+
+// Add query vars for sales panel
+add_filter('query_vars', function ($vars) {
+    $vars[] = 'sales_login';
+    $vars[] = 'sales_panel';
+    $vars[] = 'customer_id';
+    return $vars;
+}, 20);
+
+// Role-based redirect logic
+add_action('template_redirect', function () {
+    $sales_login = get_query_var('sales_login');
+    $sales_panel = get_query_var('sales_panel');
+    
+    // If accessing sales panel pages
+    if ($sales_login || $sales_panel) {
+        // Check if user has sales panel access
+        if (!current_user_can('view_sales_panel')) {
+            // Redirect non-authorized users to sales login
+            if (!$sales_login) {
+                wp_redirect(home_url('/sales-login'));
+                exit;
+            }
+        }
+        
+        // Handle order creation form submission
+        if ($sales_panel === 'new-order' && isset($_POST['sa_create_order'])) {
+            $customer_id = intval($_POST['customer_id']);
+            
+            // Verify nonce
+            if (!wp_verify_nonce($_POST['sa_order_nonce'], 'sa_create_order_' . $customer_id)) {
+                wp_die('Security check failed');
+            }
+            
+            // Verify agent has access
+            $agent = wp_get_current_user();
+            if (!current_user_can('administrator')) {
+                $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+                $allow_manager = get_option('sales_manager_can_order', 0);
+                
+                // Check if user is sales manager and setting is enabled
+                if (in_array('sales_manager', $agent->roles) && $allow_manager) {
+                    // Sales manager can access if setting is enabled
+                } else if ($assigned_agent != $agent->ID) {
+                    // Not the assigned agent and not an authorized manager
+                    wp_die('Access denied to this customer');
+                }
+            }
+            
+            // Process order creation
+            $products = $_POST['products'] ?? [];
+            $qtys = $_POST['qtys'] ?? [];
+            $prices = $_POST['prices'] ?? [];
+            $assemblies = $_POST['assembly_selected'] ?? [];
+            $assembly_costs = $_POST['assembly_costs'] ?? [];
+            $fee_amount = floatval($_POST['extra_fee'] ?? 0);
+            $fee_name = sanitize_text_field($_POST['extra_fee_name'] ?? 'Service Fee');
+            $payment_method = sanitize_text_field($_POST['payment_method'] ?? 'bacs');
+            $order_note = sanitize_textarea_field($_POST['order_note'] ?? '');
+            $shipping_cost = floatval($_POST['shipping_cost'] ?? 0);
+            $po_number = sanitize_text_field($_POST['po_number'] ?? '');
+            
+            if (!empty($products)) {
+                // Switch to customer context for pricing
+                $old_user = get_current_user_id();
+                wp_set_current_user($customer_id);
+                
+                // Create order
+                $order = wc_create_order(['customer_id' => $customer_id]);
+                $cust = new WC_Customer($customer_id);
+                
+                // Set addresses
+                $billing = [
+                    'first_name' => $cust->get_billing_first_name() ?: $cust->get_first_name(),
+                    'last_name' => $cust->get_billing_last_name() ?: $cust->get_last_name(),
+                    'email' => $cust->get_billing_email() ?: $cust->get_email(),
+                    'phone' => $cust->get_billing_phone(),
+                    'address_1' => $cust->get_billing_address_1(),
+                    'city' => $cust->get_billing_city(),
+                    'state' => $cust->get_billing_state(),
+                    'postcode' => $cust->get_billing_postcode(),
+                    'country' => $cust->get_billing_country()
+                ];
+                $order->set_address($billing, 'billing');
+                $order->set_address($billing, 'shipping');
+                
+                // Set agent meta
+                $order->update_meta_data('_sales_agent_id', $agent->ID);
+                $order->update_meta_data('_sales_agent_name', $agent->display_name);
+                
+                if ($po_number) {
+                    $order->update_meta_data('billing_business_name', $po_number);
+                }
+                
+                if ($order_note) {
+                    $order->set_customer_note($order_note);
+                }
+                
+                $order->set_payment_method($payment_method);
+                
+                // Add products
+                $total_assembly_fee = 0;
+                foreach ($products as $k => $pid) {
+                    $qty = intval($qtys[$k]);
+                    $unit_price = isset($prices[$k]) ? floatval($prices[$k]) : 0;
+                    
+                    if ($qty > 0 && $pid && $unit_price > 0) {
+                        $prod = wc_get_product($pid);
+                        $item_id = $order->add_product($prod, $qty, [
+                            'subtotal' => $unit_price * $qty,
+                            'total' => $unit_price * $qty
+                        ]);
+                        
+                        $item = $order->get_item($item_id);
+                        if ($item) {
+                            $item->set_subtotal($unit_price * $qty);
+                            $item->set_total($unit_price * $qty);
+                            $item->save();
+                        }
+                        
+                        // Check assembly
+                        if (isset($assemblies[$k]) && $assemblies[$k] == 1) {
+                            $cost_per_item = floatval($assembly_costs[$k]);
+                            $total_assembly_fee += ($cost_per_item * $qty);
+                        }
+                    }
+                }
+                
+                // Add assembly fee
+                if ($total_assembly_fee > 0) {
+                    $fee_assembly = new WC_Order_Item_Fee();
+                    $fee_assembly->set_name('Assembly Fee');
+                    $fee_assembly->set_amount($total_assembly_fee);
+                    $fee_assembly->set_total($total_assembly_fee);
+                    $order->add_item($fee_assembly);
+                }
+                
+                // Add extra fee
+                if ($fee_amount > 0) {
+                    $item_fee = new WC_Order_Item_Fee();
+                    $item_fee->set_name($fee_name);
+                    $item_fee->set_amount($fee_amount);
+                    $item_fee->set_total($fee_amount);
+                    $order->add_item($item_fee);
+                }
+                
+                // Add shipping
+                if ($shipping_cost > 0) {
+                    $item_ship = new WC_Order_Item_Shipping();
+                    $item_ship->set_method_title('Manual Shipping');
+                    $item_ship->set_total($shipping_cost);
+                    $order->add_item($item_ship);
+                }
+                
+                // Calculate totals and save
+                $order->calculate_totals();
+                $order->update_status('pending', 'Created by Agent: ' . $agent->display_name);
+                $order->save();
+                
+                // Switch back to agent
+                wp_set_current_user($old_user);
+                
+                // Redirect to orders page
+                wp_redirect(home_url('/sales-panel/orders'));
+                exit;
+            }
+        }
+        
+        // Route to appropriate page
+        if ($sales_login) {
+            sa_render_login_page();
+            exit;
+        }
+        
+        if ($sales_panel) {
+            switch ($sales_panel) {
+                case 'dashboard':
+                    sa_render_dashboard_page();
+                    break;
+                case 'customers':
+                    sa_render_customers_page();
+                    break;
+                case 'customer_detail':
+                    sa_render_customer_detail_page();
+                    break;
+                case 'orders':
+                    sa_render_orders_page();
+                    break;
+                case 'commissions':
+                    sa_render_commissions_page();
+                    break;
+                case 'new-order':
+                    sa_render_new_order_page();
+                    break;
+                case 'messaging':
+                    sa_render_messaging_page();
+                    break;
+                case 'notes':
+                    sa_render_notes_page();
+                    break;
+                default:
+                    sa_render_dashboard_page();
+            }
+            exit;
+        }
+    }
+}, 25);
+
+// Redirect sales agents to their panel (not admin dashboard)
+add_action('admin_init', function () {
+    if (defined('DOING_AJAX') && DOING_AJAX) return;
+    
+    $user = wp_get_current_user();
+    $roles = (array) $user->roles;
+    
+    // If user is sales agent or sales manager (but not admin), redirect to sales panel
+    if ((in_array('sales_agent', $roles) || in_array('sales_manager', $roles)) 
+        && !in_array('administrator', $roles)) {
+        wp_redirect(home_url('/sales-panel'));
+        exit;
+    }
+});
+
+// Hide admin bar for sales agents
+add_action('after_setup_theme', function () {
+    $user = wp_get_current_user();
+    $roles = (array) $user->roles;
+    
+    if ((in_array('sales_agent', $roles) || in_array('sales_manager', $roles)) 
+        && !in_array('administrator', $roles)) {
+        show_admin_bar(false);
+    }
+});
+
+/**
+ * PHASE 3: SALES PANEL PAGES - HELPER FUNCTIONS
+ */
+
+// Helper: Get safe home URL
+function get_home_url_safe($path = '') {
+    return untrailingslashit(get_option('home')) . $path;
+}
+
+// Helper: Get full address for user
+function sa_get_full_address($uid, $type = 'billing') {
+    $addr1 = get_user_meta($uid, $type.'_address_1', true);
+    $addr2 = get_user_meta($uid, $type.'_address_2', true);
+    $city  = get_user_meta($uid, $type.'_city', true);
+    $state = get_user_meta($uid, $type.'_state', true);
+    $post  = get_user_meta($uid, $type.'_postcode', true);
+    $country = get_user_meta($uid, $type.'_country', true);
+    $full = []; 
+    if($addr1) $full[] = $addr1; 
+    if($addr2) $full[] = $addr2;
+    if($city || $state || $post) $full[] = trim("$city $state $post");
+    if($country) $full[] = $country;
+    return !empty($full) ? implode('<br>', $full) : '<span style="color:#94a3b8;font-style:italic">Not Set</span>';
+}
+
+// Helper: Get refund IDs for an order
+function sa_get_refund_ids($parent_order_id) {
+    global $wpdb; 
+    return $wpdb->get_col($wpdb->prepare("SELECT ID FROM {$wpdb->posts} WHERE post_type = 'shop_order_refund' AND post_parent = %d", $parent_order_id)) ?: [];
+}
+
+// Helper: Get refund item totals
+function sa_get_refund_item_totals($refund_id) {
+    global $wpdb;
+    $results = $wpdb->get_results($wpdb->prepare("SELECT meta_key, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id IN (SELECT order_item_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_id = %d)", $refund_id), ARRAY_A);
+    $subtotal = 0; 
+    foreach ($results as $meta) { 
+        if ($meta['meta_key'] === '_line_subtotal') $subtotal += floatval($meta['meta_value']); 
+    }
+    return ['subtotal' => $subtotal];
+}
+
+// Helper: Get dashboard summary for agent
+function sa_get_dashboard_summary($agent_id, $alert_days) {
+    global $wpdb;
+    
+    // Get agent's customers
+    $customer_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+        $agent_id
+    ));
+    
+    if (empty($customer_ids)) {
+        return [
+            'total_customers' => 0,
+            'total_orders' => 0,
+            'total_sales' => 0,
+            'stale_customers' => 0,
+            'recent_orders' => []
+        ];
+    }
+    
+    // Get orders for these customers
+    $placeholders = implode(',', array_fill(0, count($customer_ids), '%d'));
+    $orders = wc_get_orders([
+        'customer' => $customer_ids,
+        'limit' => -1,
+        'status' => ['completed', 'processing']
+    ]);
+    
+    $total_sales = 0;
+    foreach ($orders as $order) {
+        $total_sales += $order->get_total();
+    }
+    
+    // Find stale customers (no orders in X days)
+    $stale_date = date('Y-m-d H:i:s', strtotime("-{$alert_days} days"));
+    $stale_count = 0;
+    
+    foreach ($customer_ids as $cust_id) {
+        $last_order = wc_get_orders([
+            'customer' => $cust_id,
+            'limit' => 1,
+            'orderby' => 'date',
+            'order' => 'DESC'
+        ]);
+        
+        if (empty($last_order) || $last_order[0]->get_date_created() < new DateTime($stale_date)) {
+            $stale_count++;
+        }
+    }
+    
+    return [
+        'total_customers' => count($customer_ids),
+        'total_orders' => count($orders),
+        'total_sales' => $total_sales,
+        'stale_customers' => $stale_count,
+        'recent_orders' => array_slice($orders, 0, 10)
+    ];
+}
+
+/**
+ * PHASE 3: SALES PANEL PAGE RENDERERS
+ */
+
+function sa_render_login_page() {
+    // Handle login
+    if (isset($_POST['sa_login'])) {
+        $creds = [
+            'user_login' => sanitize_text_field($_POST['log']),
+            'user_password' => $_POST['pwd'],
+            'remember' => true
+        ];
+        
+        $user = wp_signon($creds, is_ssl());
+        
+        if (!is_wp_error($user)) {
+            wp_redirect(home_url('/sales-panel'));
+            exit;
+        } else {
+            $err = 'Invalid username or password.';
+        }
+    }
+    
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Agent Login | Sales Panel</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root {
+                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                --primary: #10b981; /* Sales Green */
+                --glass: rgba(255, 255, 255, 0.05);
+                --border: rgba(255, 255, 255, 0.1);
+                --text: #ffffff;
+                --text-muted: #94a3b8;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            body {
+                font-family: 'Outfit', sans-serif;
+                background: var(--bg-gradient);
+                color: var(--text);
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+            }
+
+            /* Background FX */
+            .bg-shape {
+                position: absolute;
+                border-radius: 50%;
+                filter: blur(80px);
+                z-index: -1;
+                opacity: 0.4;
+            }
+            .shape-1 { width: 300px; height: 300px; background: var(--primary); top: -50px; left: -50px; }
+            .shape-2 { width: 250px; height: 250px; background: #059669; bottom: -50px; right: -50px; }
+
+            /* Login Card */
+            .login-card {
+                background: var(--glass);
+                border: 1px solid var(--border);
+                padding: 40px 30px;
+                border-radius: 20px;
+                width: 100%;
+                max-width: 360px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                text-align: center;
+            }
+
+            .icon-box {
+                width: 60px;
+                height: 60px;
+                background: rgba(16, 185, 129, 0.1);
+                color: var(--primary);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                margin: 0 auto 20px;
+                border: 1px solid rgba(16, 185, 129, 0.3);
+            }
+
+            h2 { font-size: 1.5rem; margin-bottom: 5px; font-weight: 700; }
+            p.sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 30px; }
+
+            /* Inputs */
+            .input-group { margin-bottom: 15px; text-align: left; }
+            label { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 5px; margin-left: 5px;}
+            
+            input {
+                width: 100%;
+                padding: 12px 15px;
+                background: rgba(0, 0, 0, 0.2);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                color: #fff;
+                font-family: inherit;
+                font-size: 0.95rem;
+                transition: 0.3s;
+            }
+            input:focus {
+                outline: none;
+                border-color: var(--primary);
+                background: rgba(0, 0, 0, 0.3);
+                box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            }
+            input::placeholder { color: rgba(255, 255, 255, 0.3); }
+
+            /* Button */
+            button {
+                width: 100%;
+                padding: 12px;
+                margin-top: 10px;
+                background: var(--primary);
+                color: #fff;
+                border: none;
+                border-radius: 10px;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: 0.3s;
+                font-family: inherit;
+            }
+            button:hover {
+                background: #059669;
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            }
+
+            .error-msg {
+                background: rgba(239, 68, 68, 0.1);
+                color: #fca5a5;
+                padding: 10px;
+                border-radius: 8px;
+                font-size: 0.85rem;
+                margin-bottom: 20px;
+                border: 1px solid rgba(239, 68, 68, 0.2);
+            }
+        </style>
+    </head>
+    <body>
+
+        <div class="bg-shape shape-1"></div>
+        <div class="bg-shape shape-2"></div>
+
+        <form method="post" class="login-card">
+            <input type="hidden" name="sa_login" value="1">
+            
+            <div class="icon-box">
+                <i class="fa-solid fa-chart-pie"></i>
+            </div>
+            <h2>Agent Portal</h2>
+            <p class="sub">Log in to track your sales and customers.</p>
+
+            <?php if(isset($err)): ?>
+                <div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> <?= $err ?></div>
+            <?php endif; ?>
+
+            <div class="input-group">
+                <label>Username / Email</label>
+                <input type="text" name="log" placeholder="agent@company.com" required autocomplete="off">
+            </div>
+
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" name="pwd" placeholder="••••••••" required>
+            </div>
+
+            <button type="submit">Login <i class="fa-solid fa-arrow-right" style="margin-left:5px"></i></button>
+        </form>
+
+    </body>
+    </html>
+    <?php
+}
+
+function sa_render_dashboard_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user = wp_get_current_user();
+    $is_manager = in_array('sales_manager', $user->roles);
+    $alert_days = get_option('sales_stale_days', 15);
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get dashboard data
+    $summary = sa_get_dashboard_summary($user->ID, $alert_days);
+    
+    // Sales Panel with Sidebar Navigation
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Dashboard</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+            .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .stat-card h3 { color: #6b7280; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
+            .stat-card .value { font-size: 32px; font-weight: 700; color: #1f2937; }
+            .stat-card.warning { border-left: 4px solid #f59e0b; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>" class="active"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Total Customers</h3>
+                    <div class="value"><?= $summary['total_customers'] ?></div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Orders</h3>
+                    <div class="value"><?= $summary['total_orders'] ?></div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Sales</h3>
+                    <div class="value"><?= wc_price($summary['total_sales']) ?></div>
+                </div>
+                <div class="stat-card warning">
+                    <h3>⚠️ Stale Customers</h3>
+                    <div class="value"><?= $summary['stale_customers'] ?></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Recent Orders</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($summary['recent_orders'] as $order): 
+                            $customer = get_userdata($order->get_customer_id());
+                        ?>
+                        <tr>
+                            <td>#<?= $order->get_id() ?></td>
+                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                            <td><?= $order->get_date_created()->format('Y-m-d') ?></td>
+                            <td><?= $order->get_formatted_order_total() ?></td>
+                            <td><?= ucfirst($order->get_status()) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+function sa_render_customers_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $is_manager = in_array('sales_manager', (array) $user->roles);
+    
+    // Get agent's customers
+    global $wpdb;
+    $agent_id = $user->ID;
+    $view_all_customers = get_option('sales_view_all_customers', 0);
+    
+    // If sales manager with "View All Customers" setting enabled
+    if ($is_manager && $view_all_customers) {
+        // Get all users with customer role
+        $customers = get_users(['role' => 'customer']);
+        $customer_ids = wp_list_pluck($customers, 'ID');
+    } else if ($is_manager) {
+        // Get all sales agents who have this manager assigned
+        $agent_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_manager_id' AND meta_value = %d",
+            $agent_id
+        ));
+        
+        // If there are subordinate agents, get their customers
+        if (!empty($agent_ids)) {
+            $placeholders = implode(',', array_fill(0, count($agent_ids), '%d'));
+            $customer_ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value IN ($placeholders)",
+                ...$agent_ids
+            ));
+        } else {
+            $customer_ids = [];
+        }
+    } else {
+        // Regular agent - get only their own customers
+        $customer_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+            $agent_id
+        ));
+    }
+    
+    // Get final customers list if not already set
+    if (!isset($customers)) {
+        $customers = [];
+        if (!empty($customer_ids)) {
+            $customers = get_users(['include' => $customer_ids]);
+        }
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Customers</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .table-responsive { overflow-x: auto; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+            .btn-success { background: #10b981; color: #fff; }
+            .btn-warning { background: #f59e0b; color: #fff; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .col-toggle { position: relative; display: inline-block; }
+            .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+            .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; }
+            .col-dropdown.show { display: block; }
+            .col-dropdown label { display: block; padding: 5px 0; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                    <h2 style="margin:0;">My Customers</h2>
+                    <div style="position:relative;">
+                        <button class="btn btn-light" onclick="toggleColumnDropdown()" style="padding:8px 12px;">
+                            <i class="fa-solid fa-columns"></i> Columns
+                        </button>
+                        <div id="columnDropdown" style="display:none;position:absolute;top:100%;right:0;background:white;border:1px solid #e5e7eb;box-shadow:0 4px 6px rgba(0,0,0,0.1);border-radius:8px;padding:10px;min-width:150px;z-index:10;margin-top:5px;">
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-email', this)"> Email
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-phone', this)"> Phone
+                            </label>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-company', this)"> Company
+                            </label>
+                            <?php if ($is_manager): ?>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-agent', this)"> Assigned Agent
+                            </label>
+                            <?php endif; ?>
+                            <label style="display:block;padding:5px 0;cursor:pointer;font-size:14px;">
+                                <input type="checkbox" checked onchange="toggleColumn('col-spent', this)"> Total Spent
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <?php if (empty($customers)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No customers assigned yet.</p>
+                <?php else: ?>
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Customer Name</th>
+                            <th class="col-email">Email</th>
+                            <th class="col-phone">Phone</th>
+                            <th class="col-company">Company</th>
+                            <?php if ($is_manager): ?>
+                            <th class="col-agent">Assigned Agent</th>
+                            <?php endif; ?>
+                            <th class="col-spent">Total Spent</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($customers as $customer): 
+                            $phone = get_user_meta($customer->ID, 'billing_phone', true);
+                            $company = get_user_meta($customer->ID, 'billing_company', true);
+                            $spent = wc_get_customer_total_spent($customer->ID);
+                            $assigned_agent_id = get_user_meta($customer->ID, 'bagli_agent_id', true);
+                            $agent_name = $assigned_agent_id ? get_userdata($assigned_agent_id)->display_name : '-';
+                            $order_url = home_url('/sales-panel/new-order/' . $customer->ID);
+                            $switch_url = wp_nonce_url(add_query_arg('switch_customer', $customer->ID, home_url()), 'switch_customer');
+                        ?>
+                        <tr>
+                            <td>
+                                <a href="<?= home_url('/sales-panel/customer/' . $customer->ID) ?>" style="color:#1f2937;text-decoration:none;display:inline-flex;align-items:center;">
+                                    <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;margin-right:8px;"></i>
+                                    <strong><?= esc_html($customer->display_name) ?></strong>
+                                </a>
+                            </td>
+                            <td class="col-email"><?= esc_html($customer->user_email) ?></td>
+                            <td class="col-phone"><?= $phone ? esc_html($phone) : '-' ?></td>
+                            <td class="col-company"><?= $company ? esc_html($company) : '-' ?></td>
+                            <?php if ($is_manager): ?>
+                            <td class="col-agent"><strong style="color:#4f46e5;"><?= esc_html($agent_name) ?></strong></td>
+                            <?php endif; ?>
+                            <td class="col-spent"><strong><?= wc_price($spent) ?></strong></td>
+                            <td style="white-space:nowrap;">
+                                <a href="<?= $order_url ?>" class="btn" title="Create Order" style="background:#10b981;margin-right:5px;">
+                                    <i class="fa-solid fa-plus"></i> Order
+                                </a>
+                                <button class="btn btn-warning" onclick="openUnpaidModal(<?= $customer->ID ?>)" title="View Unpaid Orders" style="margin-right:5px;">
+                                    <i class="fa-solid fa-file-invoice-dollar"></i> Unpaid
+                                </button>
+                                <a href="<?= $switch_url ?>" class="btn" title="Login as Customer" style="background:#6366f1;">
+                                    <i class="fa-solid fa-right-to-bracket"></i> Login
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <!-- Unpaid Orders Modal -->
+        <div id="unpaidModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+            <div style="background:white;margin:5% auto;padding:20px;width:90%;max-width:700px;border-radius:12px;position:relative;">
+                <span onclick="document.getElementById('unpaidModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+                <h2 style="margin:0 0 20px 0;">Unpaid Orders</h2>
+                <div id="unpaid-body">Loading...</div>
+            </div>
+        </div>
+        
+        <script>
+        function toggleColumnDropdown() {
+            const dropdown = document.getElementById('columnDropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        function toggleColumn(className, checkbox) {
+            const elements = document.getElementsByClassName(className);
+            for (let el of elements) {
+                el.style.display = checkbox.checked ? '' : 'none';
+            }
+        }
+        
+        function openUnpaidModal(customerId) {
+            document.getElementById('unpaidModal').style.display = 'block';
+            document.getElementById('unpaid-body').innerHTML = 'Loading...';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>?action=sa_get_unpaid_orders&customer_id=' + customerId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('unpaid-body').innerHTML = data.data;
+                    } else {
+                        document.getElementById('unpaid-body').innerHTML = 'Error loading data.';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('unpaid-body').innerHTML = 'Error: ' + error;
+                });
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('unpaidModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('columnDropdown');
+            const target = event.target;
+            if (!target.closest('.btn-light') && dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            }
+        });
+        </script>
+    </body>
+    </html>
+    <?php
+}
+
+function sa_render_customer_detail_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $customer_id = intval(get_query_var('customer_id'));
+    $customer = get_userdata($customer_id);
+    
+    if (!$customer) {
+        wp_die('Customer not found');
+    }
+    
+    // Verify agent has access to this customer
+    $user = wp_get_current_user();
+    if (!current_user_can('administrator')) {
+        $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if user is sales manager and setting is enabled
+        if (in_array('sales_manager', $user->roles) && $allow_manager) {
+            // Sales manager can access if setting is enabled
+        } else if ($assigned_agent != $user->ID) {
+            // Not the assigned agent and not an authorized manager
+            wp_die('Access denied to this customer');
+        }
+    }
+    
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get customer orders
+    $orders = wc_get_orders([
+        'customer_id' => $customer_id,
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - Customer Detail</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
+            .info-item { padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+            .info-item label { font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .info-item div { margin-top: 5px; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+            .btn:hover { background: #059669; }
+            .btn-secondary { background: #6b7280; }
+            .btn-secondary:hover { background: #4b5563; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div style="margin-bottom: 20px;">
+                <a href="<?= home_url('/sales-panel/customers') ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customers</a>
+            </div>
+            
+            <div class="card">
+                <h2>Customer Information</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Name</label>
+                        <div><?= esc_html($customer->display_name) ?></div>
+                    </div>
+                    <div class="info-item">
+                        <label>Email</label>
+                        <div><?= esc_html($customer->user_email) ?></div>
+                    </div>
+                    <div class="info-item">
+                        <label>Phone</label>
+                        <div><?= esc_html(get_user_meta($customer_id, 'billing_phone', true) ?: '-') ?></div>
+                    </div>
+                    <div class="info-item">
+                        <label>Company</label>
+                        <div><?= esc_html(get_user_meta($customer_id, 'billing_company', true) ?: '-') ?></div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <a href="<?= home_url('/sales-panel/new-order/' . $customer_id) ?>" class="btn"><i class="fa-solid fa-plus"></i> Create New Order</a>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Recent Orders</h2>
+                <?php if (empty($orders)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders yet.</p>
+                <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($orders as $order): ?>
+                        <tr>
+                            <td>#<?= $order->get_id() ?></td>
+                            <td><?= $order->get_date_created()->format('Y-m-d H:i') ?></td>
+                            <td><?= $order->get_formatted_order_total() ?></td>
+                            <td><?= ucfirst($order->get_status()) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+function sa_render_orders_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    // Get agent's customers
+    global $wpdb;
+    $agent_id = $user->ID;
+    $customer_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'bagli_agent_id' AND meta_value = %d",
+        $agent_id
+    ));
+    
+    // Filters
+    $paged = isset($_GET['paged']) ? absint($_GET['paged']) : 1;
+    $per_page = 20;
+    $filters = [
+        'date_after' => $_GET['start_date'] ?? '',
+        'date_before' => $_GET['end_date'] ?? '',
+        'customer' => intval($_GET['filter_customer'] ?? 0)
+    ];
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+    
+    // Build query
+    $query_ids = !empty($customer_ids) ? $customer_ids : [0];
+    if ($filters['customer'] && in_array($filters['customer'], $customer_ids)) {
+        $query_ids = [$filters['customer']];
+    }
+    
+    $args = [
+        'customer' => $query_ids,
+        'limit' => $per_page,
+        'page' => $paged,
+        'paginate' => true,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ];
+    
+    if ($filters['date_after']) $args['date_after'] = $filters['date_after'];
+    if ($filters['date_before']) $args['date_before'] = $filters['date_before'];
+    if ($status_filter) $args['status'] = $status_filter;
+    
+    $results = wc_get_orders($args);
+    $orders = $results->orders;
+    $total_pages = $results->max_num_pages;
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Orders</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .table-responsive { overflow-x: auto; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6b7280; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .btn-warning { background: #f59e0b; color: #fff; }
+            .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+            .badge.completed { background: #dcfce7; color: #166534; }
+            .badge.processing { background: #dbeafe; color: #1e40af; }
+            .badge.pending { background: #fef9c3; color: #854d0e; }
+            .badge.on-hold { background: #fef3c7; color: #92400e; }
+            .badge.cancelled { background: #fee2e2; color: #991b1b; }
+            .badge.failed { background: #fee2e2; color: #991b1b; }
+            .filters-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+            .form-group { flex: 1; min-width: 150px; }
+            .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
+            .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
+            .col-toggle { position: relative; display: inline-block; }
+            .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+            .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; margin-top: 5px; }
+            .col-dropdown.show { display: block; }
+            .col-dropdown label { display: block; padding: 5px 0; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>" class="active"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div class="card">
+                <form method="get" class="filters-form">
+                    <input type="hidden" name="sales_panel" value="orders">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" value="<?= esc_attr($filters['date_after']) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" value="<?= esc_attr($filters['date_before']) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Customer</label>
+                        <select name="filter_customer">
+                            <option value="">All Customers</option>
+                            <?php foreach ($customer_ids as $cid): 
+                                $c = get_userdata($cid);
+                                if ($c):
+                            ?>
+                                <option value="<?= $cid ?>" <?= selected($filters['customer'], $cid, false) ?>><?= esc_html($c->display_name) ?></option>
+                            <?php endif; endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="">All Statuses</option>
+                            <?php foreach (wc_get_order_statuses() as $key => $label): ?>
+                                <option value="<?= esc_attr(str_replace('wc-', '', $key)) ?>" <?= selected($status_filter, str_replace('wc-', '', $key), false) ?>><?= esc_html($label) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="btn" style="height: 42px;">Filter</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+                    <h2 style="margin:0;">Orders</h2>
+                    <div class="col-toggle">
+                        <button class="col-toggle-btn" onclick="document.querySelector('.col-dropdown').classList.toggle('show')">
+                            Columns <i class="fa fa-caret-down"></i>
+                        </button>
+                        <div class="col-dropdown">
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-date', this)"> Date</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-po', this)"> PO Number</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-note', this)"> Note</label>
+                            <label><input type="checkbox" checked onchange="toggleColumn('col-status', this)"> Status</label>
+                        </div>
+                    </div>
+                </div>
+                <?php if (empty($orders)): ?>
+                    <p style="color: #6b7280; padding: 20px; text-align: center;">No orders found.</p>
+                <?php else: ?>
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th class="col-date">Date</th>
+                            <th>Customer</th>
+                            <th class="col-po">PO Number</th>
+                            <th class="col-note">Note</th>
+                            <th class="col-status">Status</th>
+                            <th>Total</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($orders as $order): 
+                            $customer = get_userdata($order->get_customer_id());
+                            $po_number = $order->get_meta('billing_business_name') ?: '-';
+                            $note = $order->get_customer_note();
+                            $note_display = $note ? (mb_strlen($note) > 30 ? mb_substr($note, 0, 30) . '...' : $note) : '-';
+                            
+                            // PDF packing slip link
+                            $pdf_link = '';
+                            if (class_exists('WPO_WCPDF')) {
+                                $nonce = wp_create_nonce('generate_wpo_wcpdf');
+                                $pdf_url = admin_url("admin-ajax.php?action=generate_wpo_wcpdf&document_type=packing-slip&order_ids={$order->get_id()}&_wpnonce={$nonce}");
+                                $pdf_link = '<a href="' . esc_url($pdf_url) . '" class="btn btn-warning" target="_blank" style="padding:8px;margin-left:5px" title="Packing Slip"><i class="fa-solid fa-file-pdf"></i></a>';
+                            }
+                        ?>
+                        <tr>
+                            <td><strong>#<?= $order->get_id() ?></strong></td>
+                            <td class="col-date"><?= $order->get_date_created()->format('d.m.Y') ?></td>
+                            <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                            <td class="col-po"><?= esc_html($po_number) ?></td>
+                            <td class="col-note" title="<?= esc_attr($note) ?>"><?= esc_html($note_display) ?></td>
+                            <td class="col-status"><span class="badge <?= $order->get_status() ?>"><?= ucfirst($order->get_status()) ?></span></td>
+                            <td><strong><?= $order->get_formatted_order_total() ?></strong></td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-light" onclick="openOrderModal(<?= $order->get_id() ?>)" title="View Details">
+                                    <i class="fa-regular fa-eye"></i> View
+                                </button>
+                                <?= $pdf_link ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                
+                <?php if ($total_pages > 1): ?>
+                <div class="pagination">
+                    <?php if ($paged > 1): ?>
+                        <a href="?sales_panel=orders&paged=<?= $paged - 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Prev</a>
+                    <?php endif; ?>
+                    <span class="current">Page <?= $paged ?> of <?= $total_pages ?></span>
+                    <?php if ($paged < $total_pages): ?>
+                        <a href="?sales_panel=orders&paged=<?= $paged + 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Next</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <!-- Order Details Modal -->
+        <div id="orderModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+            <div style="background:white;margin:5% auto;padding:20px;width:90%;max-width:800px;border-radius:12px;position:relative;">
+                <span onclick="document.getElementById('orderModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+                <h2 id="modal-title" style="margin:0 0 20px 0;">Order Details</h2>
+                <div id="modal-body">Loading...</div>
+            </div>
+        </div>
+        
+        <script>
+        function toggleColumn(className, checkbox) {
+            const elements = document.getElementsByClassName(className);
+            for (let el of elements) {
+                el.style.display = checkbox.checked ? '' : 'none';
+            }
+        }
+        
+        function openOrderModal(orderId) {
+            document.getElementById('orderModal').style.display = 'block';
+            document.getElementById('modal-body').innerHTML = 'Loading...';
+            
+            fetch('<?= admin_url('admin-ajax.php') ?>?action=sa_get_order_details&order_id=' + orderId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const d = data.data;
+                        let items = '<table style="width:100%;border-collapse:collapse;margin-top:10px"><tr><th>Item</th><th>Qty</th><th>Total</th></tr>';
+                        d.items.forEach(i => items += `<tr><td>${i.name}</td><td>${i.qty}</td><td>${i.total}</td></tr>`);
+                        items += '</table>';
+                        
+                        document.getElementById('modal-body').innerHTML = `
+                            <div><strong>PO Number:</strong> ${d.po}</div>
+                            <div><strong>Status:</strong> ${d.status} <span style="float:right">${d.date}</span></div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px">
+                                <div style="background:#f9fafb;padding:10px;font-size:12px"><strong>Billing:</strong><br>${d.billing}</div>
+                                <div style="background:#f9fafb;padding:10px;font-size:12px"><strong>Shipping:</strong><br>${d.shipping}</div>
+                            </div>
+                            ${items}
+                            <h3 style="text-align:right;margin-top:10px">${d.total}</h3>
+                            ${d.notes ? '<div style="background:#fffbeb;padding:10px;margin-top:10px;font-style:italic">Note: ' + d.notes + '</div>' : ''}
+                        `;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('modal-body').innerHTML = 'Error loading order details.';
+                });
+        }
+        
+        window.onclick = function(event) {
+            const modal = document.getElementById('orderModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        document.addEventListener('click', function(event) {
+            const dropdown = document.querySelector('.col-dropdown');
+            const button = document.querySelector('.col-toggle-btn');
+            if (dropdown && button && !event.target.closest('.col-toggle')) {
+                dropdown.classList.remove('show');
+            }
+        });
+        </script>
+    </body>
+    </html>
+    <?php
+}
+
+function sa_render_commissions_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $agent_id = $user->ID;
+    
+    // Filters
+    $start_date = $_GET['start_date'] ?? '2020-01-01';
+    $end_date = $_GET['end_date'] ?? date('Y-m-d');
+    $excluded = $_GET['exclude_status'] ?? [];
+    $paged_comm = isset($_GET['paged']) ? absint($_GET['paged']) : 1;
+    $per_page = 20;
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Reports</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+                .report-grid { grid-template-columns: 1fr !important; }
+            }
+            .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+            .card h3 { margin-bottom: 20px; color: #1f2937; font-size: 20px; }
+            .report-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }
+            .report-card { padding: 20px; border-radius: 12px; color: #fff; text-align: center; }
+            .report-card strong { font-size: 14px; display: block; margin-bottom: 10px; opacity: 0.9; }
+            .report-card div { font-size: 24px; font-weight: bold; margin-top: 5px; }
+            .bg-gross { background: #4f46e5; }
+            .bg-refund { background: #f59e0b; }
+            .bg-net { background: #10b981; }
+            .bg-comm { background: #ec4899; }
+            .filters-form { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9fafb; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+            .form-group { flex: 1; min-width: 150px; }
+            .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
+            .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; background: var(--primary); color: #fff; }
+            .btn:hover { opacity: 0.9; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
+            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
+            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>" class="active"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div class="card">
+                <h3>Reports</h3>
+                <form method="get" class="filters-form">
+                    <input type="hidden" name="sales_panel" value="commissions">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" value="<?= esc_attr($start_date) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" value="<?= esc_attr($end_date) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Exclude Status</label>
+                        <select name="exclude_status[]" multiple style="height:42px">
+                            <?php foreach (wc_get_order_statuses() as $k => $v): ?>
+                                <option value="<?= esc_attr($k) ?>" <?= in_array($k, $excluded) ? 'selected' : '' ?>><?= esc_html($v) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="btn" style="height:42px">Generate</button>
+                </form>
+            </div>
+            
+            <?php
+            // Get agent's customers
+            global $wpdb;
+            $agent_customers = get_users(['meta_key' => 'bagli_agent_id', 'meta_value' => $agent_id, 'fields' => 'ID']);
+            $customer_ids = !empty($agent_customers) ? $agent_customers : [0];
+            
+            // Build query args
+            $base_args = [
+                'post_type' => 'shop_order',
+                'post_status' => array_diff(array_keys(wc_get_order_statuses()), $excluded),
+                'date_query' => [[
+                    'after' => $start_date . ' 00:00:00',
+                    'before' => $end_date . ' 23:59:59',
+                    'inclusive' => true
+                ]],
+                'meta_query' => [
+                    'relation' => 'OR',
+                    ['key' => '_sales_agent_id', 'value' => $agent_id],
+                    ['key' => '_customer_user', 'value' => $customer_ids, 'compare' => 'IN']
+                ],
+                'fields' => 'ids',
+                'posts_per_page' => -1
+            ];
+            
+            $all_ids = get_posts($base_args);
+            $gross = 0;
+            $refund = 0;
+            $net = 0;
+            $comm = 0;
+            $rate = (float) get_option('sales_commission_rate', 3);
+            
+            // Calculate totals
+            foreach ($all_ids as $oid) {
+                $o = wc_get_order($oid);
+                if (!$o) continue;
+                
+                $gross += $o->get_total();
+                $i_sub = floatval($o->get_subtotal());
+                $r_sub = 0;
+                
+                foreach (sa_get_refund_ids($oid) as $rid) {
+                    $r_sub += abs(floatval(sa_get_refund_item_totals($rid)['subtotal']));
+                }
+                
+                $n_item = max(0, $i_sub - $r_sub);
+                $refund += $o->get_total_refunded();
+                $net += $n_item;
+                $comm += ($n_item * ($rate / 100));
+            }
+            ?>
+            
+            <div class="report-grid">
+                <div class="report-card bg-gross">
+                    <strong>Gross Sales</strong>
+                    <div><?= wc_price($gross) ?></div>
+                </div>
+                <div class="report-card bg-refund">
+                    <strong>Refunds</strong>
+                    <div><?= wc_price($refund) ?></div>
+                </div>
+                <div class="report-card bg-net">
+                    <strong>Net Item Subtotal</strong>
+                    <div><?= wc_price($net) ?></div>
+                </div>
+                <div class="report-card bg-comm">
+                    <strong>Commission (<?= $rate ?>%)</strong>
+                    <div><?= wc_price($comm) ?></div>
+                </div>
+            </div>
+            
+            <?php
+            $total_orders = count($all_ids);
+            $max_pages_comm = ceil($total_orders / $per_page);
+            $paged_ids = array_slice($all_ids, ($paged_comm - 1) * $per_page, $per_page);
+            
+            if ($paged_ids):
+            ?>
+            <div class="card">
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Status</th>
+                            <th>Gross</th>
+                            <th>Refund</th>
+                            <th>Net Item</th>
+                            <th>Comm</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($paged_ids as $oid):
+                            $o = wc_get_order($oid);
+                            $i_sub = floatval($o->get_subtotal());
+                            $r_sub = 0;
+                            
+                            foreach (sa_get_refund_ids($oid) as $rid) {
+                                $r_data = sa_get_refund_item_totals($rid);
+                                $r_sub += abs(floatval($r_data['subtotal']));
+                            }
+                            
+                            $n_item = max(0, $i_sub - $r_sub);
+                            $row_comm = $n_item * ($rate / 100);
+                            $c_name = $o->get_billing_first_name() . ' ' . $o->get_billing_last_name();
+                        ?>
+                        <tr>
+                            <td>#<?= $o->get_id() ?></td>
+                            <td><?= $o->get_date_created()->date('d.m.Y') ?></td>
+                            <td><?= esc_html($c_name) ?></td>
+                            <td><?= ucfirst($o->get_status()) ?></td>
+                            <td><?= $o->get_formatted_order_total() ?></td>
+                            <td style="color:#dc2626"><?= wc_price($o->get_total_refunded()) ?></td>
+                            <td><?= wc_price($n_item) ?></td>
+                            <td style="font-weight:bold;color:#ec4899"><?= wc_price($row_comm) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                
+                <?php if ($max_pages_comm > 1): ?>
+                <div class="pagination">
+                    <?php if ($paged_comm > 1): ?>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm - 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Prev</a>
+                    <?php endif; ?>
+                    <span class="current">Page <?= $paged_comm ?> / <?= $max_pages_comm ?></span>
+                    <?php if ($paged_comm < $max_pages_comm): ?>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm + 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Next</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php else: ?>
+            <div class="card">
+                <p style="color: #6b7280; padding: 20px; text-align: center;">No records found.</p>
+            </div>
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// Helper function: Get formatted address
+function sa_render_new_order_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $customer_id = intval(get_query_var('customer_id'));
+    $customer = get_userdata($customer_id);
+    
+    if (!$customer) {
+        wp_die('Customer not found');
+    }
+    
+    // Verify agent has access to this customer
+    $user = wp_get_current_user();
+    if (!current_user_can('administrator')) {
+        $assigned_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if user is sales manager and setting is enabled
+        if (in_array('sales_manager', $user->roles) && $allow_manager) {
+            // Sales manager can access if setting is enabled
+        } else if ($assigned_agent != $user->ID) {
+            // Not the assigned agent and not an authorized manager
+            wp_die('Access denied to this customer');
+        }
+    }
+    
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $wc_cust = new WC_Customer($customer_id);
+    $b_addr = sa_get_full_address($customer_id, 'billing');
+    $s_addr = sa_get_full_address($customer_id, 'shipping');
+    $gateways = WC()->payment_gateways->get_available_payment_gateways();
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?= esc_html($panel_title) ?> - New Order</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            .card h2 { margin-bottom: 20px; color: #1f2937; }
+            .btn { display: inline-block; padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; border: none; cursor: pointer; }
+            .btn:hover { background: #059669; }
+            .btn-secondary { background: #6b7280; }
+            .btn-secondary:hover { background: #4b5563; }
+            .btn-danger { background: #ef4444; color: white; }
+            .btn-warning { background: #f59e0b; color: white; }
+            .btn-light { background: #e5e7eb; color: #374151; }
+            .customer-widgets { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 20px 0; }
+            .widget-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; }
+            .widget-card h3 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; color: #6b7280; font-weight: 700; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+            th { background: #f9fafb; font-weight: 600; font-size: 13px; }
+            .order-table input { width: 80px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+            .totals-area { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-box { width: 350px; background: #f9fafb; padding: 20px; border-radius: 8px; }
+            .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
+            .total-row.final { font-weight: 700; font-size: 18px; border-top: 1px solid #d1d5db; padding-top: 10px; margin-top: 10px; color: #4f46e5; }
+            .select2-container .select2-selection--single { height: 38px; border-color: #d1d5db; display: flex; align-items: center; }
+            textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px; }
+            input[type="text"], input[type="number"], select { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>" class="active"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <div style="margin-bottom: 20px;">
+                <a href="<?= home_url('/sales-panel/customer/' . $customer_id) ?>" class="btn btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Customer</a>
+            </div>
+            
+            <?php
+            // Show sales manager indicator if applicable
+            $current_user = wp_get_current_user();
+            $assigned_agent_id = get_user_meta($customer_id, 'bagli_agent_id', true);
+            if (in_array('sales_manager', $current_user->roles) && $assigned_agent_id != $current_user->ID):
+                $assigned_agent = get_userdata($assigned_agent_id);
+            ?>
+            <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 15px;margin-bottom:20px;border-radius:6px;">
+                <i class="fa-solid fa-info-circle" style="color:#3b82f6;margin-right:8px;"></i>
+                <strong style="color:#1e40af;">Sales Manager View:</strong> 
+                <span style="color:#475569;">Creating order for customer assigned to <strong><?= esc_html($assigned_agent->display_name ?? 'Unknown Agent') ?></strong></span>
+            </div>
+            <?php endif; ?>
+            
+            <div class="card">
+                <h2><i class="fa-solid fa-cart-shopping"></i> New Order: <?= esc_html($customer->display_name) ?></h2>
+                <div class="customer-widgets">
+                    <div class="widget-card"><h3>Customer</h3><strong><?= $customer->display_name ?></strong><br><small><?= $customer->user_email ?></small></div>
+                    <div class="widget-card"><h3>Billing Address</h3><?= $b_addr ?></div>
+                    <div class="widget-card"><h3>Shipping Address</h3><?= $s_addr ?></div>
+                </div>
+                
+                <form method="post" id="orderForm" action="">
+                    <input type="hidden" name="sa_create_order" value="1">
+                    <input type="hidden" name="customer_id" id="customer_id" value="<?= $customer_id ?>">
+                    <?php wp_nonce_field('sa_create_order_' . $customer_id, 'sa_order_nonce'); ?>
+                    
+                    <div style="margin-bottom:20px;">
+                        <label style="font-weight:600;display:block;margin-bottom:5px">Job Name (PO Number)</label>
+                        <input type="text" name="po_number" class="form-control" placeholder="Enter PO Number" style="width:100%">
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="order-table">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:300px">Product</th>
+                                    <th style="width:120px">Unit Price</th>
+                                    <th style="width:80px">Qty</th>
+                                    <th style="width:100px">Assembly</th>
+                                    <th style="width:120px">Total</th>
+                                    <th style="width:50px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="product-rows"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="margin-top:15px;display:flex;justify-content:space-between;align-items:center;">
+                        <button type="button" class="btn btn-light" id="add-row"><i class="fa-solid fa-plus"></i> Add Product</button>
+                        <button type="button" class="btn btn-warning" id="toggle-global-assembly"><i class="fa-solid fa-tools"></i> Apply Assembly to All</button>
+                    </div>
+
+                    <div class="totals-area">
+                        <div class="totals-box">
+                            <div class="total-row"><span>Subtotal:</span><span id="subtotal">0.00</span></div>
+                            <div class="total-row" style="color:#e11d48;font-weight:600"><span>Assembly Fee:</span><span id="assembly_display">0.00</span></div>
+                            <div class="total-row" style="align-items:center">
+                                <span>Shipping:</span>
+                                <input type="number" name="shipping_cost" id="shipping_cost" step="0.01" value="0" style="width:80px;text-align:right">
+                            </div>
+                            <div class="total-row" style="align-items:center">
+                                <span>Extra Fee:</span>
+                                <input type="number" name="extra_fee" id="extra_fee" step="0.01" value="0" style="width:80px;text-align:right">
+                            </div>
+                            <div class="total-row">
+                                <input type="text" name="extra_fee_name" value="Service Fee" placeholder="Fee Name" style="width:100%;font-size:12px;padding:5px">
+                            </div>
+                            <div class="total-row final"><span>Grand Total:</span><span id="grandtotal">0.00</span></div>
+                            <hr style="margin:15px 0;border:0;border-top:1px solid #ddd">
+                            <div style="margin-bottom:10px">
+                                <label style="font-size:12px;font-weight:600">Payment Method</label>
+                                <select name="payment_method" style="width:100%;padding:8px">
+                                    <?php foreach($gateways as $id => $gateway): ?>
+                                        <option value="<?= esc_attr($id) ?>"><?= esc_html($gateway->get_title()) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div style="margin-bottom:10px">
+                                <label style="font-size:12px;font-weight:600">Order Note</label>
+                                <textarea name="order_note" rows="2"></textarea>
+                            </div>
+                            <button class="btn btn-primary" style="width:100%;justify-content:center"><i class="fa-solid fa-check"></i> Create Order</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            const customerId = $('#customer_id').val();
+            const mergeEnabled = '<?= get_option('sales_merge_products') ? 1 : 0 ?>';
+
+            function initSelect2(el) {
+                $(el).select2({
+                    ajax: {
+                        url: '<?= admin_url('admin-ajax.php') ?>',
+                        dataType: 'json',
+                        delay: 250,
+                        data: function(params) {
+                            return {
+                                action: 'sa_search_products',
+                                term: params.term,
+                                customer_id: customerId
+                            };
+                        },
+                        processResults: function(data) {
+                            return { results: data };
+                        }
+                    },
+                    placeholder: 'Search product...',
+                    minimumInputLength: 2
+                });
+            }
+
+            $('#add-row').click(function() {
+                let html = `<tr class="item-row">
+                    <td><select name="products[]" class="product-search" style="width:100%" required><option value="">Search...</option></select></td>
+                    <td><input type="text" name="prices[]" class="price-display" style="width:100px" value="0.00"></td>
+                    <td><input type="number" name="qtys[]" class="item-qty" value="1" min="1"></td>
+                    <td style="text-align:center">
+                        <input type="hidden" name="assembly_costs[]" class="assembly-cost" value="0">
+                        <input type="checkbox" name="assembly_selected[]" value="1" class="assembly-check" disabled>
+                        <span class="assembly-label" style="font-size:11px;display:block"></span>
+                    </td>
+                    <td class="item-total">0.00</td>
+                    <td><button type="button" class="btn btn-danger remove-row" style="padding:5px 10px"><i class="fa-solid fa-trash"></i></button></td>
+                </tr>`;
+                $('#product-rows').append(html);
+                initSelect2($('#product-rows tr:last .product-search'));
+            });
+
+            $(document).on('select2:select', '.product-search', function(e) {
+                let d = e.params.data;
+                let currentRow = $(this).closest('tr');
+                
+                // Merge products if enabled
+                if (mergeEnabled === '1') {
+                    let found = false;
+                    $('.product-search').not($(this)).each(function() {
+                        if ($(this).val() == d.id) {
+                            let targetRow = $(this).closest('tr');
+                            let oldQty = parseInt(targetRow.find('.item-qty').val()) || 1;
+                            targetRow.find('.item-qty').val(oldQty + 1).trigger('input');
+                            currentRow.remove();
+                            found = true;
+                            return false;
+                        }
+                    });
+                    if (found) return;
+                }
+                
+                currentRow.find('.price-display').val(parseFloat(d.price).toFixed(2));
+                let check = currentRow.find('.assembly-check');
+                let label = currentRow.find('.assembly-label');
+                let costInput = currentRow.find('.assembly-cost');
+                
+                if(d.has_assembly) {
+                    check.prop('disabled', false);
+                    costInput.val(d.assembly_price);
+                    label.text('+$' + d.assembly_price);
+                } else {
+                    check.prop('disabled', true).prop('checked', false);
+                    costInput.val(0);
+                    label.text('-');
+                }
+                calcRow(currentRow);
+            });
+            
+            $('#toggle-global-assembly').click(function() {
+                let allChecked = $('.assembly-check:not(:disabled):checked').length === $('.assembly-check:not(:disabled)').length;
+                $('.assembly-check:not(:disabled)').prop('checked', !allChecked);
+                calcTotals();
+            });
+
+            $(document).on('input', '.item-qty, #extra_fee, #shipping_cost, .price-display, .assembly-check', function() {
+                calcTotals();
+            });
+            
+            $(document).on('change keyup', '.item-qty, .price-display', function() {
+                calcRow($(this).closest('tr'));
+            });
+            
+            $(document).on('click', '.remove-row', function() {
+                $(this).closest('tr').remove();
+                calcTotals();
+            });
+
+            // Add first row on load
+            $('#add-row').click();
+
+            function calcRow(row) {
+                let p = parseFloat(row.find('.price-display').val()) || 0;
+                let q = parseInt(row.find('.item-qty').val()) || 1;
+                let assemblyCost = 0;
+                if(row.find('.assembly-check').is(':checked')) {
+                    assemblyCost = parseFloat(row.find('.assembly-cost').val()) || 0;
+                }
+                let total = (p * q) + (assemblyCost * q);
+                row.find('.item-total').text(total.toFixed(2));
+                calcTotals();
+            }
+
+            function calcTotals() {
+                let subtotal = 0, totalAssembly = 0;
+                $('.item-row').each(function() {
+                    let p = parseFloat($(this).find('.price-display').val()) || 0;
+                    let q = parseInt($(this).find('.item-qty').val()) || 1;
+                    let a = 0;
+                    if($(this).find('.assembly-check').is(':checked')) {
+                        a = parseFloat($(this).find('.assembly-cost').val()) || 0;
+                    }
+                    subtotal += (p * q);
+                    totalAssembly += (a * q);
+                });
+                let f = parseFloat($('#extra_fee').val()) || 0;
+                let sh = parseFloat($('#shipping_cost').val()) || 0;
+                $('#subtotal').text(subtotal.toFixed(2));
+                $('#assembly_display').text(totalAssembly.toFixed(2));
+                $('#grandtotal').text((subtotal + totalAssembly + f + sh).toFixed(2));
+            }
+        });
+        </script>
+    </div>
+    </body>
+    </html>
+    <?php
+}
+
+/**
+ * PHASE 2: SETTINGS INTEGRATION
+ * Add sales agent settings page in admin panel
+ */
+
+// Settings Page Template Redirect
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_sales_agent') return;
+    b2b_adm_guard();
+    
+    // Handle settings save
+    $message = '';
+    if(isset($_POST['save_sales_settings'])) {
+        update_option('sales_panel_enabled', isset($_POST['sales_panel_enabled']) ? 1 : 0);
+        update_option('sales_panel_title', sanitize_text_field($_POST['sales_panel_title']));
+        update_option('sales_commission_rate', floatval($_POST['sales_commission_rate']));
+        update_option('sales_stale_days', intval($_POST['sales_stale_days']));
+        update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Sales Agent settings saved.</div>';
+    }
+    
+    $panel_enabled = get_option('sales_panel_enabled', 1);
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $commission_rate = get_option('sales_commission_rate', 3);
+    $stale_days = get_option('sales_stale_days', 15);
+    $merge_products = get_option('sales_merge_products', 0);
+    
+    b2b_adm_header('Sales Agent Settings');
+    ?>
+    <div class="page-header"><h1 class="page-title">Sales Agent System Settings</h1></div>
+    
+    <?= $message ?>
+    
+    <div class="card">
+        <form method="post" style="max-width:700px;">
+            <h3 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-toggle-on"></i> General</h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_panel_enabled" value="1" <?= checked($panel_enabled, 1) ?>>
+                    <span style="font-weight:600;">Enable Sales Agent Panel</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Allow sales agents and managers to access their dedicated panel</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Panel Title</label>
+                <input type="text" name="sales_panel_title" value="<?= esc_attr($panel_title) ?>" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;" placeholder="Agent Panel">
+                <small style="color:#6b7280;">Displayed in the sales panel header</small>
+            </div>
+            
+            <hr style="margin:30px 0;border:none;border-top:1px solid #e5e7eb;">
+            
+            <h3 style="color:#1e40af;"><i class="fa-solid fa-percent"></i> Commission & Sales</h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Commission Rate (%)</label>
+                <input type="number" step="0.01" min="0" max="100" name="sales_commission_rate" value="<?= esc_attr($commission_rate) ?>" style="width:200px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;">Default commission percentage for sales agents</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Stale Customer Alert (Days)</label>
+                <input type="number" min="1" max="365" name="sales_stale_days" value="<?= esc_attr($stale_days) ?>" style="width:200px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;">Show alert if customer hasn't placed order in this many days</small>
+            </div>
+            
+            <hr style="margin:30px 0;border:none;border-top:1px solid #e5e7eb;">
+            
+            <h3 style="color:#1e40af;"><i class="fa-solid fa-sliders"></i> Advanced</h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="sales_merge_products" value="1" <?= checked($merge_products, 1) ?>>
+                    <span style="font-weight:600;">Merge Duplicate Products</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Automatically combine duplicate product entries in order creation</small>
+            </div>
+            
+            <div style="padding:15px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;">
+                <h4 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-info-circle"></i> About Sales Agent System</h4>
+                <ul style="color:#1e40af;margin:0;">
+                    <li><strong>Sales Agents:</strong> Can view their assigned customers, create orders, and track commissions</li>
+                    <li><strong>Sales Managers:</strong> Can view all agents and their performance metrics</li>
+                    <li><strong>Role Assignment:</strong> Assign roles to users via WordPress Users page</li>
+                    <li><strong>Customer Assignment:</strong> Link customers to agents in user profile</li>
+                </ul>
+            </div>
+            
+            <div style="padding:15px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;margin-bottom:20px;">
+                <h4 style="margin-top:0;color:#92400e;"><i class="fa-solid fa-lightbulb"></i> Quick Start</h4>
+                <ol style="color:#92400e;margin:0;">
+                    <li>Enable the sales panel above</li>
+                    <li>Go to Users → Add New to create sales agents</li>
+                    <li>Assign "Sales Agent" or "Sales Manager" role</li>
+                    <li>Link customers to agents in user profiles</li>
+                    <li>Agents can login at <code>/sales-login</code></li>
+                </ol>
+            </div>
+            
+            <button type="submit" name="save_sales_settings" style="background:#10b981;color:white;padding:12px 24px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    <?php b2b_adm_footer(); exit;
+});
+
+// End of Sales Agent System Phase 2
+
+/* =====================================================
+   PAYMENT GATEWAY MODULE: NMI Gateway
+===================================================== */
+
+/**
+ * WooCommerce NMI Payment Gateway
+ * Simple implementation for processing payments, refunds, and logging
+ */
+
+// Register the payment gateway
+add_filter('woocommerce_payment_gateways', 'add_nmi_gateway_class');
+function add_nmi_gateway_class($gateways) {
+    $gateways[] = 'WC_NMI_Gateway';
+    return $gateways;
+}
+
+// Initialize gateway class after plugins are loaded
+add_action('plugins_loaded', 'init_nmi_gateway_class');
+function init_nmi_gateway_class() {
+    if (!class_exists('WC_Payment_Gateway')) return;
+    
+    class WC_NMI_Gateway extends WC_Payment_Gateway {
+        public function __construct() {
+            $this->id = 'nmi_gateway';
+            $this->method_title = 'NMI Gateway';
+            $this->method_description = 'Accept credit card payments via NMI (Network Merchants Inc.)';
+            $this->has_fields = true;
+            $this->supports = array('products', 'refunds');
+            
+            // Load settings
+            $this->init_form_fields();
+            $this->init_settings();
+            
+            // Define user settings
+            $this->enabled = $this->get_option('enabled');
+            $this->title = $this->get_option('title');
+            $this->description = $this->get_option('description');
+            $this->api_username = $this->get_option('api_username');
+            $this->api_password = $this->get_option('api_password');
+            $this->test_mode = 'yes' === $this->get_option('test_mode');
+            $this->capture_mode = $this->get_option('capture_mode', 'sale');
+            $this->debug_mode = 'yes' === $this->get_option('debug_mode');
+            $this->allowed_card_types = $this->get_option('allowed_card_types', array('visa', 'mastercard', 'amex', 'discover'));
+            
+            // Save settings
+            add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
+        }
+        
+        /**
+         * Log debug messages
+         */
+        private function log($message) {
+            if ($this->debug_mode && function_exists('wc_get_logger')) {
+                $logger = wc_get_logger();
+                $logger->debug($message, array('source' => 'nmi-gateway'));
+            }
+        }
+        
+        public function init_form_fields() {
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title' => 'Enable/Disable',
+                    'type' => 'checkbox',
+                    'label' => 'Enable NMI Gateway',
+                    'default' => 'no'
+                ),
+                'title' => array(
+                    'title' => 'Title',
+                    'type' => 'text',
+                    'description' => 'Payment method title shown to customers.',
+                    'default' => 'Credit Card (NMI)',
+                    'desc_tip' => true
+                ),
+                'description' => array(
+                    'title' => 'Description',
+                    'type' => 'textarea',
+                    'description' => 'Payment method description shown to customers.',
+                    'default' => 'Pay securely with your credit card.',
+                    'desc_tip' => true
+                ),
+                'test_mode' => array(
+                    'title' => 'Test Mode',
+                    'type' => 'checkbox',
+                    'label' => 'Enable test mode',
+                    'default' => 'yes',
+                    'description' => 'Use test API credentials for testing.'
+                ),
+                'api_username' => array(
+                    'title' => 'API Username',
+                    'type' => 'text',
+                    'description' => 'Your NMI API username (Security Key).',
+                    'default' => '',
+                    'desc_tip' => true
+                ),
+                'api_password' => array(
+                    'title' => 'API Password',
+                    'type' => 'password',
+                    'description' => 'Your NMI API password (optional, if required).',
+                    'default' => '',
+                    'desc_tip' => true
+                ),
+                'capture_mode' => array(
+                    'title' => 'Capture Mode',
+                    'type' => 'select',
+                    'description' => 'Choose when to capture payment.',
+                    'default' => 'sale',
+                    'options' => array(
+                        'sale' => 'Authorize & Capture (Immediate)',
+                        'auth' => 'Authorize Only (Manual Capture Required)'
+                    ),
+                    'desc_tip' => true
+                ),
+                'debug_mode' => array(
+                    'title' => 'Debug Logging',
+                    'type' => 'checkbox',
+                    'label' => 'Enable debug logging',
+                    'default' => 'no',
+                    'description' => 'Log gateway requests and responses for troubleshooting. <strong>WARNING:</strong> This will log sensitive data including card numbers. Only enable temporarily for debugging.'
+                ),
+                'allowed_card_types' => array(
+                    'title' => 'Allowed Card Types',
+                    'type' => 'select',
+                    'class' => 'wc-enhanced-select',
+                    'css' => 'min-width:300px;',
+                    'description' => 'Select which card types to accept.',
+                    'default' => array('visa', 'mastercard', 'amex', 'discover'),
+                    'options' => array(
+                        'visa' => 'Visa',
+                        'mastercard' => 'MasterCard',
+                        'amex' => 'American Express',
+                        'discover' => 'Discover',
+                        'diners' => 'Diners Club',
+                        'jcb' => 'JCB'
+                    ),
+                    'desc_tip' => true,
+                    'custom_attributes' => array(
+                        'multiple' => 'multiple'
+                    )
+                )
+            );
+        }
+        
+        public function payment_fields() {
+            if ($this->description) {
+                echo wpautop(wptexturize($this->description));
+            }
+            ?>
+            <fieldset style="border:1px solid #e5e7eb;padding:15px;border-radius:8px;background:#f9fafb;">
+                <p class="form-row form-row-wide">
+                    <label>Card Number <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_number" maxlength="16" placeholder="1234 5678 9012 3456" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <p class="form-row form-row-first">
+                    <label>Expiry Date (MM/YY) <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_expiry" maxlength="5" placeholder="12/25" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <p class="form-row form-row-last">
+                    <label>CVV <span class="required">*</span></label>
+                    <input type="text" name="nmi_card_cvv" maxlength="4" placeholder="123" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;" />
+                </p>
+                <div style="clear:both;"></div>
+            </fieldset>
+            <?php
+        }
+        
+        public function validate_fields() {
+            // Validate card number
+            if (empty($_POST['nmi_card_number'])) {
+                wc_add_notice('Card number is required', 'error');
+                return false;
+            }
+            
+            $card_number = preg_replace('/\s+/', '', $_POST['nmi_card_number']);
+            if (!preg_match('/^\d{13,19}$/', $card_number)) {
+                wc_add_notice('Invalid card number format. Must be 13-19 digits.', 'error');
+                return false;
+            }
+            
+            // Validate expiry date
+            if (empty($_POST['nmi_card_expiry'])) {
+                wc_add_notice('Card expiry date is required', 'error');
+                return false;
+            }
+            
+            $expiry = sanitize_text_field($_POST['nmi_card_expiry']);
+            if (!preg_match('/^\d{2}\/\d{2}$/', $expiry)) {
+                wc_add_notice('Invalid expiry date format. Use MM/YY.', 'error');
+                return false;
+            }
+            
+            // Check if date is in the future
+            list($month, $year) = explode('/', $expiry);
+            $exp_date = strtotime('20' . $year . '-' . $month . '-01');
+            if ($exp_date < strtotime('first day of this month')) {
+                wc_add_notice('Card has expired.', 'error');
+                return false;
+            }
+            
+            // Validate CVV
+            if (empty($_POST['nmi_card_cvv'])) {
+                wc_add_notice('CVV is required', 'error');
+                return false;
+            }
+            
+            $cvv = sanitize_text_field($_POST['nmi_card_cvv']);
+            if (!preg_match('/^\d{3,4}$/', $cvv)) {
+                wc_add_notice('Invalid CVV. Must be 3 or 4 digits.', 'error');
+                return false;
+            }
+            
+            return true;
+        }
+        
+        public function process_payment($order_id) {
+            $order = wc_get_order($order_id);
+            
+            // Verify nonce for CSRF protection
+            if (!isset($_POST['woocommerce-process-checkout-nonce']) || 
+                !wp_verify_nonce($_POST['woocommerce-process-checkout-nonce'], 'woocommerce-process_checkout')) {
+                wc_add_notice('Security verification failed', 'error');
+                return array('result' => 'fail');
+            }
+            
+            // Get card details (already validated in validate_fields)
+            $card_number = preg_replace('/\s+/', '', sanitize_text_field($_POST['nmi_card_number']));
+            $card_expiry = sanitize_text_field($_POST['nmi_card_expiry']);
+            $card_cvv = sanitize_text_field($_POST['nmi_card_cvv']);
+            
+            // Prepare API request
+            $amount = $order->get_total();
+            $response = $this->process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount);
+            
+            if ($response['success']) {
+                // Payment successful
+                $order->payment_complete($response['transaction_id']);
+                $order->add_order_note(sprintf('NMI Payment completed. Transaction ID: %s', $response['transaction_id']));
+                
+                // Log transaction
+                $this->log_transaction($order_id, 'payment', $response['transaction_id'], $amount, 'completed', $response['raw_response']);
+                
+                // Empty cart
+                WC()->cart->empty_cart();
+                
+                return array(
+                    'result' => 'success',
+                    'redirect' => $this->get_return_url($order)
+                );
+            } else {
+                // Payment failed
+                wc_add_notice('Payment failed: ' . $response['error'], 'error');
+                $order->add_order_note('NMI Payment failed: ' . $response['error']);
+                
+                // Log failed transaction
+                $this->log_transaction($order_id, 'payment', '', $amount, 'failed', $response['raw_response']);
+                
+                return array('result' => 'fail');
+            }
+        }
+        
+        private function process_nmi_payment($order, $card_number, $card_expiry, $card_cvv, $amount) {
+            // Parse expiry date (already validated as MM/YY format)
+            list($exp_month, $exp_year) = explode('/', $card_expiry);
+            
+            // Convert YY to YYYY (handle years correctly)
+            if (strlen($exp_year) === 2) {
+                $exp_year = '20' . $exp_year;
+            }
+            
+            // Build API request - NMI uses same endpoint for both test and production
+            // Test mode is distinguished by the security key used
+            $api_url = 'https://secure.nmi.com/api/transact.php';
+            
+            $post_data = array(
+                'security_key' => $this->api_username,
+                'type' => $this->capture_mode, // Use configured capture mode (sale or auth)
+                'ccnumber' => str_replace(' ', '', $card_number),
+                'ccexp' => $exp_month . $exp_year,
+                'cvv' => $card_cvv,
+                'amount' => number_format($amount, 2, '.', ''),
+                'firstname' => $order->get_billing_first_name(),
+                'lastname' => $order->get_billing_last_name(),
+                'address1' => $order->get_billing_address_1(),
+                'city' => $order->get_billing_city(),
+                'state' => $order->get_billing_state(),
+                'zip' => $order->get_billing_postcode(),
+                'country' => $order->get_billing_country(),
+                'email' => $order->get_billing_email(),
+                'orderid' => $order->get_order_number()
+            );
+            
+            // Log request if debug mode enabled
+            if ($this->debug_mode) {
+                $log_data = $post_data;
+                // Mask card number - show only last 4 digits if long enough
+                if (isset($log_data['ccnumber']) && strlen($log_data['ccnumber']) >= 4) {
+                    $log_data['ccnumber'] = '****' . substr($log_data['ccnumber'], -4);
+                } else {
+                    $log_data['ccnumber'] = '****';
+                }
+                $log_data['cvv'] = '***';
+                $this->log('NMI Payment Request: ' . json_encode($log_data));
+            }
+            
+            // Send API request
+            $response = wp_remote_post($api_url, array(
+                'body' => $post_data,
+                'timeout' => 30,
+                'sslverify' => true // Always verify SSL for security
+            ));
+            
+            if (is_wp_error($response)) {
+                $this->log('NMI Payment Error: ' . $response->get_error_message());
+                return array(
+                    'success' => false,
+                    'error' => $response->get_error_message(),
+                    'raw_response' => ''
+                );
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            parse_str($body, $parsed_response);
+            
+            // Log response if debug mode enabled
+            if ($this->debug_mode) {
+                $this->log('NMI Payment Response: ' . $body);
+            }
+            
+            // Check response
+            if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
+                // Success
+                return array(
+                    'success' => true,
+                    'transaction_id' => $parsed_response['transactionid'] ?? '',
+                    'raw_response' => $body
+                );
+            } else {
+                // Failure
+                return array(
+                    'success' => false,
+                    'error' => $parsed_response['responsetext'] ?? 'Unknown error',
+                    'raw_response' => $body
+                );
+            }
+        }
+        
+        public function process_refund($order_id, $amount = null, $reason = '') {
+            $order = wc_get_order($order_id);
+            $transaction_id = $order->get_transaction_id();
+            
+            if (!$transaction_id) {
+                return new WP_Error('error', 'Transaction ID not found');
+            }
+            
+            // Build API request for refund - NMI uses same endpoint
+            $api_url = 'https://secure.nmi.com/api/transact.php';
+            
+            $post_data = array(
+                'security_key' => $this->api_username,
+                'type' => 'refund',
+                'transactionid' => $transaction_id,
+                'amount' => number_format($amount, 2, '.', '')
+            );
+            
+            // Send API request
+            $response = wp_remote_post($api_url, array(
+                'body' => $post_data,
+                'timeout' => 30,
+                'sslverify' => true // Always verify SSL
+            ));
+            
+            if (is_wp_error($response)) {
+                return new WP_Error('error', $response->get_error_message());
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            parse_str($body, $parsed_response);
+            
+            // Check response
+            if (isset($parsed_response['response']) && $parsed_response['response'] == '1') {
+                // Refund successful
+                $refund_transaction_id = $parsed_response['transactionid'] ?? '';
+                $order->add_order_note(sprintf('NMI Refund completed. Amount: %s. Transaction ID: %s. Reason: %s', 
+                    wc_price($amount), $refund_transaction_id, $reason));
+                
+                // Log refund
+                $this->log_transaction($order_id, 'refund', $refund_transaction_id, $amount, 'completed', $body);
+                
+                return true;
+            } else {
+                // Refund failed
+                $error = $parsed_response['responsetext'] ?? 'Unknown error';
+                
+                // Log failed refund
+                $this->log_transaction($order_id, 'refund', '', $amount, 'failed', $body);
+                
+                return new WP_Error('error', $error);
+            }
+        }
+        
+        private function log_transaction($order_id, $type, $transaction_id, $amount, $status, $raw_response) {
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+            
+            // Insert log using wpdb->insert which handles sanitization
+            $wpdb->insert($table_name, array(
+                'order_id' => absint($order_id),
+                'transaction_type' => sanitize_text_field($type),
+                'transaction_id' => sanitize_text_field($transaction_id),
+                'amount' => floatval($amount),
+                'status' => sanitize_text_field($status),
+                'raw_response' => $raw_response, // Text field, stored as-is
+                'created_at' => current_time('mysql')
+            ), array('%d', '%s', '%s', '%f', '%s', '%s', '%s'));
+        }
+    }
+}
+
+// Create NMI transaction logs table on plugin/theme activation
+add_action('after_setup_theme', 'nmi_create_transaction_logs_table');
+function nmi_create_transaction_logs_table() {
+    // Only create table once
+    if (get_option('nmi_transaction_logs_table_created')) {
+        return;
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        order_id bigint(20) NOT NULL,
+        transaction_type varchar(20) NOT NULL,
+        transaction_id varchar(100) DEFAULT '',
+        amount decimal(10,2) NOT NULL,
+        status varchar(20) NOT NULL,
+        raw_response text,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY order_id (order_id),
+        KEY created_at (created_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+    
+    // Mark as created
+    update_option('nmi_transaction_logs_table_created', true);
+}
+
+// Payment Gateway Settings Page
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_payments') return;
+    b2b_adm_guard();
+    
+    // Get NMI gateway instance
+    $gateways = WC()->payment_gateways->get_available_payment_gateways();
+    $nmi_gateway = isset($gateways['nmi_gateway']) ? $gateways['nmi_gateway'] : null;
+    
+    // Handle settings save
+    $message = '';
+    if (isset($_POST['save_nmi_settings']) && wp_verify_nonce($_POST['nmi_settings_nonce'], 'save_nmi_settings')) {
+        // Update settings in the options table
+        $settings = array(
+            'enabled' => isset($_POST['nmi_enabled']) ? 'yes' : 'no',
+            'title' => sanitize_text_field($_POST['nmi_title']),
+            'description' => sanitize_textarea_field($_POST['nmi_description']),
+            'test_mode' => isset($_POST['nmi_test_mode']) ? 'yes' : 'no',
+            'api_username' => sanitize_text_field($_POST['nmi_api_username']),
+            'api_password' => sanitize_text_field($_POST['nmi_api_password']),
+            'capture_mode' => sanitize_text_field(isset($_POST['nmi_capture_mode']) ? $_POST['nmi_capture_mode'] : 'sale'),
+            'debug_mode' => isset($_POST['nmi_debug_mode']) ? 'yes' : 'no',
+            'allowed_card_types' => isset($_POST['nmi_allowed_card_types']) && is_array($_POST['nmi_allowed_card_types']) 
+                ? array_map('sanitize_text_field', $_POST['nmi_allowed_card_types']) 
+                : array('visa', 'mastercard', 'amex', 'discover')
+        );
+        
+        update_option('woocommerce_nmi_gateway_settings', $settings);
+        
+        // Clear WooCommerce cache to reflect changes
+        if (function_exists('wc_delete_shop_order_transients')) {
+            wc_delete_shop_order_transients();
+        }
+        
+        $message = '<div style="padding:15px;background:#d1fae5;color:#065f46;border-radius:8px;margin-bottom:20px;"><strong>Success!</strong> Payment gateway settings saved and activated in WooCommerce.</div>';
+    }
+    
+    // Get current settings
+    $settings = get_option('woocommerce_nmi_gateway_settings', array());
+    $enabled = isset($settings['enabled']) && $settings['enabled'] === 'yes';
+    $title = $settings['title'] ?? 'Credit Card (NMI)';
+    $description = $settings['description'] ?? 'Pay securely with your credit card.';
+    $test_mode = isset($settings['test_mode']) && $settings['test_mode'] === 'yes';
+    $api_username = $settings['api_username'] ?? '';
+    $api_password = $settings['api_password'] ?? '';
+    $capture_mode = $settings['capture_mode'] ?? 'sale';
+    $debug_mode = isset($settings['debug_mode']) && $settings['debug_mode'] === 'yes';
+    $allowed_card_types = $settings['allowed_card_types'] ?? array('visa', 'mastercard', 'amex', 'discover');
+    
+    // Get transaction logs
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'nmi_transaction_logs';
+    $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY created_at DESC LIMIT 50", ARRAY_A);
+    
+    b2b_adm_header('Payment Gateway Settings');
+    ?>
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-credit-card"></i> NMI Payment Gateway</h1>
+    </div>
+    
+    <?= $message ?>
+    
+    <div class="card" style="margin-bottom:30px;">
+        <form method="post">
+            <?php wp_nonce_field('save_nmi_settings', 'nmi_settings_nonce'); ?>
+            
+            <h3 style="margin-top:0;color:#1e40af;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                <i class="fa-solid fa-gear"></i> Gateway Configuration
+            </h3>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_enabled" value="1" <?= checked($enabled, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Enable NMI Gateway</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Allow customers to pay using NMI payment gateway</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_test_mode" value="1" <?= checked($test_mode, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Test Mode</span>
+                </label>
+                <small style="color:#6b7280;margin-left:30px;">Use test API credentials for testing payments</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Title</label>
+                <input type="text" name="nmi_title" value="<?= esc_attr($title) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Payment method title shown to customers during checkout</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Description</label>
+                <textarea name="nmi_description" rows="3" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;"><?= esc_textarea($description) ?></textarea>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Payment method description shown to customers</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Username (Security Key)</label>
+                <input type="text" name="nmi_api_username" value="<?= esc_attr($api_username) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Your NMI API username/security key from NMI account</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">API Password (Optional)</label>
+                <input type="password" name="nmi_api_password" value="<?= esc_attr($api_password) ?>" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                <small style="color:#6b7280;display:block;margin-top:5px;">Optional API password if required by your NMI account</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Capture Mode</label>
+                <select name="nmi_capture_mode" style="width:100%;max-width:500px;padding:10px;border:1px solid #e5e7eb;border-radius:6px;">
+                    <option value="sale" <?= $capture_mode === 'sale' ? 'selected' : '' ?>>Authorize & Capture (Immediate)</option>
+                    <option value="auth" <?= $capture_mode === 'auth' ? 'selected' : '' ?>>Authorize Only (Manual Capture Required)</option>
+                </select>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Choose when to capture payment. "Authorize Only" requires manual capture in NMI portal.</small>
+            </div>
+            
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="nmi_debug_mode" value="1" <?= checked($debug_mode, true, false) ?> style="width:20px;height:20px;">
+                    <span style="font-weight:600;font-size:15px;">Enable Debug Logging</span>
+                </label>
+                <small style="color:#ef4444;margin-left:30px;display:block;margin-top:5px;"><strong>WARNING:</strong> Debug mode logs sensitive data including card numbers. Only enable temporarily for troubleshooting.</small>
+            </div>
+            
+            <div style="margin-bottom:25px;">
+                <label style="display:block;font-weight:600;margin-bottom:8px;color:#374151;">Allowed Card Types</label>
+                <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;max-width:500px;">
+                    <?php 
+                    $card_types = array(
+                        'visa' => 'Visa',
+                        'mastercard' => 'MasterCard',
+                        'amex' => 'American Express',
+                        'discover' => 'Discover',
+                        'diners' => 'Diners Club',
+                        'jcb' => 'JCB'
+                    );
+                    foreach ($card_types as $type => $label): 
+                    ?>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" name="nmi_allowed_card_types[]" value="<?= esc_attr($type) ?>" 
+                               <?= in_array($type, $allowed_card_types) ? 'checked' : '' ?>>
+                        <?= esc_html($label) ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <small style="color:#6b7280;display:block;margin-top:5px;">Select which card types to accept at checkout</small>
+            </div>
+            
+            <button type="submit" name="save_nmi_settings" class="btn-primary" style="padding:12px 30px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">
+                <i class="fa-solid fa-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+    
+    <!-- Transaction Logs -->
+    <div class="card">
+        <h3 style="margin-top:0;color:#1e40af;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+            <i class="fa-solid fa-list"></i> Transaction Logs
+        </h3>
+        
+        <?php if (!empty($logs)): ?>
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Order ID</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Type</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Transaction ID</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Amount</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Status</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Date</th>
+                        <th style="padding:12px;text-align:left;border-bottom:2px solid #e5e7eb;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($logs as $log): 
+                        $status_color = $log['status'] === 'completed' ? '#10b981' : '#ef4444';
+                        $type_icon = $log['transaction_type'] === 'payment' ? 'fa-credit-card' : 'fa-rotate-left';
+                    ?>
+                    <tr style="border-bottom:1px solid #f3f4f6;">
+                        <td style="padding:12px;">
+                            <a href="<?= admin_url('post.php?post=' . $log['order_id'] . '&action=edit') ?>" target="_blank" style="color:#3b82f6;text-decoration:none;font-weight:600;">
+                                #<?= $log['order_id'] ?>
+                            </a>
+                        </td>
+                        <td style="padding:12px;">
+                            <span style="display:inline-flex;align-items:center;gap:5px;">
+                                <i class="fa-solid <?= $type_icon ?>"></i>
+                                <?= ucfirst($log['transaction_type']) ?>
+                            </span>
+                        </td>
+                        <td style="padding:12px;font-family:monospace;font-size:13px;"><?= esc_html($log['transaction_id']) ?: '—' ?></td>
+                        <td style="padding:12px;font-weight:600;"><?= wc_price($log['amount']) ?></td>
+                        <td style="padding:12px;">
+                            <span style="padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:white;background:<?= $status_color ?>;">
+                                <?= ucfirst($log['status']) ?>
+                            </span>
+                        </td>
+                        <td style="padding:12px;color:#6b7280;font-size:13px;"><?= date('Y-m-d H:i:s', strtotime($log['created_at'])) ?></td>
+                        <td style="padding:12px;">
+                            <button onclick="viewLogDetails(<?= esc_attr($log['id']) ?>)" 
+                                    data-order-id="<?= esc_attr($log['order_id']) ?>"
+                                    data-transaction-type="<?= esc_attr($log['transaction_type']) ?>"
+                                    data-transaction-id="<?= esc_attr($log['transaction_id']) ?>"
+                                    data-amount="<?= esc_attr($log['amount']) ?>"
+                                    data-status="<?= esc_attr($log['status']) ?>"
+                                    data-created-at="<?= esc_attr($log['created_at']) ?>"
+                                    style="padding:6px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;font-size:12px;">
+                                <i class="fa-solid fa-eye"></i> View
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <p style="color:#6b7280;text-align:center;padding:40px 20px;">
+            <i class="fa-solid fa-inbox" style="font-size:48px;display:block;margin-bottom:15px;opacity:0.3;"></i>
+            No transaction logs yet. Transactions will appear here after first payment.
+        </p>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Log Details Modal -->
+    <div id="logModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;padding:20px;overflow:auto;">
+        <div style="max-width:800px;margin:50px auto;background:white;border-radius:12px;padding:30px;position:relative;">
+            <button onclick="closeLogModal()" style="position:absolute;top:15px;right:15px;background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;">
+                <i class="fa-solid fa-times"></i>
+            </button>
+            <h3 style="margin-top:0;color:#1e40af;"><i class="fa-solid fa-file-lines"></i> Transaction Details</h3>
+            <div id="logModalContent" style="margin-top:20px;"></div>
+        </div>
+    </div>
+    
+    <script>
+    function viewLogDetails(logId) {
+        // Get data from button attributes instead of passing full object
+        const button = event.target.closest('button');
+        const log = {
+            order_id: button.dataset.orderId,
+            transaction_type: button.dataset.transactionType,
+            transaction_id: button.dataset.transactionId,
+            amount: button.dataset.amount,
+            status: button.dataset.status,
+            created_at: button.dataset.createdAt
+        };
+        
+        const content = `
+            <div style="background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px;">
+                <div style="display:grid;grid-template-columns:150px 1fr;gap:15px;">
+                    <strong>Order ID:</strong>
+                    <span>#${log.order_id}</span>
+                    
+                    <strong>Transaction Type:</strong>
+                    <span>${log.transaction_type}</span>
+                    
+                    <strong>Transaction ID:</strong>
+                    <span style="font-family:monospace;">${log.transaction_id || '—'}</span>
+                    
+                    <strong>Amount:</strong>
+                    <span>${log.amount}</span>
+                    
+                    <strong>Status:</strong>
+                    <span style="font-weight:600;color:${log.status === 'completed' ? '#10b981' : '#ef4444'};">${log.status}</span>
+                    
+                    <strong>Date:</strong>
+                    <span>${log.created_at}</span>
+                </div>
+            </div>
+            
+            <h4 style="margin-top:25px;color:#374151;">Raw API Response:</h4>
+            <div id="rawResponseContainer">
+                <p style="color:#6b7280;text-align:center;padding:20px;">
+                    <i class="fa-solid fa-lock" style="font-size:24px;display:block;margin-bottom:10px;"></i>
+                    Raw API responses are not displayed for security purposes.<br>
+                    Contact administrator if detailed debugging information is needed.
+                </p>
+            </div>
+        `;
+        document.getElementById('logModalContent').innerHTML = content;
+        document.getElementById('logModal').style.display = 'block';
+    }
+    
+    function closeLogModal() {
+        document.getElementById('logModal').style.display = 'none';
+    }
+    
+    // Close modal on outside click
+    document.getElementById('logModal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeLogModal();
+    });
+    </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
+/**
+ * PHASE 4: AJAX HANDLERS
+ * Add AJAX functionality for sales panel
+ */
+
+// AJAX: Search products
+add_action('wp_ajax_sa_search_products', 'sa_search_products_callback');
+function sa_search_products_callback() {
+    if (!current_user_can('view_sales_panel')) wp_die();
+    
+    $term = sanitize_text_field($_GET['term'] ?? '');
+    $cid = isset($_GET['customer_id']) ? intval($_GET['customer_id']) : 0;
+    
+    // Security: Verify agent has access to this customer
+    if ($cid > 0 && !current_user_can('administrator')) {
+        $agent_id = get_current_user_id();
+        $customer_agent = get_user_meta($cid, 'bagli_agent_id', true);
+        $user = wp_get_current_user();
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if sales agent or authorized sales manager
+        $is_authorized = ($customer_agent == $agent_id) || 
+                        (in_array('sales_manager', $user->roles) && $allow_manager);
+        
+        if (!$is_authorized) {
+            wp_send_json_error('Access denied to this customer');
+        }
+    }
+    
+    $old_user = get_current_user_id();
+    if ($cid > 0) wp_set_current_user($cid);
+
+    $results = [];
+    $products = wc_get_products([
+        'limit' => 30, 
+        'status' => 'publish', 
+        's' => $term, 
+        'return' => 'ids', 
+        'orderby' => 'title', 
+        'order' => 'ASC'
+    ]);
+
+    foreach ($products as $pid) {
+        wp_cache_delete($pid, 'post_meta'); 
+        $p = wc_get_product($pid); 
+        if(!$p || $p->is_type('variable')) continue;
+
+        $price_html = $p->get_price_html();
+        $clean_text = strip_tags(html_entity_decode($price_html));
+        preg_match_all('/[0-9]+(?:\.[0-9]+)?/', $clean_text, $matches);
+        $found_prices = $matches[0] ?? [];
+        $final_price = !empty($found_prices) ? min($found_prices) : $p->get_price();
+        if ($p->get_price() > 0 && $p->get_price() < $final_price) $final_price = $p->get_price();
+
+        $sku = $p->get_sku() ? ' (' . $p->get_sku() . ')' : '';
+        $currency = get_woocommerce_currency_symbol();
+        $stock = $p->get_stock_quantity();
+        $stock_msg = is_numeric($stock) ? " | Stock: $stock" : "";
+        $display_text = $p->get_name() . $sku . ' - ' . $currency . $final_price . $stock_msg;
+        
+        // Get assembly data
+        $has_assembly = get_post_meta($pid, '_assembly_enabled', true) === 'yes';
+        $assembly_price = $has_assembly ? floatval(get_post_meta($pid, '_assembly_price', true)) : 0;
+        
+        $results[] = [
+            'id' => $pid, 
+            'text' => $display_text, 
+            'price' => $final_price,
+            'has_assembly' => $has_assembly,
+            'assembly_price' => $assembly_price
+        ];
+    }
+    
+    wp_set_current_user($old_user);
+    wp_send_json($results);
+}
+
+// AJAX: Get order details
+add_action('wp_ajax_sa_get_order_details', 'sa_get_order_details_callback');
+function sa_get_order_details_callback() {
+    if (!current_user_can('view_sales_panel')) wp_die();
+    
+    $order_id = intval($_GET['order_id'] ?? 0);
+    $order = wc_get_order($order_id);
+    
+    if (!$order) {
+        wp_send_json_error('Order not found');
+    }
+    
+    // Security: Verify agent has access to this order's customer
+    if (!current_user_can('administrator')) {
+        $agent_id = get_current_user_id();
+        $customer_id = $order->get_customer_id();
+        $customer_agent = get_user_meta($customer_id, 'bagli_agent_id', true);
+        
+        if ($customer_agent != $agent_id) {
+            wp_send_json_error('Access denied to this order');
+        }
+    }
+    
+    $items = [];
+    foreach ($order->get_items() as $item) {
+        $items[] = [
+            'name' => $item->get_name(),
+            'qty' => $item->get_quantity(),
+            'total' => wc_price($item->get_total())
+        ];
+    }
+    
+    $data = [
+        'id' => $order->get_id(),
+        'date' => $order->get_date_created()->date('d.m.Y'),
+        'status' => ucfirst($order->get_status()),
+        'total' => $order->get_formatted_order_total(),
+        'items' => $items,
+        'billing' => $order->get_formatted_billing_address(),
+        'shipping' => $order->get_formatted_shipping_address() ?: 'Same as billing',
+        'notes' => $order->get_customer_note()
+    ];
+    
+    wp_send_json_success($data);
+}
+
+// AJAX: Get unpaid orders for customer
+add_action('wp_ajax_sa_get_unpaid_orders', 'sa_get_unpaid_orders_callback');
+function sa_get_unpaid_orders_callback() {
+    if (!current_user_can('view_sales_panel')) wp_die();
+    
+    $cid = intval($_GET['customer_id'] ?? 0);
+    
+    // Security: Verify agent has access to this customer
+    if ($cid > 0 && !current_user_can('administrator')) {
+        $agent_id = get_current_user_id();
+        $customer_agent = get_user_meta($cid, 'bagli_agent_id', true);
+        
+        if ($customer_agent != $agent_id) {
+            wp_send_json_error('Access denied to this customer');
+        }
+    }
+    
+    $unpaid_statuses = ['pending', 'on-hold', 'failed'];
+    
+    $orders = wc_get_orders([
+        'customer_id' => $cid,
+        'status' => $unpaid_statuses,
+        'limit' => -1,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ]);
+    
+    if (empty($orders)) {
+        wp_send_json_success('<div style="padding:20px;text-align:center;color:#10b981">No unpaid orders.</div>');
+    }
+    
+    $html = '<table style="width:100%;border-collapse:collapse;margin-top:10px">
+        <thead><tr style="background:#fff7ed;color:#9a3412">
+        <th style="padding:10px;text-align:left">Order</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th style="text-align:right">Total</th>
+        </tr></thead><tbody>';
+    
+    $total_unpaid = 0;
+    
+    foreach ($orders as $o) {
+        $html .= '<tr>
+            <td style="padding:10px;border-bottom:1px solid #eee">#'.$o->get_id().'</td>
+            <td style="padding:10px;border-bottom:1px solid #eee">'.$o->get_date_created()->date('d.m.Y').'</td>
+            <td style="padding:10px;border-bottom:1px solid #eee">'.ucfirst($o->get_status()).'</td>
+            <td style="padding:10px;border-bottom:1px solid #eee;text-align:right;font-weight:bold">'.$o->get_formatted_order_total().'</td>
+        </tr>';
+        $total_unpaid += $o->get_total();
+    }
+    
+    $html .= '<tr><td colspan="3" style="padding:10px;text-align:right;font-weight:bold">Total Unpaid:</td>
+        <td style="padding:10px;text-align:right;font-weight:bold;color:#dc2626">'.wc_price($total_unpaid).'</td></tr>';
+    $html .= '</tbody></table>';
+    
+    wp_send_json_success($html);
+}
+
+// User Profile: Add hierarchy fields
+add_action('show_user_profile', 'sa_hierarchy_fields');
+add_action('edit_user_profile', 'sa_hierarchy_fields');
+
+function sa_hierarchy_fields($user) {
+    if (!current_user_can('manage_options')) return;
+    
+    $roles = (array) $user->roles;
+    
+    // If customer, show agent assignment
+    if (in_array('customer', $roles) || empty($roles)) {
+        $assigned_agent = get_user_meta($user->ID, 'bagli_agent_id', true);
+        $agents = get_users(['role__in' => ['sales_agent', 'sales_manager']]); 
+        ?>
+        <h3>Sales System</h3>
+        <table class="form-table">
+            <tr>
+                <th>Assigned Sales Agent</th>
+                <td>
+                    <select name="bagli_agent_id">
+                        <option value="">-- None --</option>
+                        <?php foreach ($agents as $a): ?>
+                        <option value="<?= $a->ID ?>" <?= selected($assigned_agent, $a->ID, false) ?>>
+                            <?= esc_html($a->display_name) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <?php
+    }
+
+    // If sales agent, show manager assignment
+    if (in_array('sales_agent', $roles)) {
+        $assigned_manager = get_user_meta($user->ID, 'bagli_manager_id', true);
+        $managers = get_users(['role' => 'sales_manager']);
+        ?>
+        <h3>Sales System Hierarchy</h3>
+        <table class="form-table">
+            <tr>
+                <th>Reports to Manager</th>
+                <td>
+                    <select name="bagli_manager_id">
+                        <option value="">-- None --</option>
+                        <?php foreach ($managers as $m): ?>
+                        <option value="<?= $m->ID ?>" <?= selected($assigned_manager, $m->ID, false) ?>>
+                            <?= esc_html($m->display_name) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <?php
+    }
+}
+
+add_action('personal_options_update', 'sa_hierarchy_save');
+add_action('edit_user_profile_update', 'sa_hierarchy_save');
+
+function sa_hierarchy_save($user_id) {
+    if (!current_user_can('manage_options')) return;
+    
+    if (isset($_POST['bagli_agent_id'])) {
+        update_user_meta($user_id, 'bagli_agent_id', sanitize_text_field($_POST['bagli_agent_id']));
+    }
+    
+    if (isset($_POST['bagli_manager_id'])) {
+        update_user_meta($user_id, 'bagli_manager_id', sanitize_text_field($_POST['bagli_manager_id']));
+    }
+}
+
+// Add sales agent name to order meta in admin
+add_action('woocommerce_admin_order_data_after_order_details', function($order){
+    $agent = $order->get_meta('_sales_agent_name');
+    if($agent) {
+        echo '<p class="form-field form-field-wide"><strong>Sales Agent:</strong> ' . esc_html($agent) . '</p>';
+    }
+});
+
+// Customer Switch Functionality
+add_action('init', function () {
+    // Switch to customer
+    if (isset($_GET['switch_customer']) && current_user_can('switch_to_customer')) {
+        check_admin_referer('switch_customer');
+        $target_id = intval($_GET['switch_customer']);
+        $agent_id = get_current_user_id();
+        
+        // Verify agent has access to this customer
+        $assigned_agent = get_user_meta($target_id, 'bagli_agent_id', true);
+        $user = wp_get_current_user();
+        $allow_manager = get_option('sales_manager_can_order', 0);
+        
+        // Check if sales agent or authorized sales manager or admin
+        $is_authorized = ($assigned_agent == $agent_id) || 
+                        (in_array('sales_manager', $user->roles) && $allow_manager) ||
+                        current_user_can('administrator');
+        
+        if (!$is_authorized) {
+            wp_die('Access denied to this customer');
+        }
+        
+        // Create secure token
+        $token = wp_hash($agent_id . $target_id . time());
+        $switch_data = $agent_id . '|' . $token;
+        
+        // Store agent ID with token in cookie
+        setcookie('sa_switch_back', $switch_data, time() + 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        
+        // Also store in user meta as backup verification
+        update_user_meta($target_id, '_sa_switch_token', $token);
+        
+        // Switch to customer
+        wp_destroy_current_session();
+        wp_clear_auth_cookie();
+        wp_set_current_user($target_id);
+        wp_set_auth_cookie($target_id);
+        
+        wp_redirect(home_url());
+        exit;
+    }
+    
+    // Switch back to agent
+    if (isset($_GET['switch_back']) && isset($_COOKIE['sa_switch_back'])) {
+        check_admin_referer('switch_back');
+        
+        // Parse cookie data
+        $cookie_parts = explode('|', $_COOKIE['sa_switch_back']);
+        if (count($cookie_parts) !== 2) {
+            wp_die('Invalid session data');
+        }
+        
+        $agent_id = intval($cookie_parts[0]);
+        $stored_token = $cookie_parts[1];
+        
+        // Verify token
+        $current_user_id = get_current_user_id();
+        $expected_token = get_user_meta($current_user_id, '_sa_switch_token', true);
+        
+        if ($stored_token !== $expected_token) {
+            wp_die('Invalid session token');
+        }
+        
+        // Clean up
+        setcookie('sa_switch_back', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+        delete_user_meta($current_user_id, '_sa_switch_token');
+        
+        // Switch back to agent
+        wp_destroy_current_session();
+        wp_clear_auth_cookie();
+        wp_set_current_user($agent_id);
+        wp_set_auth_cookie($agent_id);
+        
+        wp_redirect(home_url('/sales-panel'));
+        exit;
+    }
+}, 5);
+
+// Display "Back to Panel" button when switched
+add_action('wp_footer', function () {
+    if (is_user_logged_in() && isset($_COOKIE['sa_switch_back'])) {
+        $switch_back_url = wp_nonce_url(add_query_arg('switch_back', '1', home_url()), 'switch_back');
+        echo '<a href="' . esc_url($switch_back_url) . '" style="position:fixed;bottom:20px;right:20px;background:#000;color:#fff;padding:15px 20px;border-radius:30px;z-index:9999;box-shadow:0 4px 10px rgba(0,0,0,0.3);text-decoration:none;font-weight:600;font-family:Inter,sans-serif;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Sales Panel
+        </a>';
+    }
+});
+
+// Sales Panel: Messaging Page
+function sa_render_messaging_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user_id = get_current_user_id();
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    $user_groups = b2b_get_user_messaging_groups($user_id);
+    
+    // If admin, show all groups
+    if (current_user_can('manage_options')) {
+        $user_groups = b2b_get_messaging_groups();
+    }
+    
+    $selected_group = sanitize_text_field($_GET['group'] ?? '');
+    if (empty($selected_group) && !empty($user_groups)) {
+        $selected_group = array_key_first($user_groups);
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Messaging</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+            .btn { padding: 10px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; transition: 0.2s; }
+            .btn:hover { opacity: 0.9; }
+            .btn-primary { background: var(--primary); color: #fff; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+        
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>" class="active"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <h1 style="margin-bottom: 30px;"><i class="fa-solid fa-comments"></i> Messaging</h1>
+            
+            <?php if (empty($user_groups)): ?>
+                <div class="card" style="text-align:center;padding:50px;">
+                    <i class="fa-solid fa-inbox" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+                    <h3 style="color:#9ca3af;">No messaging groups</h3>
+                    <p style="color:#9ca3af;">You are not assigned to any messaging groups yet.</p>
+                </div>
+            <?php else: ?>
+            
+            <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+                <div class="card" style="height:600px;overflow-y:auto;">
+                    <h3 style="margin-top:0;">Your Groups</h3>
+                    <?php foreach ($user_groups as $group_id => $group): ?>
+                        <a href="?sales_panel=messaging&group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
+                            <div style="font-weight:600;"><?= esc_html($group['name']) ?></div>
+                            <div style="font-size:12px;color:#9ca3af;"><?= count($group['members'] ?? []) ?> members</div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+                
+                <div class="card" style="height:600px;display:flex;flex-direction:column;">
+                    <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
+                        <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
+                            <?= esc_html($user_groups[$selected_group]['name']) ?>
+                        </h3>
+                        
+                        <div id="messages-container" style="flex:1;overflow-y:auto;padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:15px;"></div>
+                        
+                        <form id="messageForm" style="display:flex;gap:10px;">
+                            <input type="hidden" id="current_group" value="<?= $selected_group ?>">
+                            <textarea id="message_input" placeholder="Type your message..." style="flex:1;resize:none;height:60px;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required></textarea>
+                            <button type="submit" style="align-self:flex-end;height:60px;background:#10b981;color:white;border:none;padding:0 20px;border-radius:8px;cursor:pointer;">
+                                <i class="fa-solid fa-paper-plane"></i> Send
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <p style="text-align:center;color:#9ca3af;padding:50px;">Select a group to start messaging</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <script>
+            var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+            let lastTimestamp = 0;
+            
+            function loadMessages(initial = false) {
+                const groupId = document.getElementById('current_group')?.value;
+                if (!groupId) return;
+                
+                fetch(ajaxurl + '?action=b2b_get_messages&group_id=' + groupId + '&last_timestamp=' + (initial ? 0 : lastTimestamp))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.data.messages.length > 0) {
+                            const container = document.getElementById('messages-container');
+                            const shouldScroll = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+                            
+                            data.data.messages.forEach(msg => {
+                                const isMe = msg.user_id == <?= $user_id ?>;
+                                const div = document.createElement('div');
+                                div.style.marginBottom = '15px';
+                                div.style.textAlign = isMe ? 'right' : 'left';
+                                
+                                div.innerHTML = `
+                                    <div style="display:inline-block;max-width:70%;text-align:left;">
+                                        <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">${msg.user_name} • ${new Date(msg.time).toLocaleString()}</div>
+                                        <div style="background:${isMe ? '#3b82f6' : '#fff'};color:${isMe ? '#fff' : '#1f2937'};padding:10px 15px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                            ${msg.message}
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                container.appendChild(div);
+                                lastTimestamp = Math.max(lastTimestamp, msg.timestamp);
+                            });
+                            
+                            if (shouldScroll || initial) {
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        }
+                    });
+            }
+            
+            document.getElementById('messageForm')?.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const groupId = document.getElementById('current_group').value;
+                const message = document.getElementById('message_input').value.trim();
+                
+                if (!message) return;
+                
+                const formData = new FormData();
+                formData.append('action', 'b2b_send_message');
+                formData.append('group_id', groupId);
+                formData.append('message', message);
+                
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('message_input').value = '';
+                        loadMessages();
+                    } else {
+                        alert('Error: ' + (data.data || 'Failed to send'));
+                    }
+                });
+            });
+            
+            if (document.getElementById('current_group')) {
+                loadMessages(true);
+                setInterval(() => loadMessages(false), 5000);
+            }
+            </script>
+            
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// Sales Panel: Notes Page
+function sa_render_notes_page() {
+    if (!current_user_can('view_sales_panel')) {
+        wp_die('Access denied');
+    }
+    
+    $user_id = get_current_user_id();
+    $user = wp_get_current_user();
+    $panel_title = get_option('sales_panel_title', 'Agent Panel');
+    
+    $notes = get_option('b2b_notes', []);
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter notes based on visibility
+    $visible_notes = [];
+    foreach ($notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $visible_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $visible_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $visible_notes[$note_id] = $note;
+        }
+    }
+    
+    $messaging_groups = b2b_get_messaging_groups();
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <title><?= esc_html($panel_title) ?> - Notes</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root { --primary: #4f46e5; --bg: #f3f4f6; --text: #1f2937; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; }
+            .sidebar { width: 260px; background: #111827; color: #fff; min-height: 100vh; padding: 20px; position: fixed; z-index: 99; transition: 0.3s; }
+            .sidebar-header { margin-bottom: 40px; font-size: 20px; font-weight: 700; color: #fff; }
+            .sidebar a { display: flex; align-items: center; gap: 10px; padding: 12px; color: #9ca3af; text-decoration: none; border-radius: 8px; margin-bottom: 5px; font-weight: 500; }
+            .sidebar a:hover, .sidebar a.active { background: var(--primary); color: #fff; }
+            .main { margin-left: 260px; padding: 40px; flex: 1; width: 100%; }
+            .mobile-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 100; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+            @media(max-width:768px) { 
+                .sidebar { transform: translateX(-100%); } 
+                .sidebar.active { transform: translateX(0); } 
+                .main { margin-left: 0; padding: 20px; padding-top: 70px; } 
+                .mobile-toggle { display: block; }
+            }
+            .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('active')">
+            <i class="fa-solid fa-bars" style="font-size:20px;color:#333"></i>
+        </div>
+        
+        <div class="sidebar">
+            <div class="sidebar-header"><i class="fa-solid fa-chart-pie"></i> <?= esc_html($panel_title) ?></div>
+            <a href="<?= home_url('/sales-panel/dashboard') ?>"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+            <a href="<?= home_url('/sales-panel/customers') ?>"><i class="fa-solid fa-users"></i> My Customers</a>
+            <a href="<?= home_url('/sales-panel/orders') ?>"><i class="fa-solid fa-box-open"></i> Orders</a>
+            <a href="<?= home_url('/sales-panel/commissions') ?>"><i class="fa-solid fa-chart-line"></i> Reports</a>
+            <a href="<?= home_url('/sales-panel/messaging') ?>"><i class="fa-solid fa-comments"></i> Messaging</a>
+            <a href="<?= home_url('/sales-panel/notes') ?>" class="active"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+            <a href="<?= wp_logout_url(home_url('/sales-login')) ?>" style="margin-top:auto;color:#ef4444"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+        
+        <div class="main">
+            <h1 style="margin-bottom: 30px;"><i class="fa-solid fa-note-sticky"></i> Notes</h1>
+            
+            <?php if (empty($visible_notes)): ?>
+                <div class="card" style="text-align:center;padding:50px;">
+                    <i class="fa-solid fa-sticky-note" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+                    <h3 style="color:#9ca3af;">No notes yet</h3>
+                </div>
+            <?php else: ?>
+            
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(350px, 1fr));gap:20px;">
+                <?php foreach ($visible_notes as $note_id => $note): ?>
+                <div class="card" style="background:<?= $note['visibility'] == 'general' ? '#fffbeb' : '#eff6ff' ?>;border-left:4px solid <?= $note['visibility'] == 'general' ? '#f59e0b' : '#3b82f6' ?>;">
+                    <h3 style="margin:0 0 10px 0;color:#1f2937;"><?= esc_html($note['title']) ?></h3>
+                    <div style="font-size:14px;color:#4b5563;margin-bottom:15px;white-space:pre-wrap;">
+                        <?= esc_html($note['content']) ?>
+                    </div>
+                    <div style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+                        <div><strong>By:</strong> <?= esc_html($note['author']) ?></div>
+                        <div><strong>Visibility:</strong> <?= $note['visibility'] == 'general' ? 'Everyone' : esc_html($messaging_groups[$note['group_id']]['name'] ?? 'Unknown Group') ?></div>
+                        <div><strong>Created:</strong> <?= date('d.m.Y H:i', strtotime($note['created'])) ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// End of Sales Agent System Phase 4
+
+/* =====================================================
+   MESSAGING AND NOTES SYSTEM
+   - Admin creates messaging groups
+   - Users assigned to groups can communicate
+   - Notifications for new messages
+   - Notes system with group/general visibility
+===================================================== */
+
+// Helper function: Get all messaging groups
+function b2b_get_messaging_groups() {
+    return get_option('b2b_messaging_groups', []);
+}
+
+// Helper function: Check if user is in a messaging group
+function b2b_user_in_messaging_group($user_id, $group_id) {
+    $groups = b2b_get_messaging_groups();
+    if (!isset($groups[$group_id])) return false;
+    
+    $members = $groups[$group_id]['members'] ?? [];
+    return in_array($user_id, $members);
+}
+
+// Helper function: Get user's messaging groups
+function b2b_get_user_messaging_groups($user_id) {
+    $groups = b2b_get_messaging_groups();
+    $user_groups = [];
+    
+    foreach ($groups as $group_id => $group) {
+        $members = $group['members'] ?? [];
+        if (in_array($user_id, $members)) {
+            $user_groups[$group_id] = $group;
+        }
+    }
+    
+    return $user_groups;
+}
+
+// AJAX: Send message to group
+add_action('wp_ajax_b2b_send_message', function() {
+    if (!is_user_logged_in()) wp_die();
+    
+    $group_id = sanitize_text_field($_POST['group_id'] ?? '');
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    
+    if (empty($group_id) || empty($message)) {
+        wp_send_json_error('Invalid data');
+    }
+    
+    $user_id = get_current_user_id();
+    
+    // Check if user is in this group
+    if (!current_user_can('manage_options') && !b2b_user_in_messaging_group($user_id, $group_id)) {
+        wp_send_json_error('Not authorized');
+    }
+    
+    // Get existing messages
+    $messages = get_option('b2b_messages_' . $group_id, []);
+    
+    // Add new message
+    $user = wp_get_current_user();
+    $messages[] = [
+        'user_id' => $user_id,
+        'user_name' => $user->display_name,
+        'message' => $message,
+        'time' => current_time('mysql'),
+        'timestamp' => time()
+    ];
+    
+    // Keep last 500 messages
+    if (count($messages) > 500) {
+        $messages = array_slice($messages, -500);
+    }
+    
+    update_option('b2b_messages_' . $group_id, $messages);
+    
+    // Update unread count for other group members
+    $groups = b2b_get_messaging_groups();
+    if (isset($groups[$group_id]['members'])) {
+        foreach ($groups[$group_id]['members'] as $member_id) {
+            if ($member_id != $user_id) {
+                $unread = get_user_meta($member_id, 'b2b_unread_messages', true) ?: 0;
+                update_user_meta($member_id, 'b2b_unread_messages', $unread + 1);
+            }
+        }
+    }
+    
+    wp_send_json_success(['message' => 'Sent']);
+});
+
+// AJAX: Get messages for a group
+add_action('wp_ajax_b2b_get_messages', function() {
+    if (!is_user_logged_in()) wp_die();
+    
+    $group_id = sanitize_text_field($_GET['group_id'] ?? '');
+    $last_timestamp = intval($_GET['last_timestamp'] ?? 0);
+    
+    if (empty($group_id)) {
+        wp_send_json_error('Invalid group');
+    }
+    
+    $user_id = get_current_user_id();
+    
+    // Check if user is in this group
+    if (!current_user_can('manage_options') && !b2b_user_in_messaging_group($user_id, $group_id)) {
+        wp_send_json_error('Not authorized');
+    }
+    
+    // Get messages
+    $messages = get_option('b2b_messages_' . $group_id, []);
+    
+    // Filter new messages only
+    if ($last_timestamp > 0) {
+        $messages = array_filter($messages, function($msg) use ($last_timestamp) {
+            return ($msg['timestamp'] ?? 0) > $last_timestamp;
+        });
+    }
+    
+    // Clear unread count for this user
+    if (!$last_timestamp) {
+        delete_user_meta($user_id, 'b2b_unread_messages');
+    }
+    
+    wp_send_json_success(['messages' => array_values($messages)]);
+});
+
+// AJAX: Save note
+add_action('wp_ajax_b2b_save_note', function() {
+    if (!current_user_can('manage_options')) wp_die();
+    
+    $note_id = sanitize_text_field($_POST['note_id'] ?? '');
+    $title = sanitize_text_field($_POST['title'] ?? '');
+    $content = sanitize_textarea_field($_POST['content'] ?? '');
+    $visibility = sanitize_text_field($_POST['visibility'] ?? 'general');
+    $group_id = sanitize_text_field($_POST['group_id'] ?? '');
+    
+    if (empty($title) || empty($content)) {
+        wp_send_json_error('Title and content required');
+    }
+    
+    $notes = get_option('b2b_notes', []);
+    
+    if (empty($note_id)) {
+        // New note
+        $note_id = 'note_' . time() . '_' . wp_generate_password(8, false);
+    }
+    
+    $notes[$note_id] = [
+        'title' => $title,
+        'content' => $content,
+        'visibility' => $visibility,
+        'group_id' => $group_id,
+        'author' => wp_get_current_user()->display_name,
+        'created' => current_time('mysql'),
+        'updated' => current_time('mysql')
+    ];
+    
+    update_option('b2b_notes', $notes);
+    
+    wp_send_json_success(['message' => 'Note saved']);
+});
+
+// AJAX: Delete note
+add_action('wp_ajax_b2b_delete_note', function() {
+    if (!current_user_can('manage_options')) wp_die();
+    
+    $note_id = sanitize_text_field($_POST['note_id'] ?? '');
+    
+    if (empty($note_id)) {
+        wp_send_json_error('Invalid note');
+    }
+    
+    $notes = get_option('b2b_notes', []);
+    unset($notes[$note_id]);
+    update_option('b2b_notes', $notes);
+    
+    wp_send_json_success(['message' => 'Note deleted']);
+});
+
+// PAGE: Messaging Groups Management
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'messaging_groups') return;
+    b2b_adm_guard();
+    
+    // Handle form submission
+    if (isset($_POST['save_messaging_group'])) {
+        $group_id = sanitize_text_field($_POST['group_id'] ?? '');
+        $group_name = sanitize_text_field($_POST['group_name'] ?? '');
+        $members = $_POST['members'] ?? [];
+        
+        if (!empty($group_name)) {
+            $groups = b2b_get_messaging_groups();
+            
+            if (empty($group_id)) {
+                $group_id = 'group_' . time();
+            }
+            
+            $groups[$group_id] = [
+                'name' => $group_name,
+                'members' => array_map('intval', $members),
+                'created' => current_time('mysql')
+            ];
+            
+            update_option('b2b_messaging_groups', $groups);
+            
+            echo '<script>window.location.href="' . home_url('/b2b-panel/messaging/groups') . '";</script>';
+            exit;
+        }
+    }
+    
+    // Handle delete
+    if (isset($_GET['delete'])) {
+        $group_id = sanitize_text_field($_GET['delete']);
+        $groups = b2b_get_messaging_groups();
+        unset($groups[$group_id]);
+        update_option('b2b_messaging_groups', $groups);
+        
+        // Also delete messages
+        delete_option('b2b_messages_' . $group_id);
+        
+        echo '<script>window.location.href="' . home_url('/b2b-panel/messaging/groups') . '";</script>';
+        exit;
+    }
+    
+    $groups = b2b_get_messaging_groups();
+    $all_users = get_users(['role__not_in' => ['customer']]);
+    
+    b2b_adm_header('Messaging Groups');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-users"></i> Messaging Groups</h1>
+        <button class="btn" onclick="document.getElementById('addGroupModal').style.display='block'">
+            <i class="fa-solid fa-plus"></i> New Group
+        </button>
+    </div>
+    
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Group Name</th>
+                    <th>Members</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($groups)): ?>
+                    <tr><td colspan="4" style="text-align:center;padding:30px;color:#9ca3af;">No groups yet. Create your first messaging group!</td></tr>
+                <?php else: ?>
+                    <?php foreach ($groups as $group_id => $group): ?>
+                    <tr>
+                        <td><strong><?= esc_html($group['name']) ?></strong></td>
+                        <td><?= count($group['members'] ?? []) ?> members</td>
+                        <td><?= date('d.m.Y', strtotime($group['created'])) ?></td>
+                        <td>
+                            <a href="<?= home_url('/b2b-panel/messaging?group=' . $group_id) ?>" class="btn btn-light" style="padding:6px 12px;">
+                                <i class="fa-solid fa-comments"></i> View
+                            </a>
+                            <button class="btn btn-secondary" style="padding:6px 12px;" onclick="editGroup('<?= $group_id ?>')">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+                            <a href="?delete=<?= $group_id ?>" class="btn btn-danger" style="padding:6px 12px;" onclick="return confirm('Delete this group?')">
+                                <i class="fa-solid fa-trash"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Add/Edit Group Modal -->
+    <div id="addGroupModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+        <div style="background:white;margin:5% auto;padding:30px;width:90%;max-width:600px;border-radius:12px;position:relative;">
+            <span onclick="document.getElementById('addGroupModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+            <h2 style="margin:0 0 20px 0;"><i class="fa-solid fa-users"></i> <span id="modalTitle">New Messaging Group</span></h2>
+            <form method="post">
+                <input type="hidden" name="group_id" id="group_id">
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Group Name</label>
+                <input type="text" name="group_name" id="group_name" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;">
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Members</label>
+                <div style="max-height:300px;overflow-y:auto;border:1px solid #d1d5db;border-radius:6px;padding:10px;margin-bottom:20px;">
+                    <?php foreach ($all_users as $user): ?>
+                        <label style="display:block;padding:8px;cursor:pointer;border-radius:4px;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                            <input type="checkbox" name="members[]" value="<?= $user->ID ?>" style="margin-right:8px;" class="member-checkbox">
+                            <?= esc_html($user->display_name) ?> <span style="color:#9ca3af;font-size:12px;">(<?= $user->user_email ?>)</span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+                
+                <button type="submit" name="save_messaging_group" class="btn" style="width:100%;">
+                    <i class="fa-solid fa-save"></i> Save Group
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+    function editGroup(groupId) {
+        const groups = <?= json_encode($groups) ?>;
+        const group = groups[groupId];
+        
+        document.getElementById('modalTitle').textContent = 'Edit Group';
+        document.getElementById('group_id').value = groupId;
+        document.getElementById('group_name').value = group.name;
+        
+        // Uncheck all
+        document.querySelectorAll('.member-checkbox').forEach(cb => cb.checked = false);
+        
+        // Check group members
+        group.members.forEach(memberId => {
+            const checkbox = document.querySelector(`.member-checkbox[value="${memberId}"]`);
+            if (checkbox) checkbox.checked = true;
+        });
+        
+        document.getElementById('addGroupModal').style.display = 'block';
+    }
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+});
+
+// PAGE: Messaging Interface
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'messaging') return;
+    b2b_adm_guard();
+    
+    $user_id = get_current_user_id();
+    $user_groups = b2b_get_user_messaging_groups($user_id);
+    
+    // If admin, show all groups
+    if (current_user_can('manage_options')) {
+        $user_groups = b2b_get_messaging_groups();
+    }
+    
+    $selected_group = sanitize_text_field($_GET['group'] ?? '');
+    if (empty($selected_group) && !empty($user_groups)) {
+        $selected_group = array_key_first($user_groups);
+    }
+    
+    b2b_adm_header('Messaging');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-comments"></i> Messaging</h1>
+        <?php if (current_user_can('manage_options')): ?>
+        <a href="<?= home_url('/b2b-panel/messaging/groups') ?>" class="btn">
+            <i class="fa-solid fa-users-gear"></i> Manage Groups
+        </a>
+        <?php endif; ?>
+    </div>
+    
+    <?php if (empty($user_groups)): ?>
+        <div class="card" style="text-align:center;padding:50px;">
+            <i class="fa-solid fa-inbox" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+            <h3 style="color:#9ca3af;">No messaging groups</h3>
+            <p style="color:#9ca3af;">You are not assigned to any messaging groups yet.</p>
+            <?php if (current_user_can('manage_options')): ?>
+                <a href="<?= home_url('/b2b-panel/messaging/groups') ?>" class="btn" style="margin-top:20px;">
+                    <i class="fa-solid fa-plus"></i> Create a Group
+                </a>
+            <?php endif; ?>
+        </div>
+    <?php else: ?>
+    
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+        <!-- Groups List -->
+        <div class="card" style="height:600px;overflow-y:auto;">
+            <h3 style="margin-top:0;">Your Groups</h3>
+            <?php foreach ($user_groups as $group_id => $group): ?>
+                <a href="?group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
+                    <div style="font-weight:600;"><?= esc_html($group['name']) ?></div>
+                    <div style="font-size:12px;color:#9ca3af;"><?= count($group['members'] ?? []) ?> members</div>
+                </a>
+            <?php endforeach; ?>
+        </div>
+        
+        <!-- Messages -->
+        <div class="card" style="height:600px;display:flex;flex-direction:column;">
+            <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
+                <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
+                    <?= esc_html($user_groups[$selected_group]['name']) ?>
+                </h3>
+                
+                <div id="messages-container" style="flex:1;overflow-y:auto;padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:15px;">
+                    <!-- Messages will be loaded here -->
+                </div>
+                
+                <form id="messageForm" style="display:flex;gap:10px;">
+                    <input type="hidden" id="current_group" value="<?= $selected_group ?>">
+                    <textarea id="message_input" placeholder="Type your message..." style="flex:1;resize:none;height:60px;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required></textarea>
+                    <button type="submit" class="btn" style="align-self:flex-end;height:60px;">
+                        <i class="fa-solid fa-paper-plane"></i> Send
+                    </button>
+                </form>
+            <?php else: ?>
+                <p style="text-align:center;color:#9ca3af;padding:50px;">Select a group to start messaging</p>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <script>
+    let lastTimestamp = 0;
+    
+    function loadMessages(initial = false) {
+        const groupId = document.getElementById('current_group').value;
+        if (!groupId) return;
+        
+        fetch(ajaxurl + '?action=b2b_get_messages&group_id=' + groupId + '&last_timestamp=' + (initial ? 0 : lastTimestamp))
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.data.messages.length > 0) {
+                    const container = document.getElementById('messages-container');
+                    const shouldScroll = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+                    
+                    data.data.messages.forEach(msg => {
+                        const isMe = msg.user_id == <?= $user_id ?>;
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '15px';
+                        div.style.textAlign = isMe ? 'right' : 'left';
+                        
+                        div.innerHTML = `
+                            <div style="display:inline-block;max-width:70%;text-align:left;">
+                                <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">${msg.user_name} • ${new Date(msg.time).toLocaleString()}</div>
+                                <div style="background:${isMe ? '#3b82f6' : '#fff'};color:${isMe ? '#fff' : '#1f2937'};padding:10px 15px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                    ${msg.message}
+                                </div>
+                            </div>
+                        `;
+                        
+                        container.appendChild(div);
+                        lastTimestamp = Math.max(lastTimestamp, msg.timestamp);
+                    });
+                    
+                    if (shouldScroll || initial) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+            });
+    }
+    
+    document.getElementById('messageForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const groupId = document.getElementById('current_group').value;
+        const message = document.getElementById('message_input').value.trim();
+        
+        if (!message) return;
+        
+        const formData = new FormData();
+        formData.append('action', 'b2b_send_message');
+        formData.append('group_id', groupId);
+        formData.append('message', message);
+        
+        fetch(ajaxurl, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('message_input').value = '';
+                loadMessages();
+            } else {
+                alert('Error: ' + (data.data || 'Failed to send'));
+            }
+        });
+    });
+    
+    // Load initial messages
+    loadMessages(true);
+    
+    // Poll for new messages every 5 seconds
+    setInterval(() => loadMessages(false), 5000);
+    </script>
+    
+    <?php endif; ?>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+});
+
+// PAGE: Notes Management
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'notes') return;
+    b2b_adm_guard();
+    
+    $notes = get_option('b2b_notes', []);
+    $user_id = get_current_user_id();
+    $user_groups = array_keys(b2b_get_user_messaging_groups($user_id));
+    
+    // Filter notes based on visibility
+    $visible_notes = [];
+    foreach ($notes as $note_id => $note) {
+        if ($note['visibility'] == 'general') {
+            $visible_notes[$note_id] = $note;
+        } elseif ($note['visibility'] == 'group' && in_array($note['group_id'], $user_groups)) {
+            $visible_notes[$note_id] = $note;
+        } elseif (current_user_can('manage_options')) {
+            $visible_notes[$note_id] = $note;
+        }
+    }
+    
+    $messaging_groups = b2b_get_messaging_groups();
+    
+    b2b_adm_header('Notes');
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title"><i class="fa-solid fa-note-sticky"></i> Notes</h1>
+        <?php if (current_user_can('manage_options')): ?>
+        <button class="btn" onclick="openNoteModal()">
+            <i class="fa-solid fa-plus"></i> New Note
+        </button>
+        <?php endif; ?>
+    </div>
+    
+    <?php if (empty($visible_notes)): ?>
+        <div class="card" style="text-align:center;padding:50px;">
+            <i class="fa-solid fa-sticky-note" style="font-size:64px;color:#e5e7eb;margin-bottom:20px;"></i>
+            <h3 style="color:#9ca3af;">No notes yet</h3>
+            <?php if (current_user_can('manage_options')): ?>
+                <p style="color:#9ca3af;">Create your first note to share important information.</p>
+            <?php endif; ?>
+        </div>
+    <?php else: ?>
+    
+    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(350px, 1fr));gap:20px;">
+        <?php foreach ($visible_notes as $note_id => $note): ?>
+        <div class="card" style="background:<?= $note['visibility'] == 'general' ? '#fffbeb' : '#eff6ff' ?>;border-left:4px solid <?= $note['visibility'] == 'general' ? '#f59e0b' : '#3b82f6' ?>;">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
+                <h3 style="margin:0;color:#1f2937;"><?= esc_html($note['title']) ?></h3>
+                <?php if (current_user_can('manage_options')): ?>
+                <div>
+                    <button class="btn btn-light" style="padding:4px 8px;font-size:12px;" onclick="editNote('<?= $note_id ?>')">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger" style="padding:4px 8px;font-size:12px;" onclick="deleteNote('<?= $note_id ?>')">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <div style="font-size:14px;color:#4b5563;margin-bottom:15px;white-space:pre-wrap;">
+                <?= esc_html($note['content']) ?>
+            </div>
+            
+            <div style="font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:10px;">
+                <div><strong>By:</strong> <?= esc_html($note['author']) ?></div>
+                <div><strong>Visibility:</strong> <?= $note['visibility'] == 'general' ? 'Everyone' : esc_html($messaging_groups[$note['group_id']]['name'] ?? 'Unknown Group') ?></div>
+                <div><strong>Created:</strong> <?= date('d.m.Y H:i', strtotime($note['created'])) ?></div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    
+    <?php endif; ?>
+    
+    <!-- Add/Edit Note Modal -->
+    <?php if (current_user_can('manage_options')): ?>
+    <div id="noteModal" style="display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);">
+        <div style="background:white;margin:5% auto;padding:30px;width:90%;max-width:600px;border-radius:12px;position:relative;">
+            <span onclick="document.getElementById('noteModal').style.display='none'" style="position:absolute;right:20px;top:20px;font-size:28px;font-weight:bold;color:#999;cursor:pointer;">&times;</span>
+            <h2 style="margin:0 0 20px 0;"><i class="fa-solid fa-note-sticky"></i> <span id="noteModalTitle">New Note</span></h2>
+            <form id="noteForm">
+                <input type="hidden" id="note_id">
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Title</label>
+                <input type="text" id="note_title" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;">
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Content</label>
+                <textarea id="note_content" required style="width:100%;height:150px;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;resize:vertical;"></textarea>
+                
+                <label style="display:block;margin-bottom:5px;font-weight:600;">Visibility</label>
+                <select id="note_visibility" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:15px;">
+                    <option value="general">General (Everyone)</option>
+                    <?php foreach ($messaging_groups as $group_id => $group): ?>
+                        <option value="group" data-group-id="<?= $group_id ?>"><?= esc_html($group['name']) ?> Only</option>
+                    <?php endforeach; ?>
+                </select>
+                
+                <button type="submit" class="btn" style="width:100%;">
+                    <i class="fa-solid fa-save"></i> Save Note
+                </button>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
+    
+    <script>
+    const notes = <?= json_encode($notes) ?>;
+    
+    function openNoteModal() {
+        document.getElementById('noteModalTitle').textContent = 'New Note';
+        document.getElementById('note_id').value = '';
+        document.getElementById('note_title').value = '';
+        document.getElementById('note_content').value = '';
+        document.getElementById('note_visibility').selectedIndex = 0;
+        document.getElementById('noteModal').style.display = 'block';
+    }
+    
+    function editNote(noteId) {
+        const note = notes[noteId];
+        document.getElementById('noteModalTitle').textContent = 'Edit Note';
+        document.getElementById('note_id').value = noteId;
+        document.getElementById('note_title').value = note.title;
+        document.getElementById('note_content').value = note.content;
+        
+        if (note.visibility === 'general') {
+            document.getElementById('note_visibility').selectedIndex = 0;
+        } else {
+            const options = document.querySelectorAll('#note_visibility option');
+            options.forEach((opt, idx) => {
+                if (opt.getAttribute('data-group-id') === note.group_id) {
+                    document.getElementById('note_visibility').selectedIndex = idx;
+                }
+            });
+        }
+        
+        document.getElementById('noteModal').style.display = 'block';
+    }
+    
+    function deleteNote(noteId) {
+        if (!confirm('Delete this note?')) return;
+        
+        const formData = new FormData();
+        formData.append('action', 'b2b_delete_note');
+        formData.append('note_id', noteId);
+        
+        fetch(ajaxurl, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error deleting note');
+            }
+        });
+    }
+    
+    document.getElementById('noteForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const select = document.getElementById('note_visibility');
+        const selectedOption = select.options[select.selectedIndex];
+        const visibility = selectedOption.value;
+        const groupId = selectedOption.getAttribute('data-group-id') || '';
+        
+        const formData = new FormData();
+        formData.append('action', 'b2b_save_note');
+        formData.append('note_id', document.getElementById('note_id').value);
+        formData.append('title', document.getElementById('note_title').value);
+        formData.append('content', document.getElementById('note_content').value);
+        formData.append('visibility', visibility);
+        formData.append('group_id', groupId);
+        
+        fetch(ajaxurl, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error saving note: ' + (data.data || 'Unknown error'));
+            }
+        });
+    });
+    </script>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+});
+
+// Add unread message count to dashboard
+add_action('wp_footer', function() {
+    if (!is_user_logged_in() || !strpos($_SERVER['REQUEST_URI'], '/b2b-panel')) return;
+    
+    $user_id = get_current_user_id();
+    $unread = get_user_meta($user_id, 'b2b_unread_messages', true) ?: 0;
+    
+    if ($unread > 0) {
+        ?>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagingLink = document.querySelector('a[href*="/b2b-panel/messaging"]');
+            if (messagingLink && !messagingLink.querySelector('.badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'badge';
+                badge.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:11px;margin-left:8px;';
+                badge.textContent = '<?= $unread ?>';
+                messagingLink.appendChild(badge);
+            }
+        });
+        </script>
+        <?php
+    }
+});
+
+// Display recent notes on dashboard
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'dashboard') return;
+    
+    // This will be displayed on dashboard - let me add it there
+}, 999);
+
+// End of Messaging and Notes System

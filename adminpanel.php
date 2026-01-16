@@ -11546,7 +11546,9 @@ function init_nmi_gateway_class() {
                 ),
                 'allowed_card_types' => array(
                     'title' => 'Allowed Card Types',
-                    'type' => 'multiselect',
+                    'type' => 'select',
+                    'class' => 'wc-enhanced-select',
+                    'css' => 'min-width:300px;',
                     'description' => 'Select which card types to accept.',
                     'default' => array('visa', 'mastercard', 'amex', 'discover'),
                     'options' => array(
@@ -11557,7 +11559,10 @@ function init_nmi_gateway_class() {
                         'diners' => 'Diners Club',
                         'jcb' => 'JCB'
                     ),
-                    'desc_tip' => true
+                    'desc_tip' => true,
+                    'custom_attributes' => array(
+                        'multiple' => 'multiple'
+                    )
                 )
             );
         }
@@ -11713,7 +11718,12 @@ function init_nmi_gateway_class() {
             // Log request if debug mode enabled
             if ($this->debug_mode) {
                 $log_data = $post_data;
-                $log_data['ccnumber'] = '****' . substr($log_data['ccnumber'], -4);
+                // Mask card number - show only last 4 digits if long enough
+                if (isset($log_data['ccnumber']) && strlen($log_data['ccnumber']) >= 4) {
+                    $log_data['ccnumber'] = '****' . substr($log_data['ccnumber'], -4);
+                } else {
+                    $log_data['ccnumber'] = '****';
+                }
                 $log_data['cvv'] = '***';
                 $this->log('NMI Payment Request: ' . json_encode($log_data));
             }
@@ -11885,7 +11895,7 @@ add_action('template_redirect', function () {
             'test_mode' => isset($_POST['nmi_test_mode']) ? 'yes' : 'no',
             'api_username' => sanitize_text_field($_POST['nmi_api_username']),
             'api_password' => sanitize_text_field($_POST['nmi_api_password']),
-            'capture_mode' => sanitize_text_field($_POST['nmi_capture_mode'] ?? 'sale'),
+            'capture_mode' => sanitize_text_field(isset($_POST['nmi_capture_mode']) ? $_POST['nmi_capture_mode'] : 'sale'),
             'debug_mode' => isset($_POST['nmi_debug_mode']) ? 'yes' : 'no',
             'allowed_card_types' => isset($_POST['nmi_allowed_card_types']) && is_array($_POST['nmi_allowed_card_types']) 
                 ? array_map('sanitize_text_field', $_POST['nmi_allowed_card_types']) 

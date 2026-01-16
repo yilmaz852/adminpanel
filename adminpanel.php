@@ -1464,8 +1464,9 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a:hover::after, .sidebar.collapsed .submenu-toggle:hover::after{opacity:1}
         
         /* Collapsed Sidebar - Hover Submenu */
-        .sidebar.collapsed .submenu-toggle:hover + .submenu{display:block !important;position:absolute;left:100%;top:0;background:var(--sidebar-bg);min-width:200px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
-        .sidebar.collapsed .submenu-toggle:hover + .submenu a{display:block;padding:12px 15px;margin-bottom:5px}
+        .sidebar.collapsed .submenu{display:none !important;position:absolute;left:100%;background:var(--sidebar-bg);min-width:200px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:10px;margin-left:10px;z-index:1001}
+        .sidebar.collapsed .submenu.show{display:block !important}
+        .sidebar.collapsed .submenu a{display:block;padding:12px 15px;margin-bottom:5px}
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1497,6 +1498,19 @@ function b2b_adm_header($title) {
         .badge-warning {background:var(--warning-light);color:#d97706}
         .badge-danger {background:var(--danger-light);color:var(--danger)}
         .badge-info {background:var(--info-light);color:#0284c7}
+        
+        /* Mobile Responsive Tables */
+        .table-responsive {overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:20px;border-radius:8px}
+        @media (max-width:768px) {
+            .table-responsive table{min-width:800px}
+        }
+        
+        /* Pagination Styles */
+        .pagination{margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+        .pagination a,.pagination span{padding:10px 16px;border:1px solid var(--border);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.3s ease;font-weight:500}
+        .pagination a:hover{background:var(--bg);border-color:var(--primary);color:var(--primary);transform:translateY(-2px)}
+        .pagination span.current,.pagination a.active{background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);color:var(--white);border-color:transparent;box-shadow:0 4px 12px rgba(138,95,232,0.3)}
+        .pagination .prev,.pagination .next{font-weight:600}
 
         /* Column Edit Dropdown */
         .col-toggler { position:relative; display:inline-block; }
@@ -1927,7 +1941,13 @@ function b2b_adm_header($title) {
                 toggle.addEventListener('mouseenter', function() {
                     if (sidebar.classList.contains('collapsed')) {
                         hoverTimeout = setTimeout(() => {
-                            submenu.style.display = 'block';
+                            // Calculate proper position
+                            const toggleRect = toggle.getBoundingClientRect();
+                            const sidebarRect = sidebar.getBoundingClientRect();
+                            const relativeTop = toggleRect.top - sidebarRect.top + sidebar.scrollTop;
+                            
+                            submenu.style.top = relativeTop + 'px';
+                            submenu.classList.add('show');
                         }, 100);
                     }
                 });
@@ -1938,7 +1958,7 @@ function b2b_adm_header($title) {
                     if (sidebar.classList.contains('collapsed')) {
                         setTimeout(() => {
                             if (!submenu.matches(':hover') && !toggle.matches(':hover')) {
-                                submenu.style.display = '';
+                                submenu.classList.remove('show');
                             }
                         }, 200);
                     }
@@ -1948,14 +1968,14 @@ function b2b_adm_header($title) {
                 submenu.addEventListener('mouseenter', function() {
                     clearTimeout(hoverTimeout);
                     if (sidebar.classList.contains('collapsed')) {
-                        this.style.display = 'block';
+                        this.classList.add('show');
                     }
                 });
                 
                 // Mouse leave on submenu
                 submenu.addEventListener('mouseleave', function() {
                     if (sidebar.classList.contains('collapsed')) {
-                        this.style.display = '';
+                        this.classList.remove('show');
                     }
                 });
             }
@@ -2677,8 +2697,54 @@ add_action('template_redirect', function () {
     }
     ?>
 
-    <div class="page-header"><h1 class="page-title">Overview</h1></div>
+    <div class="page-header">
+        <h1 class="page-title">Overview</h1>
+        <button id="screenOptionsToggle" class="secondary" style="display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-sliders"></i> Screen Options
+        </button>
+    </div>
+    
+    <!-- Screen Options Panel -->
+    <div id="screenOptionsPanel" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:20px;box-shadow:var(--shadow)">
+        <h4 style="margin:0 0 15px 0;color:var(--text)">Show/Hide Widgets</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="stats" checked> Statistics Overview
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="orders-summary" checked> Orders Summary
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="status" checked> Order Status & Delays
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="low-stock" checked> Low Stock Alert
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="top-products" checked> Top Products
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="recent-customers" checked> Recent Customers
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="agents" checked> Sales Agent Performance
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="charts" checked> Sales Charts
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="quick-actions" checked> Quick Actions
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="checkbox" class="widget-toggle" data-widget="system-status" checked> System Status
+            </label>
+        </div>
+        <p style="margin:15px 0 0 0;color:var(--text-muted);font-size:12px"><i class="fa-solid fa-info-circle"></i> Drag widgets to reorder them. Settings are saved automatically.</p>
+    </div>
 
+    <div class="dashboard-widgets" id="dashboardWidgets">
+
+    <div class="dashboard-widget" data-widget="stats" draggable="true">
     <div class="grid-main" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-bottom:30px">
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
             <div><small style="color:#6b7280;font-weight:600;text-transform:uppercase">Sales This Month</small><div style="font-size:32px;font-weight:800;color:#10b981"><?= wc_price($month_sales?:0) ?></div></div>
@@ -2699,8 +2765,49 @@ add_action('template_redirect', function () {
             </div>
         </a>
     </div>
+    </div>
 
+    <div class="dashboard-widget" data-widget="orders-summary" draggable="true">
+    <div class="card" style="background:linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);color:white">
+        <h3 style="margin:0 0 20px 0;color:white;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-shopping-cart"></i> Orders Summary
+        </h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <?php 
+            $today_orders = wc_orders_count('processing') + wc_orders_count('pending');
+            $month_orders = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type='shop_order' AND post_date >= %s", date('Y-m-01')));
+            ?>
+            <div>
+                <div style="font-size:12px;opacity:0.9;margin-bottom:5px">Today's Orders</div>
+                <div style="font-size:32px;font-weight:800"><?= $today_orders ?></div>
+            </div>
+            <div>
+                <div style="font-size:12px;opacity:0.9;margin-bottom:5px">This Month</div>
+                <div style="font-size:32px;font-weight:800"><?= $month_orders ?></div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="low-stock" draggable="true">
+    <div class="card" style="background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);color:white">
+        <h3 style="margin:0 0 20px 0;color:white;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-triangle-exclamation"></i> Low Stock Alert
+        </h3>
+        <?php 
+        $low_stock = $wpdb->get_results("SELECT p.ID, p.post_title, pm.meta_value as stock FROM {$wpdb->posts} p JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type='product' AND p.post_status='publish' AND pm.meta_key='_stock' AND CAST(pm.meta_value AS SIGNED) < 10 ORDER BY CAST(pm.meta_value AS SIGNED) ASC LIMIT 5");
+        ?>
+        <div style="font-size:48px;font-weight:800;margin-bottom:10px"><?= count($low_stock) ?></div>
+        <div style="font-size:14px;opacity:0.9">Products below threshold</div>
+        <?php if(count($low_stock) > 0): ?>
+        <a href="<?= home_url('/b2b-panel/stock-planning') ?>" style="display:inline-block;margin-top:15px;padding:8px 16px;background:rgba(255,255,255,0.2);color:white;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">View Stock Analysis →</a>
+        <?php endif; ?>
+    </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="status" draggable="true">
     <h3 style="margin-bottom:20px;color:#4b5563">Order Status & Delays</h3>
+    <div class="table-responsive">
     <div class="dash-grid">
         <?php foreach($wh_stats as $s): ?>
         <a href="?b2b_adm_page=orders&status=<?= $s['slug'] ?>" class="dash-card <?= $s['late']?'warning':'' ?>">
@@ -2715,9 +2822,125 @@ add_action('template_redirect', function () {
         </a>
         <?php endforeach; ?>
     </div>
+    </div>
+    </div>
 
-    <div class="card" style="margin-top:30px">
+    <div class="dashboard-widget" data-widget="top-products" draggable="true">
+    <div class="card">
+        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-trophy" style="color:#f59e0b"></i> Top 5 Products This Month
+        </h3>
+        <?php 
+        $top_products = $wpdb->get_results($wpdb->prepare("
+            SELECT p.post_title, SUM(oim.meta_value) as qty 
+            FROM {$wpdb->prefix}woocommerce_order_items oi 
+            JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim ON oi.order_item_id = oim.order_item_id 
+            JOIN {$wpdb->posts} ord ON oi.order_id = ord.ID
+            JOIN {$wpdb->posts} p ON oim.meta_value = p.ID
+            WHERE oi.order_item_type = 'line_item' 
+            AND oim.meta_key = '_product_id'
+            AND ord.post_status = 'wc-completed'
+            AND ord.post_date >= %s
+            GROUP BY p.ID 
+            ORDER BY qty DESC 
+            LIMIT 5
+        ", date('Y-m-01')));
+        ?>
+        <table style="width:100%">
+            <thead><tr><th>Product</th><th style="text-align:right">Quantity Sold</th></tr></thead>
+            <tbody>
+            <?php foreach($top_products as $prod): ?>
+                <tr>
+                    <td><?= esc_html($prod->post_title) ?></td>
+                    <td style="text-align:right;font-weight:700"><?= $prod->qty ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="recent-customers" draggable="true">
+    <div class="card">
+        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-users" style="color:#3b82f6"></i> Recent B2B Customers
+        </h3>
+        <?php 
+        $recent_customers = get_users([
+            'meta_key' => 'b2b_status',
+            'meta_value' => 'approved',
+            'number' => 5,
+            'orderby' => 'registered',
+            'order' => 'DESC'
+        ]);
+        ?>
+        <table style="width:100%">
+            <thead><tr><th>Customer</th><th>Email</th><th>Registered</th></tr></thead>
+            <tbody>
+            <?php foreach($recent_customers as $customer): ?>
+                <tr>
+                    <td><?= esc_html($customer->display_name) ?></td>
+                    <td><?= esc_html($customer->user_email) ?></td>
+                    <td><?= date('M d, Y', strtotime($customer->user_registered)) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="quick-actions" draggable="true">
+    <div class="card">
+        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-bolt" style="color:#8b5cf6"></i> Quick Actions
+        </h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <a href="<?= home_url('/b2b-panel/products/add-new') ?>" style="padding:15px;background:linear-gradient(135deg, #10b981 0%, #059669 100%);color:white;border-radius:8px;text-decoration:none;text-align:center;font-weight:600;transition:transform 0.3s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <i class="fa-solid fa-plus"></i> Add Product
+            </a>
+            <a href="<?= home_url('/b2b-panel/products/import') ?>" style="padding:15px;background:linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);color:white;border-radius:8px;text-decoration:none;text-align:center;font-weight:600;transition:transform 0.3s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <i class="fa-solid fa-file-import"></i> Import Products
+            </a>
+            <a href="<?= home_url('/b2b-panel/stock-planning') ?>" style="padding:15px;background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);color:white;border-radius:8px;text-decoration:none;text-align:center;font-weight:600;transition:transform 0.3s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <i class="fa-solid fa-chart-line"></i> Stock Analysis
+            </a>
+            <a href="<?= home_url('/b2b-panel/b2b-module') ?>" style="padding:15px;background:linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);color:white;border-radius:8px;text-decoration:none;text-align:center;font-weight:600;transition:transform 0.3s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform='translateY(0)'">
+                <i class="fa-solid fa-user-check"></i> Approvals
+            </a>
+        </div>
+    </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="system-status" draggable="true">
+    <div class="card">
+        <h3 style="margin-top:0;display:flex;align-items:center;gap:10px">
+            <i class="fa-solid fa-server" style="color:#10b981"></i> System Status
+        </h3>
+        <div style="display:grid;gap:15px">
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">WordPress Version</span>
+                <span style="font-weight:700"><?= get_bloginfo('version') ?></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">WooCommerce Version</span>
+                <span style="font-weight:700"><?= WC()->version ?></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">PHP Version</span>
+                <span style="font-weight:700"><?= phpversion() ?></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px;background:var(--bg);border-radius:6px">
+                <span style="color:var(--text-light)">Database</span>
+                <span style="font-weight:700;color:var(--success)"><i class="fa-solid fa-check-circle"></i> Connected</span>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <div class="dashboard-widget" data-widget="agents" draggable="true">
+    <div class="card">
         <h3 style="margin-top:0">Sales Agent Performance</h3>
+        <div class="table-responsive">
         <table><thead><tr><th>Agent</th><th>Customers</th><th>Total Sales</th></tr></thead><tbody>
         <?php 
         $agents = get_users(['role'=>'sales_agent']);
@@ -2729,9 +2952,12 @@ add_action('template_redirect', function () {
         }
         ?>
         </tbody></table>
+        </div>
+    </div>
     </div>
 
     <!-- Chart.js Dashboard Widgets -->
+    <div class="dashboard-widget" data-widget="charts" draggable="true">
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:30px;margin-top:30px;">
         <div class="card">
             <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-area" style="color:#3b82f6;margin-right:10px;"></i>Sales Trend (Last 30 Days)</h3>
@@ -2747,6 +2973,101 @@ add_action('template_redirect', function () {
         <h3 style="margin-top:0;color:#111827;"><i class="fa-solid fa-chart-bar" style="color:#10b981;margin-right:10px;"></i>Top 5 Products (By Revenue)</h3>
         <canvas id="topProductsChart" height="60"></canvas>
     </div>
+    </div>
+    </div>
+
+    </div> <!-- End dashboard-widgets -->
+
+    <style>
+    .dashboard-widget{margin-bottom:30px;transition:opacity 0.3s ease}
+    .dashboard-widget.hidden{display:none}
+    .dashboard-widget.dragging{opacity:0.5}
+    .dashboard-widget.drag-over{border-top:3px solid var(--primary)}
+    </style>
+
+    <script>
+    // Dashboard Screen Options
+    document.getElementById('screenOptionsToggle').addEventListener('click', function() {
+        const panel = document.getElementById('screenOptionsPanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    // Widget Visibility Toggle
+    const widgetToggles = document.querySelectorAll('.widget-toggle');
+    widgetToggles.forEach(toggle => {
+        // Load saved state
+        const widget = toggle.dataset.widget;
+        const isHidden = localStorage.getItem('dashboard_widget_' + widget) === 'hidden';
+        toggle.checked = !isHidden;
+        
+        const widgetEl = document.querySelector(`.dashboard-widget[data-widget="${widget}"]`);
+        if (isHidden && widgetEl) {
+            widgetEl.classList.add('hidden');
+        }
+        
+        // Handle toggle change
+        toggle.addEventListener('change', function() {
+            if (widgetEl) {
+                if (this.checked) {
+                    widgetEl.classList.remove('hidden');
+                    localStorage.removeItem('dashboard_widget_' + widget);
+                } else {
+                    widgetEl.classList.add('hidden');
+                    localStorage.setItem('dashboard_widget_' + widget, 'hidden');
+                }
+            }
+        });
+    });
+    
+    // Drag and Drop for Widget Reordering
+    const dashboardWidgets = document.getElementById('dashboardWidgets');
+    const widgets = document.querySelectorAll('.dashboard-widget');
+    
+    widgets.forEach(widget => {
+        widget.addEventListener('dragstart', function(e) {
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.innerHTML);
+        });
+        
+        widget.addEventListener('dragend', function() {
+            this.classList.remove('dragging');
+            document.querySelectorAll('.dashboard-widget').forEach(w => w.classList.remove('drag-over'));
+            saveWidgetOrder();
+        });
+        
+        widget.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            const dragging = document.querySelector('.dragging');
+            if (dragging && dragging !== this) {
+                const rect = this.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                if (e.clientY < midpoint) {
+                    this.parentNode.insertBefore(dragging, this);
+                } else {
+                    this.parentNode.insertBefore(dragging, this.nextSibling);
+                }
+            }
+        });
+    });
+    
+    function saveWidgetOrder() {
+        const order = Array.from(document.querySelectorAll('.dashboard-widget')).map(w => w.dataset.widget);
+        localStorage.setItem('dashboardWidgetOrder', JSON.stringify(order));
+    }
+    
+    // Restore widget order on load
+    const savedOrder = localStorage.getItem('dashboardWidgetOrder');
+    if (savedOrder) {
+        const order = JSON.parse(savedOrder);
+        order.forEach(widgetName => {
+            const widget = document.querySelector(`.dashboard-widget[data-widget="${widgetName}"]`);
+            if (widget) {
+                dashboardWidgets.appendChild(widget);
+            }
+        });
+    }
+    </script>
 
     <script>
     // Sales Trend Chart Data

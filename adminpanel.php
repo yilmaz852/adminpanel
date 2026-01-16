@@ -1452,9 +1452,10 @@ function b2b_adm_header($title) {
         .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .submenu-toggle{padding:12px;justify-content:center;position:relative}
         .sidebar.collapsed .sidebar-nav a i, .sidebar.collapsed .submenu-toggle > i:first-child{margin:0}
         .sidebar.collapsed .submenu-toggle i.fa-chevron-down{display:none}
-        /* Collapsed submenu - use fixed positioning */
-        .sidebar.collapsed .submenu{display:none;position:fixed;left:80px;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999}
-        .sidebar.collapsed .submenu.show{display:block !important}
+        /* Collapsed submenu - CSS-only hover approach */
+        .sidebar.collapsed .submenu{position:absolute;top:-10px;left:100%;opacity:0;height:auto !important;pointer-events:none;background:#1e293b;min-width:220px;border-radius:8px;padding:8px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;transition:0s}
+        .sidebar.collapsed .submenu-toggle:hover + .submenu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
+        .sidebar.collapsed .submenu:hover{opacity:1;pointer-events:auto;transform:translateY(12px)}
         /* Solid white text and icons */
         .sidebar.collapsed .submenu a,.sidebar.collapsed .submenu a span,.sidebar.collapsed .submenu a i{color:#ffffff !important;opacity:1 !important;font-weight:500}
         .sidebar.collapsed .submenu a:hover{background:rgba(255,255,255,.1)}
@@ -1910,54 +1911,6 @@ function b2b_adm_header($title) {
         document.querySelector('.sidebar').classList.add('collapsed');
         document.body.classList.add('sidebar-collapsed');
     }
-    
-    // Hover submenu for collapsed sidebar - execute immediately (DOM already loaded, script at end of body)
-    const sidebar = document.querySelector('.sidebar');
-    const submenuToggles = document.querySelectorAll('.submenu-toggle');
-    
-    submenuToggles.forEach(toggle => {
-        const submenu = toggle.nextElementSibling;
-        
-        if (submenu && submenu.classList.contains('submenu')) {
-            // Remove any active class initially when sidebar is collapsed
-            if (sidebar.classList.contains('collapsed')) {
-                submenu.classList.remove('active');
-            }
-            
-            // Mouse enter on toggle
-            toggle.addEventListener('mouseenter', function() {
-                if (sidebar.classList.contains('collapsed')) {
-                    // Use getBoundingClientRect for fixed positioning
-                    const toggleRect = toggle.getBoundingClientRect();
-                    
-                    // Set fixed position
-                    submenu.style.position = 'fixed';
-                    submenu.style.top = toggleRect.top + 'px';
-                    submenu.style.left = '80px'; // collapsed sidebar width
-                    submenu.classList.add('show');
-                    submenu.classList.remove('active');
-                }
-            });
-            
-            // Mouse leave on toggle
-            toggle.addEventListener('mouseleave', function() {
-                if (sidebar.classList.contains('collapsed')) {
-                    setTimeout(() => {
-                        if (!submenu.matches(':hover')) {
-                            submenu.classList.remove('show');
-                        }
-                    }, 100);
-                }
-            });
-            
-            // Mouse leave on submenu
-            submenu.addEventListener('mouseleave', function() {
-                if (sidebar.classList.contains('collapsed')) {
-                    this.classList.remove('show');
-                }
-            });
-        }
-    });
     
     // Mobile menu toggle
     function toggleMobileMenu() {

@@ -3062,14 +3062,13 @@ add_action('template_redirect', function () {
     </style>
 
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Dashboard Screen Options
-        document.getElementById('screenOptionsToggle').addEventListener('click', function() {
-            const panel = document.getElementById('screenOptionsPanel');
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-        });
-        
-        // Widget Visibility Toggle
+    // Dashboard Screen Options
+    document.getElementById('screenOptionsToggle').addEventListener('click', function() {
+        const panel = document.getElementById('screenOptionsPanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    // Widget Visibility Toggle
         const widgetToggles = document.querySelectorAll('.widget-toggle');
         widgetToggles.forEach(toggle => {
             // Load saved state
@@ -3144,7 +3143,7 @@ add_action('template_redirect', function () {
                 }
             });
         }
-    }); // End DOMContentLoaded
+    }
     </script>
 
     <script>

@@ -12429,44 +12429,13 @@ function sa_render_orders_page() {
                 </div>
                 
                 <?php if ($total_pages > 1): ?>
-                <div class="pagination">
-                    <?php if ($paged > 1): ?>
-                        <a href="?sales_panel=orders&paged=<?= $paged - 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>" class="prev">← Prev</a>
-                    <?php endif; ?>
-                    
-                    <?php
-                    // Show page numbers
-                    $range = 2; // Show 2 pages on each side of current page
-                    $start = max(1, $paged - $range);
-                    $end = min($total_pages, $paged + $range);
-                    
-                    // First page
-                    if ($start > 1): ?>
-                        <a href="?sales_panel=orders&paged=1&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">1</a>
-                        <?php if ($start > 2): ?>
-                            <span class="dots">...</span>
-                        <?php endif; ?>
-                    <?php endif; ?>
-                    
-                    <?php for ($i = $start; $i <= $end; $i++): ?>
-                        <?php if ($i == $paged): ?>
-                            <span class="current"><?= $i ?></span>
-                        <?php else: ?>
-                            <a href="?sales_panel=orders&paged=<?= $i ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>"><?= $i ?></a>
-                        <?php endif; ?>
-                    <?php endfor; ?>
-                    
-                    <?php // Last page
-                    if ($end < $total_pages): ?>
-                        <?php if ($end < $total_pages - 1): ?>
-                            <span class="dots">...</span>
-                        <?php endif; ?>
-                        <a href="?sales_panel=orders&paged=<?= $total_pages ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>"><?= $total_pages ?></a>
-                    <?php endif; ?>
-                    
-                    <?php if ($paged < $total_pages): ?>
-                        <a href="?sales_panel=orders&paged=<?= $paged + 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>" class="next">Next →</a>
-                    <?php endif; ?>
+                <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+                    <span style="color:#6b7280;font-size:14px;">Page:</span>
+                    <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                            <option value="?sales_panel=orders&paged=<?= $i ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>" <?= ($i == $paged) ? 'selected' : '' ?>>Page <?= $i ?> of <?= $total_pages ?></option>
+                        <?php endfor; ?>
+                    </select>
                 </div>
                 <?php endif; ?>
                 <?php endif; ?>
@@ -12771,44 +12740,13 @@ function sa_render_commissions_page() {
                 </div>
                 
                 <?php if ($max_pages_comm > 1): ?>
-                <div class="pagination">
-                    <?php if ($paged_comm > 1): ?>
-                        <a href="?sales_panel=commissions&paged=<?= $paged_comm - 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" class="prev">← Prev</a>
-                    <?php endif; ?>
-                    
-                    <?php
-                    // Show page numbers
-                    $range = 2;
-                    $start = max(1, $paged_comm - $range);
-                    $end = min($max_pages_comm, $paged_comm + $range);
-                    
-                    // First page
-                    if ($start > 1): ?>
-                        <a href="?sales_panel=commissions&paged=1&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">1</a>
-                        <?php if ($start > 2): ?>
-                            <span class="dots">...</span>
-                        <?php endif; ?>
-                    <?php endif; ?>
-                    
-                    <?php for ($i = $start; $i <= $end; $i++): ?>
-                        <?php if ($i == $paged_comm): ?>
-                            <span class="current"><?= $i ?></span>
-                        <?php else: ?>
-                            <a href="?sales_panel=commissions&paged=<?= $i ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>"><?= $i ?></a>
-                        <?php endif; ?>
-                    <?php endfor; ?>
-                    
-                    <?php // Last page
-                    if ($end < $max_pages_comm): ?>
-                        <?php if ($end < $max_pages_comm - 1): ?>
-                            <span class="dots">...</span>
-                        <?php endif; ?>
-                        <a href="?sales_panel=commissions&paged=<?= $max_pages_comm ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>"><?= $max_pages_comm ?></a>
-                    <?php endif; ?>
-                    
-                    <?php if ($paged_comm < $max_pages_comm): ?>
-                        <a href="?sales_panel=commissions&paged=<?= $paged_comm + 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" class="next">Next →</a>
-                    <?php endif; ?>
+                <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+                    <span style="color:#6b7280;font-size:14px;">Page:</span>
+                    <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                        <?php for ($i = 1; $i <= $max_pages_comm; $i++): ?>
+                            <option value="?sales_panel=commissions&paged=<?= $i ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" <?= ($i == $paged_comm) ? 'selected' : '' ?>>Page <?= $i ?> of <?= $max_pages_comm ?></option>
+                        <?php endfor; ?>
+                    </select>
                 </div>
                 <?php endif; ?>
             </div>

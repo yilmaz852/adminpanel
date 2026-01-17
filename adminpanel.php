@@ -4492,8 +4492,9 @@ add_action('template_redirect', function () {
     $paged = max(1, $_GET['paged'] ?? 1);
     $status = $_GET['status'] ?? '';
     $s = $_GET['s'] ?? '';
+    $per_page = 20;
     
-    $args = ['post_type'=>'shop_order', 'post_status'=>'any', 'posts_per_page'=>20, 'paged'=>$paged, 'orderby'=>'date', 'order'=>'DESC'];
+    $args = ['post_type'=>'shop_order', 'post_status'=>'any', 'posts_per_page'=>$per_page, 'paged'=>$paged, 'orderby'=>'date', 'order'=>'DESC'];
     if($status) $args['post_status'] = 'wc-'.$status;
     if($s && is_numeric($s)) $args['post__in'] = [intval($s)];
     
@@ -4638,7 +4639,7 @@ add_action('template_redirect', function () {
                 ?>
             </select>
             <span style="color:#6b7280;font-size:14px;">
-                (Showing <?= min(20, $query->found_posts) ?> of <?= $query->found_posts ?> orders)
+                (Showing <?= min($per_page, $query->found_posts) ?> of <?= $query->found_posts ?> orders)
             </span>
         </div>
         <?php endif; ?>

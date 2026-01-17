@@ -1691,8 +1691,12 @@ function b2b_adm_header($title) {
         .mobile-menu-toggle:active{background:#1e293b;transform:scale(0.95)}
         
         /* Mobile Header Bar */
-        .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
-        .mobile-header .page-title{margin:0;padding:0 70px;line-height:56px;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+        .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05);align-items:center;justify-content:space-between;padding:0 16px}
+        .mobile-header .page-title{margin:0;padding:0 16px;line-height:56px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-align:left}
+        .mobile-header-actions{display:flex;gap:8px;align-items:center}
+        .mobile-header-icon{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--text);background:var(--bg);border-radius:8px;text-decoration:none;transition:all 0.2s ease}
+        .mobile-header-icon:hover,.mobile-header-icon:active{background:var(--primary);color:white;transform:scale(0.95)}
+        .notification-badge{position:absolute;top:4px;right:4px;background:#ef4444;color:white;border-radius:10px;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;padding:0 5px;border:2px solid var(--white);box-shadow:0 2px 4px rgba(0,0,0,0.2)}
         
         /* Sidebar Overlay for Mobile */
         .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(3px);opacity:0;transition:opacity 0.3s ease}
@@ -1721,7 +1725,7 @@ function b2b_adm_header($title) {
             .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:1;pointer-events:auto}
             
             .mobile-menu-toggle{display:flex}
-            .mobile-header{display:block}
+            .mobile-header{display:flex}
             body{flex-direction:column;overflow-x:hidden}
             .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
             .sidebar.mobile-open{transform:translateX(0)}
@@ -1788,6 +1792,16 @@ function b2b_adm_header($title) {
     <!-- Mobile Header Bar -->
     <div class="mobile-header">
         <div class="page-title" id="mobilePageTitle">Admin Panel</div>
+        <div class="mobile-header-actions">
+            <a href="<?= home_url('/b2b-panel/notes') ?>" class="mobile-header-icon" id="notificationIcon" title="Notifications">
+                <i class="fa-solid fa-bell"></i>
+                <span class="notification-badge" id="notificationBadge" style="display:none;"></span>
+            </a>
+            <a href="<?= home_url('/b2b-panel/notes') ?>" class="mobile-header-icon" id="messageIcon" title="Messages">
+                <i class="fa-solid fa-message"></i>
+                <span class="notification-badge" id="messageBadge" style="display:none;"></span>
+            </a>
+        </div>
     </div>
 
     <!-- Sidebar Overlay for Mobile -->
@@ -2160,6 +2174,29 @@ function b2b_adm_header($title) {
         if(pageTitle && mobileTitle && window.innerWidth <= 768) {
             mobileTitle.textContent = pageTitle.textContent;
         }
+    }
+    
+    // Check for notifications and update badges
+    function updateNotificationBadges() {
+        // Always show notification badge as visual indicator
+        const notificationBadge = document.getElementById('notificationBadge');
+        const messageBadge = document.getElementById('messageBadge');
+        
+        if(notificationBadge) {
+            notificationBadge.style.display = 'flex';
+            notificationBadge.textContent = '•'; // Simple dot indicator
+        }
+        if(messageBadge) {
+            messageBadge.style.display = 'flex';
+            messageBadge.textContent = '•'; // Simple dot indicator
+        }
+    }
+    
+    // Initialize badges on page load
+    if(document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', updateNotificationBadges);
+    } else {
+        updateNotificationBadges();
     }
     </script>
     <?php
@@ -4586,6 +4623,7 @@ add_action('template_redirect', function () {
             <?php endif; ?>
         </div>
 
+        <div class="table-responsive">
         <table id="orderTable">
             <thead><tr>
                 <th data-col="0">No</th>
@@ -4621,6 +4659,7 @@ add_action('template_redirect', function () {
             <?php endwhile; else: ?><tr><td colspan="8" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
             </tbody>
         </table>
+        </div><!-- .table-responsive -->
         <!-- Pagination -->
         <?php if($query->max_num_pages > 1): ?>
         <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
@@ -6777,6 +6816,7 @@ add_action('template_redirect', function () {
                 </div>
             </div>
             
+            <div class="table-responsive">
             <table id="custTable">
                 <thead><tr>
                     <th data-col="0">ID</th>
@@ -6867,6 +6907,7 @@ add_action('template_redirect', function () {
                 <?php endforeach; endif; ?>
                 </tbody>
             </table>
+            </div><!-- .table-responsive -->
 
             <?php if($total_pages > 1): ?>
             <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">

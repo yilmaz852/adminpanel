@@ -1750,6 +1750,7 @@ function b2b_adm_header($title) {
             border:2px solid var(--white);
             box-shadow:0 2px 4px rgba(0,0,0,0.2);
         }
+        .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0}
         
         /* Sidebar Overlay for Mobile */
         .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(3px);opacity:0;transition:opacity 0.3s ease}
@@ -2236,17 +2237,13 @@ function b2b_adm_header($title) {
             const badge = document.getElementById(badgeId);
             if(badge) {
                 badge.style.display = 'flex';
-                badge.textContent = '•'; // Static dot indicator
+                badge.innerHTML = '<span class="sr-only">New</span>•'; // Dot with accessible text
             }
         });
     }
     
-    // Initialize indicators on page load
-    if(document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', showNotificationIndicators);
-    } else {
-        showNotificationIndicators();
-    }
+    // Initialize indicators when DOM is ready
+    document.addEventListener('DOMContentLoaded', showNotificationIndicators);
     </script>
     <?php
 }

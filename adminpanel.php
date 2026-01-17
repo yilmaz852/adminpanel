@@ -1476,7 +1476,7 @@ function b2b_adm_header($title) {
         
         .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:0;pointer-events:none}
         
-        .sidebar.collapsed .dropdown-menu .nav-link .nav-label{opacity:1 !important;pointer-events:auto !important}
+        .sidebar.collapsed .dropdown-menu .nav-link .nav-label{opacity:1 !important;pointer-events:none !important}
         
         .sidebar.collapsed .nav-link .dropdown-icon{transition:opacity 0.3s 0s ease}
         
@@ -1743,7 +1743,11 @@ function b2b_adm_header($title) {
             .page-header .page-title{display:none}
             .page-header button,.page-header a{width:100%;margin:0}
             .dash-grid{grid-template-columns:repeat(2, 1fr);gap:12px}
-            .table-responsive{overflow-x:auto}
+            .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.1)}
+            .table-responsive::-webkit-scrollbar{height:8px}
+            .table-responsive::-webkit-scrollbar-track{background:#f1f1f1;border-radius:4px}
+            .table-responsive::-webkit-scrollbar-thumb{background:#888;border-radius:4px}
+            .table-responsive::-webkit-scrollbar-thumb:hover{background:#555}
             table{font-size:12px;min-width:650px}
             th,td{padding:10px 8px}
             .stats-box{flex-wrap:wrap;gap:12px}
@@ -12290,9 +12294,12 @@ function sa_render_orders_page() {
             .form-group { flex: 1; min-width: 150px; }
             .form-group label { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; }
             .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
-            .pagination { margin-top: 20px; display: flex; gap: 5px; justify-content: center; }
-            .pagination a, .pagination span { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #333; }
-            .pagination span.current { background: var(--primary); color: #fff; border-color: var(--primary); }
+            .pagination { margin-top: 20px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items: center; }
+            .pagination a, .pagination span { padding: 10px 16px; border: 1px solid #d1d5db; border-radius: 8px; text-decoration: none; color: #333; background: #fff; transition: all 0.3s ease; font-weight: 500; min-width: 44px; text-align: center; }
+            .pagination a:hover { background: #f3f4f6; border-color: var(--primary); color: var(--primary); transform: translateY(-2px); }
+            .pagination span.current { background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(138,95,232,0.3); }
+            .pagination .prev, .pagination .next { font-weight: 600; }
+            .pagination .dots { border: none; background: transparent; pointer-events: none; padding: 10px 8px; }
             .col-toggle { position: relative; display: inline-block; }
             .col-toggle-btn { background: #fff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
             .col-dropdown { display: none; position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 8px; padding: 10px; min-width: 200px; z-index: 10; margin-top: 5px; }
@@ -12423,11 +12430,41 @@ function sa_render_orders_page() {
                 <?php if ($total_pages > 1): ?>
                 <div class="pagination">
                     <?php if ($paged > 1): ?>
-                        <a href="?sales_panel=orders&paged=<?= $paged - 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Prev</a>
+                        <a href="?sales_panel=orders&paged=<?= $paged - 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>" class="prev">← Prev</a>
                     <?php endif; ?>
-                    <span class="current">Page <?= $paged ?> of <?= $total_pages ?></span>
+                    
+                    <?php
+                    // Show page numbers
+                    $range = 2; // Show 2 pages on each side of current page
+                    $start = max(1, $paged - $range);
+                    $end = min($total_pages, $paged + $range);
+                    
+                    // First page
+                    if ($start > 1): ?>
+                        <a href="?sales_panel=orders&paged=1&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">1</a>
+                        <?php if ($start > 2): ?>
+                            <span class="dots">...</span>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                    
+                    <?php for ($i = $start; $i <= $end; $i++): ?>
+                        <?php if ($i == $paged): ?>
+                            <span class="current"><?= $i ?></span>
+                        <?php else: ?>
+                            <a href="?sales_panel=orders&paged=<?= $i ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>"><?= $i ?></a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+                    
+                    <?php // Last page
+                    if ($end < $total_pages): ?>
+                        <?php if ($end < $total_pages - 1): ?>
+                            <span class="dots">...</span>
+                        <?php endif; ?>
+                        <a href="?sales_panel=orders&paged=<?= $total_pages ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>"><?= $total_pages ?></a>
+                    <?php endif; ?>
+                    
                     <?php if ($paged < $total_pages): ?>
-                        <a href="?sales_panel=orders&paged=<?= $paged + 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>">Next</a>
+                        <a href="?sales_panel=orders&paged=<?= $paged + 1 ?>&start_date=<?= urlencode($filters['date_after']) ?>&end_date=<?= urlencode($filters['date_before']) ?>&filter_customer=<?= $filters['customer'] ?>&status=<?= urlencode($status_filter) ?>" class="next">Next →</a>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
@@ -12735,11 +12772,41 @@ function sa_render_commissions_page() {
                 <?php if ($max_pages_comm > 1): ?>
                 <div class="pagination">
                     <?php if ($paged_comm > 1): ?>
-                        <a href="?sales_panel=commissions&paged=<?= $paged_comm - 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Prev</a>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm - 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" class="prev">← Prev</a>
                     <?php endif; ?>
-                    <span class="current">Page <?= $paged_comm ?> / <?= $max_pages_comm ?></span>
+                    
+                    <?php
+                    // Show page numbers
+                    $range = 2;
+                    $start = max(1, $paged_comm - $range);
+                    $end = min($max_pages_comm, $paged_comm + $range);
+                    
+                    // First page
+                    if ($start > 1): ?>
+                        <a href="?sales_panel=commissions&paged=1&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">1</a>
+                        <?php if ($start > 2): ?>
+                            <span class="dots">...</span>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                    
+                    <?php for ($i = $start; $i <= $end; $i++): ?>
+                        <?php if ($i == $paged_comm): ?>
+                            <span class="current"><?= $i ?></span>
+                        <?php else: ?>
+                            <a href="?sales_panel=commissions&paged=<?= $i ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>"><?= $i ?></a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+                    
+                    <?php // Last page
+                    if ($end < $max_pages_comm): ?>
+                        <?php if ($end < $max_pages_comm - 1): ?>
+                            <span class="dots">...</span>
+                        <?php endif; ?>
+                        <a href="?sales_panel=commissions&paged=<?= $max_pages_comm ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>"><?= $max_pages_comm ?></a>
+                    <?php endif; ?>
+                    
                     <?php if ($paged_comm < $max_pages_comm): ?>
-                        <a href="?sales_panel=commissions&paged=<?= $paged_comm + 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>">Next</a>
+                        <a href="?sales_panel=commissions&paged=<?= $paged_comm + 1 ?>&start_date=<?= urlencode($start_date) ?>&end_date=<?= urlencode($end_date) ?>" class="next">Next →</a>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>

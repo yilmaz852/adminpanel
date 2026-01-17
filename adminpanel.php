@@ -1495,9 +1495,11 @@ function b2b_adm_header($title) {
         
         .sidebar.collapsed .dropdown-menu:has(.dropdown-link){padding:7px 10px 7px 24px}
         
-        .sidebar.sidebar.collapsed .nav-item:hover>.dropdown-menu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease}
+        .sidebar.sidebar.collapsed .nav-item:hover>.dropdown-menu{opacity:1;pointer-events:auto;transform:translateY(12px);transition:all 0.4s ease;z-index:1050}
         
         .sidebar.sidebar.collapsed .nav-item:hover>.dropdown-menu:has(.dropdown-link){transform:translateY(10px)}
+        
+        .sidebar.collapsed .nav-item .dropdown-menu{z-index:1050}
         
         .dropdown-menu .nav-item .nav-link{color:#F1F4FF;padding:9px 15px}
         
@@ -1723,9 +1725,9 @@ function b2b_adm_header($title) {
             .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
             .sidebar-nav .nav-link{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
             .sidebar-nav .nav-link .nav-label{opacity:1 !important;width:auto !important;overflow:visible !important}
-            .sidebar.collapsed .sidebar-nav .nav-link{padding:14px 16px;justify-content:flex-start}
-            .sidebar.collapsed .dropdown-toggle .dropdown-icon{display:inline-block !important;opacity:1 !important}
-            .sidebar.collapsed .dropdown-menu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0;opacity:1;pointer-events:auto;transform:none}
+            .sidebar .sidebar-nav .nav-link{padding:14px 16px;justify-content:flex-start}
+            .sidebar .dropdown-toggle .dropdown-icon{display:inline-block !important;opacity:1 !important}
+            .sidebar .dropdown-menu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0;opacity:1;pointer-events:auto;transform:none !important}
             .dropdown-menu{padding-left:20px}
             .dropdown-menu .nav-link{padding:10px 16px;font-size:14px}
             .main{margin-left:0;padding:16px;padding-top:72px;width:100%;max-width:100%;overflow-x:hidden}

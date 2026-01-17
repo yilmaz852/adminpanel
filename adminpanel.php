@@ -1460,7 +1460,7 @@ function b2b_adm_header($title) {
         
         .sidebar-header .sidebar-toggler:hover{background:#d9e1fd}
         
-        .sidebar-nav .nav-list{list-style:none;display:flex;gap:4px;padding:0 15px;flex-direction:column;transform:translateY(15px);transition:0.4s ease}
+        .sidebar-nav .nav-list{list-style:none;display:flex;gap:4px;padding:0 15px;flex-direction:column;transform:translateY(0px);transition:0.4s ease}
         
         .sidebar .sidebar-nav .primary-nav{overflow-y:auto;scrollbar-width:thin;padding-bottom:20px;height:calc(100vh - 227px);scrollbar-color:transparent transparent}
         
@@ -1480,7 +1480,7 @@ function b2b_adm_header($title) {
         
         .sidebar.collapsed .nav-link .dropdown-icon{transition:opacity 0.3s 0s ease}
         
-        .sidebar-nav .secondary-nav{position:absolute;bottom:35px;width:100%;background:#151A2D}
+        .sidebar-nav .secondary-nav{position:absolute;bottom:35px;width:calc(100% - 30px);left:15px;background:#151A2D}
         
         .sidebar-nav .nav-item{position:relative}
         
@@ -1717,7 +1717,7 @@ function b2b_adm_header($title) {
             .sidebar-menu-button{position:fixed;left:20px;top:20px;height:40px;width:42px;display:flex;color:#F1F4FF;background:#151A2D}
             .sidebar.collapsed{width:270px;left:-270px}
             .sidebar.collapsed .sidebar-header .sidebar-toggler{transform:none}
-            .sidebar.collapsed .sidebar-nav .primary-nav{transform:translateY(15px)}
+            .sidebar.collapsed .sidebar-nav .primary-nav{transform:translateY(0px)}
             .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:1;pointer-events:auto}
             
             .mobile-menu-toggle{display:flex}
@@ -1737,6 +1737,7 @@ function b2b_adm_header($title) {
             .sidebar .dropdown-menu{display:block !important;position:static;background:transparent;min-width:auto;border-radius:0;box-shadow:none;padding:0;margin-left:0;opacity:1;pointer-events:auto;transform:none !important}
             .dropdown-menu{padding-left:20px}
             .dropdown-menu .nav-link{padding:10px 16px;font-size:14px}
+            .sidebar-nav .secondary-nav{position:relative !important;bottom:auto !important;width:100% !important;left:0 !important;margin-top:auto !important;padding-top:20px !important}
             .main{margin-left:0;padding:16px;padding-top:72px;width:100%;max-width:100%;overflow-x:hidden}
             body.sidebar-collapsed .main{margin-left:0;width:100%}
             .page-header{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:16px}

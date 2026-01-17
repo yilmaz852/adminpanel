@@ -3594,7 +3594,7 @@ add_action('template_redirect', function () {
     <!-- Daily Sales Trend -->
     <div class="card" style="margin-bottom:25px;">
         <h3 style="margin-top:0;"><i class="fa-solid fa-calendar-days" style="color:#3b82f6;margin-right:10px;"></i>Daily Sales Trend</h3>
-        <div style="overflow-x:auto;">
+        <div class="table-responsive">
             <table style="width:100%;min-width:600px;">
                 <thead>
                     <tr style="background:#f9fafb;">
@@ -6252,7 +6252,7 @@ add_action('template_redirect', function () {
                 <h3>Variations</h3>
                 <?php $variations = $p->get_children(); 
                 if (empty($variations)) { echo '<p style="color:red">No variations created yet.</p>'; } else { ?>
-                <div style="overflow-x:auto">
+                <div class="table-responsive">
                     <table class="var-table">
                         <thead><tr><th>Attributes</th><th>Price</th><th>Manage Stock</th><th>Qty</th><th>Status</th></tr></thead>
                         <tbody>
@@ -7519,7 +7519,7 @@ add_action('template_redirect', function () {
                     <p style="margin:0;">No B2B groups created yet. Please <a href="<?= home_url('/b2b-panel/b2b-module/groups') ?>" style="color:#dc2626;text-decoration:underline;">create groups</a> first.</p>
                 </div>
             <?php else: ?>
-                <div style="overflow-x:auto;">
+                <div class="table-responsive">
                     <table>
                         <thead>
                             <tr style="background:#f8fafc;">
@@ -11921,7 +11921,7 @@ function sa_render_customers_page() {
                 <?php if (empty($customers)): ?>
                     <p style="color: #6b7280; padding: 20px; text-align: center;">No customers assigned yet.</p>
                 <?php else: ?>
-                <div style="overflow-x:auto;">
+                <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
@@ -12378,7 +12378,7 @@ function sa_render_orders_page() {
                 <?php if (empty($orders)): ?>
                     <p style="color: #6b7280; padding: 20px; text-align: center;">No orders found.</p>
                 <?php else: ?>
-                <div style="overflow-x:auto;">
+                <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
@@ -12725,7 +12725,7 @@ function sa_render_commissions_page() {
             if ($paged_ids):
             ?>
             <div class="card">
-                <div style="overflow-x:auto;">
+                <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
@@ -13884,7 +13884,7 @@ add_action('template_redirect', function () {
         </h3>
         
         <?php if (!empty($logs)): ?>
-        <div style="overflow-x:auto;">
+        <div class="table-responsive">
             <table class="data-table" style="width:100%;border-collapse:collapse;">
                 <thead>
                     <tr style="background:#f9fafb;">

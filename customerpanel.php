@@ -789,10 +789,418 @@ add_action('template_redirect', function () {
     exit;
 });
 
+/* =====================================================
+   7. PAGE: PRODUCT BROWSING
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('customer_panel') !== 'products') return;
+    
+    $user = customer_panel_guard();
+    
+    // Get category from URL
+    $category_slug = get_query_var('category');
+    if (empty($category_slug)) {
+        wp_redirect(home_url('/customer-panel/new-order'));
+        exit;
+    }
+    
+    $category = get_term_by('slug', $category_slug, 'product_cat');
+    if (!$category) {
+        wp_redirect(home_url('/customer-panel/new-order'));
+        exit;
+    }
+    
+    // Get filters from query string
+    $paged = max(1, intval($_GET['paged'] ?? 1));
+    $per_page = 12;
+    $search = sanitize_text_field($_GET['s'] ?? '');
+    $orderby = sanitize_text_field($_GET['orderby'] ?? 'title');
+    $order = sanitize_text_field($_GET['order'] ?? 'ASC');
+    $view = sanitize_text_field($_GET['view'] ?? 'grid');
+    
+    // Price filter
+    $min_price = isset($_GET['min_price']) ? floatval($_GET['min_price']) : 0;
+    $max_price = isset($_GET['max_price']) ? floatval($_GET['max_price']) : 999999;
+    
+    // Stock filter
+    $in_stock_only = isset($_GET['in_stock']);
+    
+    // Build query args
+    $args = [
+        'post_type' => 'product',
+        'posts_per_page' => $per_page,
+        'paged' => $paged,
+        'orderby' => $orderby,
+        'order' => $order,
+        'tax_query' => [
+            [
+                'taxonomy' => 'product_cat',
+                'field' => 'term_id',
+                'terms' => $category->term_id,
+                'include_children' => true
+            ]
+        ],
+        'post_status' => 'publish'
+    ];
+    
+    // Add search
+    if (!empty($search)) {
+        $args['s'] = $search;
+    }
+    
+    // Add price filter via meta query
+    if ($min_price > 0 || $max_price < 999999) {
+        $args['meta_query'] = [
+            [
+                'key' => '_price',
+                'value' => [$min_price, $max_price],
+                'type' => 'NUMERIC',
+                'compare' => 'BETWEEN'
+            ]
+        ];
+    }
+    
+    // Stock filter
+    if ($in_stock_only) {
+        if (!isset($args['meta_query'])) {
+            $args['meta_query'] = [];
+        }
+        $args['meta_query'][] = [
+            'key' => '_stock_status',
+            'value' => 'instock',
+            'compare' => '='
+        ];
+    }
+    
+    $query = new WP_Query($args);
+    
+    customer_panel_header('Browse Products');
+    ?>
+    
+    <style>
+    .filters-bar {
+        background:var(--white);
+        padding:20px;
+        border-radius:12px;
+        margin-bottom:20px;
+        box-shadow:var(--shadow);
+        display:flex;
+        gap:15px;
+        flex-wrap:wrap;
+        align-items:center;
+    }
+    .filter-group {
+        display:flex;
+        align-items:center;
+        gap:8px;
+    }
+    .filter-group label {
+        font-size:14px;
+        font-weight:600;
+        color:var(--text);
+    }
+    .filter-group input,
+    .filter-group select {
+        padding:8px 12px;
+        border:1px solid var(--border);
+        border-radius:6px;
+        font-size:14px;
+    }
+    .filter-group input[type="checkbox"] {
+        width:auto;
+        margin:0;
+    }
+    .products-header {
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        margin-bottom:20px;
+        flex-wrap:wrap;
+        gap:15px;
+    }
+    .view-toggle {
+        display:flex;
+        gap:5px;
+    }
+    .view-btn {
+        padding:8px 12px;
+        border:1px solid var(--border);
+        background:var(--white);
+        border-radius:6px;
+        cursor:pointer;
+        transition:all 0.2s;
+    }
+    .view-btn.active {
+        background:var(--accent);
+        color:var(--white);
+        border-color:var(--accent);
+    }
+    .products-grid {
+        display:grid;
+        grid-template-columns:repeat(auto-fill, minmax(250px, 1fr));
+        gap:20px;
+        margin-bottom:30px;
+    }
+    .products-list {
+        display:flex;
+        flex-direction:column;
+        gap:15px;
+        margin-bottom:30px;
+    }
+    .product-card {
+        background:var(--white);
+        border-radius:12px;
+        overflow:hidden;
+        box-shadow:var(--shadow);
+        transition:all 0.2s;
+        display:flex;
+        flex-direction:column;
+    }
+    .product-card:hover {
+        transform:translateY(-5px);
+        box-shadow:var(--shadow-lg);
+    }
+    .product-image {
+        width:100%;
+        height:200px;
+        object-fit:cover;
+        background:#f8fafc;
+    }
+    .product-info {
+        padding:15px;
+        flex:1;
+        display:flex;
+        flex-direction:column;
+    }
+    .product-title {
+        font-weight:600;
+        font-size:16px;
+        margin-bottom:8px;
+        color:var(--text);
+    }
+    .product-price {
+        font-size:20px;
+        font-weight:700;
+        color:var(--accent);
+        margin-bottom:10px;
+    }
+    .product-stock {
+        font-size:12px;
+        margin-bottom:15px;
+    }
+    .stock-in {
+        color:var(--success);
+    }
+    .stock-out {
+        color:var(--error);
+    }
+    .product-actions {
+        margin-top:auto;
+    }
+    
+    /* List view specific */
+    .product-card.list-view {
+        flex-direction:row;
+    }
+    .product-card.list-view .product-image {
+        width:200px;
+        height:150px;
+    }
+    .product-card.list-view .product-info {
+        flex:1;
+    }
+    
+    @media (max-width: 768px) {
+        .filters-bar {
+            flex-direction:column;
+            align-items:stretch;
+        }
+        .filter-group {
+            flex-direction:column;
+            align-items:stretch;
+        }
+        .products-grid {
+            grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
+            gap:15px;
+        }
+        .product-card.list-view {
+            flex-direction:column;
+        }
+        .product-card.list-view .product-image {
+            width:100%;
+            height:150px;
+        }
+    }
+    </style>
+    
+    <div class="page-header">
+        <div>
+            <nav style="margin-bottom:10px;font-size:14px;color:var(--text-muted)">
+                <a href="<?= home_url('/customer-panel') ?>" style="color:var(--text-muted)">Dashboard</a>
+                <span> / </span>
+                <a href="<?= home_url('/customer-panel/new-order') ?>" style="color:var(--text-muted)">New Order</a>
+                <span> / </span>
+                <span style="color:var(--text)"><?= esc_html($category->name) ?></span>
+            </nav>
+            <h1 class="page-title"><?= esc_html($category->name) ?></h1>
+            <?php if ($category->description): ?>
+                <p style="color:var(--text-muted);margin-top:5px"><?= esc_html($category->description) ?></p>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- Filters Bar -->
+    <form method="get" class="filters-bar">
+        <div class="filter-group">
+            <label>
+                <i class="fa-solid fa-search"></i> Search:
+            </label>
+            <input type="text" name="s" value="<?= esc_attr($search) ?>" placeholder="Product name..." style="width:200px">
+        </div>
+        
+        <div class="filter-group">
+            <label>
+                <i class="fa-solid fa-dollar-sign"></i> Price:
+            </label>
+            <input type="number" name="min_price" value="<?= $min_price > 0 ? $min_price : '' ?>" placeholder="Min" style="width:80px">
+            <span>-</span>
+            <input type="number" name="max_price" value="<?= $max_price < 999999 ? $max_price : '' ?>" placeholder="Max" style="width:80px">
+        </div>
+        
+        <div class="filter-group">
+            <label>
+                <input type="checkbox" name="in_stock" value="1" <?= $in_stock_only ? 'checked' : '' ?>>
+                In Stock Only
+            </label>
+        </div>
+        
+        <div class="filter-group">
+            <label>Sort:</label>
+            <select name="orderby" style="width:120px">
+                <option value="title" <?= $orderby == 'title' ? 'selected' : '' ?>>Name</option>
+                <option value="date" <?= $orderby == 'date' ? 'selected' : '' ?>>Date</option>
+                <option value="price" <?= $orderby == 'price' ? 'selected' : '' ?>>Price</option>
+                <option value="popularity" <?= $orderby == 'popularity' ? 'selected' : '' ?>>Popularity</option>
+            </select>
+            <select name="order" style="width:80px">
+                <option value="ASC" <?= $order == 'ASC' ? 'selected' : '' ?>>↑</option>
+                <option value="DESC" <?= $order == 'DESC' ? 'selected' : '' ?>>↓</option>
+            </select>
+        </div>
+        
+        <button type="submit" class="btn" style="padding:8px 16px">
+            <i class="fa-solid fa-filter"></i> Apply
+        </button>
+        
+        <a href="<?= home_url('/customer-panel/new-order/category/' . $category_slug) ?>" class="btn-secondary" style="padding:8px 16px">
+            Clear
+        </a>
+    </form>
+    
+    <!-- Products Header -->
+    <div class="products-header">
+        <div>
+            <strong><?= $query->found_posts ?></strong> products found
+        </div>
+        <div class="view-toggle">
+            <a href="?<?= http_build_query(array_merge($_GET, ['view' => 'grid'])) ?>" class="view-btn <?= $view == 'grid' ? 'active' : '' ?>">
+                <i class="fa-solid fa-grid"></i> Grid
+            </a>
+            <a href="?<?= http_build_query(array_merge($_GET, ['view' => 'list'])) ?>" class="view-btn <?= $view == 'list' ? 'active' : '' ?>">
+                <i class="fa-solid fa-list"></i> List
+            </a>
+        </div>
+    </div>
+    
+    <?php if ($query->have_posts()): ?>
+        <div class="products-<?= $view ?>">
+            <?php while ($query->have_posts()): $query->the_post();
+                $product = wc_get_product(get_the_ID());
+                $image = wp_get_attachment_url($product->get_image_id());
+                $stock_status = $product->get_stock_status();
+            ?>
+            <div class="product-card <?= $view == 'list' ? 'list-view' : '' ?>">
+                <?php if ($image): ?>
+                    <img src="<?= esc_url($image) ?>" alt="<?= esc_attr($product->get_name()) ?>" class="product-image">
+                <?php else: ?>
+                    <div class="product-image" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%)">
+                        <i class="fa-solid fa-box" style="font-size:48px;color:rgba(255,255,255,0.5)"></i>
+                    </div>
+                <?php endif; ?>
+                
+                <div class="product-info">
+                    <div class="product-title"><?= esc_html($product->get_name()) ?></div>
+                    <div class="product-price"><?= $product->get_price_html() ?></div>
+                    
+                    <?php if ($stock_status == 'instock'): ?>
+                        <div class="product-stock stock-in">
+                            <i class="fa-solid fa-check-circle"></i> In Stock
+                        </div>
+                    <?php else: ?>
+                        <div class="product-stock stock-out">
+                            <i class="fa-solid fa-times-circle"></i> Out of Stock
+                        </div>
+                    <?php endif; ?>
+                    
+                    <div class="product-actions">
+                        <?php if ($stock_status == 'instock'): ?>
+                            <button class="btn" style="width:100%;justify-content:center" onclick="alert('Cart feature coming in Phase 3!')">
+                                <i class="fa-solid fa-cart-plus"></i> Add to Cart
+                            </button>
+                        <?php else: ?>
+                            <button class="btn-secondary" style="width:100%;justify-content:center" disabled>
+                                Out of Stock
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <?php endwhile; ?>
+        </div>
+        
+        <!-- Pagination -->
+        <?php if ($query->max_num_pages > 1): ?>
+            <div style="margin-top:30px;display:flex;justify-content:center;align-items:center;gap:10px">
+                <span style="color:var(--text-muted);font-size:14px">Page:</span>
+                <select onchange="window.location.href=this.value" style="padding:10px;border:1px solid var(--border);border-radius:8px">
+                    <?php for ($i = 1; $i <= $query->max_num_pages; $i++): 
+                        $page_params = array_merge($_GET, ['paged' => $i]);
+                        $page_url = home_url('/customer-panel/new-order/category/' . $category_slug . '?' . http_build_query($page_params));
+                    ?>
+                        <option value="<?= esc_url($page_url) ?>" <?= $paged == $i ? 'selected' : '' ?>>
+                            Page <?= $i ?> of <?= $query->max_num_pages ?>
+                        </option>
+                    <?php endfor; ?>
+                </select>
+                <span style="color:var(--text-muted);font-size:14px">
+                    (Showing <?= min($per_page * $paged, $query->found_posts) ?> of <?= $query->found_posts ?> products)
+                </span>
+            </div>
+        <?php endif; ?>
+        
+    <?php else: ?>
+        <div class="card">
+            <div style="text-align:center;padding:60px 20px">
+                <i class="fa-solid fa-search" style="font-size:64px;color:#e5e7eb;margin-bottom:20px"></i>
+                <h2 style="margin-bottom:10px">No Products Found</h2>
+                <p style="color:#64748b">Try adjusting your filters or search terms.</p>
+                <a href="<?= home_url('/customer-panel/new-order/category/' . $category_slug) ?>" class="btn" style="margin-top:20px">
+                    Clear Filters
+                </a>
+            </div>
+        </div>
+    <?php endif; ?>
+    
+    <?php
+    wp_reset_postdata();
+    customer_panel_footer();
+    exit;
+});
+
 // Placeholder pages (to be implemented in next phases)
 add_action('template_redirect', function () {
     $page = get_query_var('customer_panel');
-    if (!in_array($page, ['products', 'cart', 'checkout', 'orders', 'order-detail', 'favorites', 'account'])) return;
+    if (!in_array($page, ['cart', 'checkout', 'orders', 'order-detail', 'favorites', 'account'])) return;
     
     customer_panel_guard();
     customer_panel_header(ucfirst(str_replace('-', ' ', $page)));

@@ -4620,7 +4620,28 @@ add_action('template_redirect', function () {
             <?php endwhile; else: ?><tr><td colspan="8" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
             </tbody>
         </table>
-        <?php if($query->max_num_pages > 1) echo "<div style='margin-top:20px;text-align:center'>".paginate_links(['base'=>add_query_arg('paged','%#%'),'format'=>'','current'=>$paged,'total'=>$query->max_num_pages])."</div>"; ?>
+        <!-- Pagination -->
+        <?php if($query->max_num_pages > 1): ?>
+        <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+            <span style="color:#6b7280;font-size:14px;">Page:</span>
+            <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                <?php 
+                for($i = 1; $i <= $query->max_num_pages; $i++) {
+                    $page_params = [];
+                    if($status) $page_params[] = 'status=' . urlencode($status);
+                    if($s) $page_params[] = 's=' . urlencode($s);
+                    if($i > 1) $page_params[] = 'paged=' . $i;
+                    $page_url = home_url('/b2b-panel/orders') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                    $selected = ($i == $paged) ? 'selected' : '';
+                    echo '<option value="' . esc_attr($page_url) . '" ' . $selected . '>Page ' . $i . ' of ' . $query->max_num_pages . '</option>';
+                }
+                ?>
+            </select>
+            <span style="color:#6b7280;font-size:14px;">
+                (Showing <?= min(20, $query->found_posts) ?> of <?= $query->found_posts ?> orders)
+            </span>
+        </div>
+        <?php endif; ?>
     </div>
 
     <div id="ordModal" class="modal"><div class="modal-content"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3>Details</h3><span onclick="$('#ordModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="mBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div></div></div>

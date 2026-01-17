@@ -1462,7 +1462,7 @@ function b2b_adm_header($title) {
         
         .sidebar-nav .nav-list{list-style:none;display:flex;gap:4px;padding:0 15px;flex-direction:column;transform:translateY(0px);transition:0.4s ease}
         
-        .sidebar .sidebar-nav .primary-nav{overflow-y:auto;scrollbar-width:thin;padding-bottom:20px;height:calc(100vh - 227px);scrollbar-color:transparent transparent}
+        .sidebar .sidebar-nav .primary-nav{overflow-y:auto;scrollbar-width:thin;padding-bottom:20px;padding-top:10px;height:calc(100vh - 185px);scrollbar-color:transparent transparent}
         
         .sidebar .sidebar-nav .primary-nav:hover{scrollbar-color:#EEF2FF transparent}
         
@@ -1528,6 +1528,44 @@ function b2b_adm_header($title) {
         /* Main Content Area */
         .main{margin-left:270px;flex:1;padding:40px;width:calc(100% - 270px);transition:all 0.4s ease;box-sizing:border-box}
         body.sidebar-collapsed .main{margin-left:85px;width:calc(100% - 85px)}
+        
+        /* Desktop Header Actions */
+        .desktop-header-actions{
+            position:fixed;
+            top:20px;
+            right:40px;
+            z-index:999;
+            display:flex;
+            gap:10px;
+            align-items:center;
+        }
+        .header-action-icon{
+            position:relative;
+            width:44px;
+            height:44px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            color:var(--text);
+            background:var(--white);
+            border:1px solid var(--border);
+            border-radius:10px;
+            text-decoration:none;
+            transition:all 0.2s ease;
+            box-shadow:0 2px 8px rgba(0,0,0,0.06);
+        }
+        .header-action-icon:hover{
+            background:var(--primary);
+            color:white;
+            border-color:var(--primary);
+            transform:translateY(-2px);
+            box-shadow:0 4px 12px rgba(138,95,232,0.3);
+        }
+        .header-action-icon .notification-badge{
+            position:absolute;
+            top:-4px;
+            right:-4px;
+        }
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1772,6 +1810,7 @@ function b2b_adm_header($title) {
             .form-grid{grid-template-columns:1fr;}
         }
         @media (max-width: 768px) {
+            .desktop-header-actions{display:none !important}
             .sidebar-menu-button{position:fixed;left:20px;top:20px;height:40px;width:42px;display:flex;color:#F1F4FF;background:#151A2D}
             .sidebar.collapsed{width:270px;left:-270px}
             .sidebar.collapsed .sidebar-header .sidebar-toggler{transform:none}
@@ -1787,7 +1826,7 @@ function b2b_adm_header($title) {
             .sidebar.collapsed.mobile-open{transform:translateX(0) !important}
             .sidebar-toggler{display:none !important}
             .sidebar-header .sidebar-toggler{display:none !important}
-            .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
+            .sidebar-nav{padding:10px 15px 20px 15px;display:block;overflow-x:hidden}
             .sidebar-nav .nav-link{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
             .sidebar-nav .nav-link .nav-label{opacity:1 !important;width:auto !important;overflow:visible !important}
             .sidebar .sidebar-nav .nav-link{padding:14px 16px;justify-content:flex-start}
@@ -1828,11 +1867,15 @@ function b2b_adm_header($title) {
             input,select,textarea{font-size:16px;padding:12px}
             .modal-content{margin:12px;width:calc(100% - 24px)}
             .sidebar{width:85%;max-width:280px}
-            .sidebar-nav{padding:70px 12px 16px 12px}
+            .sidebar-nav{padding:10px 12px 16px 12px}
             .sidebar-nav a, .submenu-toggle{padding:12px 14px}
             #bulkEditPanel{padding:12px}
             .bulk-section{padding:12px}
             .page-header{gap:10px}
+            
+            /* Messaging mobile styles */
+            .messaging-container{grid-template-columns:1fr !important;gap:12px !important}
+            .messaging-groups,.messaging-chat{height:auto !important;min-height:400px}
         }
     </style>
     </head>
@@ -1851,7 +1894,7 @@ function b2b_adm_header($title) {
                 <i class="fa-solid fa-bell"></i>
                 <span class="notification-badge" id="notificationBadge" style="display:none;"></span>
             </a>
-            <a href="<?= home_url('/b2b-panel/notes') ?>" class="mobile-header-icon" id="messageIcon" title="Messages">
+            <a href="<?= home_url('/b2b-panel/messaging') ?>" class="mobile-header-icon" id="messageIcon" title="Messages">
                 <i class="fa-solid fa-message"></i>
                 <span class="notification-badge" id="messageBadge" style="display:none;"></span>
             </a>
@@ -2086,6 +2129,18 @@ function b2b_adm_header($title) {
     </div>
 
     <div class="main">
+    <!-- Desktop Header Actions -->
+    <div class="desktop-header-actions">
+        <a href="<?= home_url('/b2b-panel/notes') ?>" class="header-action-icon" title="Notifications">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notification-badge" id="desktopNotificationBadge" style="display:none;"></span>
+        </a>
+        <a href="<?= home_url('/b2b-panel/messaging') ?>" class="header-action-icon" title="Messages">
+            <i class="fa-solid fa-message"></i>
+            <span class="notification-badge" id="desktopMessageBadge" style="display:none;"></span>
+        </a>
+    </div>
+    
     <script>
     // Define ajaxurl for AJAX requests (not available in front-end by default)
     var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
@@ -2230,9 +2285,13 @@ function b2b_adm_header($title) {
         }
     }
     
-    // Show static notification indicators on mobile header
+    // Show static notification indicators on mobile and desktop headers
     function showNotificationIndicators() {
-        const badges = ['notificationBadge', 'messageBadge'];
+        const badges = [
+            'notificationBadge', 'messageBadge', 
+            'desktopNotificationBadge', 'desktopMessageBadge',
+            'salesDesktopNotificationBadge', 'salesDesktopMessageBadge'
+        ];
         badges.forEach(badgeId => {
             const badge = document.getElementById(badgeId);
             if(badge) {
@@ -11836,6 +11895,18 @@ function sa_render_dashboard_page() {
         </div>
         
         <div class="main">
+            <!-- Desktop Header Actions -->
+            <div class="desktop-header-actions">
+                <a href="?sales_panel=notes" class="header-action-icon" title="Notifications">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="notification-badge" id="salesDesktopNotificationBadge" style="display:none;"></span>
+                </a>
+                <a href="?sales_panel=messaging" class="header-action-icon" title="Messages">
+                    <i class="fa-solid fa-message"></i>
+                    <span class="notification-badge" id="salesDesktopMessageBadge" style="display:none;"></span>
+                </a>
+            </div>
+            
             <div class="stats">
                 <div class="stat-card">
                     <h3>Total Customers</h3>
@@ -15088,9 +15159,9 @@ add_action('template_redirect', function () {
         </div>
     <?php else: ?>
     
-    <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;" class="messaging-container">
         <!-- Groups List -->
-        <div class="card" style="height:600px;overflow-y:auto;">
+        <div class="card messaging-groups" style="height:600px;overflow-y:auto;">
             <h3 style="margin-top:0;">Your Groups</h3>
             <?php foreach ($user_groups as $group_id => $group): ?>
                 <a href="?group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
@@ -15101,7 +15172,7 @@ add_action('template_redirect', function () {
         </div>
         
         <!-- Messages -->
-        <div class="card" style="height:600px;display:flex;flex-direction:column;">
+        <div class="card messaging-chat" style="height:600px;display:flex;flex-direction:column;">
             <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
                 <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
                     <?= esc_html($user_groups[$selected_group]['name']) ?>

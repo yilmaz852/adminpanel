@@ -1691,12 +1691,65 @@ function b2b_adm_header($title) {
         .mobile-menu-toggle:active{background:#1e293b;transform:scale(0.95)}
         
         /* Mobile Header Bar */
-        .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05);align-items:center;justify-content:space-between;padding:0 16px}
-        .mobile-header .page-title{margin:0;padding:0 16px;line-height:56px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-align:left}
+        .mobile-header{
+            display:none;
+            position:fixed;
+            top:0;left:0;right:0;
+            height:56px;
+            background:var(--white);
+            border-bottom:1px solid var(--border);
+            z-index:1000;
+            box-shadow:0 2px 8px rgba(0,0,0,0.05);
+            align-items:center;
+            justify-content:space-between;
+            padding:0 16px;
+        }
+        .mobile-header .page-title{
+            margin:0;
+            padding:0 16px;
+            line-height:56px;
+            font-size:16px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            flex:1;
+            text-align:left;
+        }
         .mobile-header-actions{display:flex;gap:8px;align-items:center}
-        .mobile-header-icon{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--text);background:var(--bg);border-radius:8px;text-decoration:none;transition:all 0.2s ease}
-        .mobile-header-icon:hover,.mobile-header-icon:active{background:var(--primary);color:white;transform:scale(0.95)}
-        .notification-badge{position:absolute;top:4px;right:4px;background:#ef4444;color:white;border-radius:10px;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;padding:0 5px;border:2px solid var(--white);box-shadow:0 2px 4px rgba(0,0,0,0.2)}
+        .mobile-header-icon{
+            position:relative;
+            width:40px;height:40px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            color:var(--text);
+            background:var(--bg);
+            border-radius:8px;
+            text-decoration:none;
+            transition:all 0.2s ease;
+        }
+        .mobile-header-icon:hover,
+        .mobile-header-icon:active{
+            background:var(--primary);
+            color:white;
+            transform:scale(0.95);
+        }
+        .notification-badge{
+            position:absolute;
+            top:4px;right:4px;
+            background:#ef4444;
+            color:white;
+            border-radius:10px;
+            min-width:18px;height:18px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:10px;
+            font-weight:700;
+            padding:0 5px;
+            border:2px solid var(--white);
+            box-shadow:0 2px 4px rgba(0,0,0,0.2);
+        }
         
         /* Sidebar Overlay for Mobile */
         .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(3px);opacity:0;transition:opacity 0.3s ease}
@@ -2176,27 +2229,23 @@ function b2b_adm_header($title) {
         }
     }
     
-    // Check for notifications and update badges
-    function updateNotificationBadges() {
-        // Always show notification badge as visual indicator
-        const notificationBadge = document.getElementById('notificationBadge');
-        const messageBadge = document.getElementById('messageBadge');
-        
-        if(notificationBadge) {
-            notificationBadge.style.display = 'flex';
-            notificationBadge.textContent = '•'; // Simple dot indicator
-        }
-        if(messageBadge) {
-            messageBadge.style.display = 'flex';
-            messageBadge.textContent = '•'; // Simple dot indicator
-        }
+    // Show static notification indicators on mobile header
+    function showNotificationIndicators() {
+        const badges = ['notificationBadge', 'messageBadge'];
+        badges.forEach(badgeId => {
+            const badge = document.getElementById(badgeId);
+            if(badge) {
+                badge.style.display = 'flex';
+                badge.textContent = '•'; // Static dot indicator
+            }
+        });
     }
     
-    // Initialize badges on page load
+    // Initialize indicators on page load
     if(document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', updateNotificationBadges);
+        document.addEventListener('DOMContentLoaded', showNotificationIndicators);
     } else {
-        updateNotificationBadges();
+        showNotificationIndicators();
     }
     </script>
     <?php

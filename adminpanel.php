@@ -1501,6 +1501,10 @@ function b2b_adm_header($title) {
         
         .sidebar.collapsed .nav-item .dropdown-menu{z-index:1050}
         
+        .sidebar.collapsed .nav-item:hover>.dropdown-menu:hover{opacity:1;pointer-events:auto}
+        
+        .sidebar.collapsed .nav-item>.dropdown-menu::before{content:'';position:absolute;left:-20px;top:0;width:20px;height:100%;background:transparent}
+        
         .dropdown-menu .nav-item .nav-link{color:#F1F4FF;padding:9px 15px}
         
         .sidebar.collapsed .dropdown-menu .nav-link{padding:7px 15px;color:#F1F4FF}
@@ -1721,7 +1725,10 @@ function b2b_adm_header($title) {
             body{flex-direction:column;overflow-x:hidden}
             .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
             .sidebar.mobile-open{transform:translateX(0)}
-            .sidebar-toggler{display:none}
+            .sidebar.collapsed{transform:translateX(-100%) !important;width:75% !important;max-width:300px !important}
+            .sidebar.collapsed.mobile-open{transform:translateX(0) !important}
+            .sidebar-toggler{display:none !important}
+            .sidebar-header .sidebar-toggler{display:none !important}
             .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
             .sidebar-nav .nav-link{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
             .sidebar-nav .nav-link .nav-label{opacity:1 !important;width:auto !important;overflow:visible !important}
@@ -2052,6 +2059,11 @@ function b2b_adm_header($title) {
     
     // Sidebar collapse/expand toggle
     function toggleSidebar() {
+        // Don't allow toggle on mobile
+        if (window.innerWidth <= 768) {
+            return;
+        }
+        
         const sidebar = document.querySelector('.sidebar');
         const body = document.body;
         const isCollapsed = sidebar.classList.contains('collapsed');
@@ -2083,7 +2095,8 @@ function b2b_adm_header($title) {
     // Restore sidebar state from localStorage on page load
     document.addEventListener('DOMContentLoaded', function() {
         const sidebarCollapsed = localStorage.getItem('sidebarCollapsed');
-        if (sidebarCollapsed === 'true') {
+        // Don't restore collapsed state on mobile
+        if (sidebarCollapsed === 'true' && window.innerWidth > 768) {
             document.querySelector('.sidebar').classList.add('collapsed');
             document.body.classList.add('sidebar-collapsed');
         } else {

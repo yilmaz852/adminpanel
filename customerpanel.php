@@ -25,7 +25,8 @@ add_action('init', function () {
     add_rewrite_rule('^customer-login/?$', 'index.php?customer_panel=login', 'top');
     add_rewrite_rule('^customer-panel/?$', 'index.php?customer_panel=dashboard', 'top');
     add_rewrite_rule('^customer-panel/new-order/?$', 'index.php?customer_panel=new-order', 'top');
-    add_rewrite_rule('^customer-panel/new-order/category/([^/]+)/?$', 'index.php?customer_panel=products&category=$matches[1]', 'top');
+    add_rewrite_rule('^customer-panel/select-category/?$', 'index.php?customer_panel=select-category', 'top');
+    add_rewrite_rule('^customer-panel/products/?$', 'index.php?customer_panel=products', 'top');
     add_rewrite_rule('^customer-panel/cart/?$', 'index.php?customer_panel=cart', 'top');
     add_rewrite_rule('^customer-panel/checkout/?$', 'index.php?customer_panel=checkout', 'top');
     add_rewrite_rule('^customer-panel/orders/?$', 'index.php?customer_panel=orders', 'top');
@@ -734,53 +735,51 @@ add_action('template_redirect', function () {
 });
 
 /* =====================================================
-   6. PAGE: NEW ORDER - CATEGORY SELECTION
+   6. PAGE: NEW ORDER - DOOR COLOR SELECTION
 ===================================================== */
 add_action('template_redirect', function () {
     if (get_query_var('customer_panel') !== 'new-order') return;
     
     $user = customer_panel_guard();
-    customer_panel_header('New Order');
+    customer_panel_header('New Order - Select Door Color');
     
-    // Get product categories
-    $categories = get_terms([
-        'taxonomy' => 'product_cat',
-        'hide_empty' => true,
-        'parent' => 0  // Top-level categories only
+    // Get door colors from WooCommerce color attribute
+    $colors = get_terms([
+        'taxonomy' => 'pa_color',
+        'hide_empty' => false
     ]);
     
     ?>
     <div class="page-header">
         <h1 class="page-title">Start New Order</h1>
+        <p style="color:var(--text-muted);margin-top:10px">Step 1: Select your door color</p>
     </div>
     
     <div class="card">
-        <h2 style="margin-bottom:10px">Select Product Category</h2>
-        <p style="color:#64748b;margin-bottom:30px">Choose a category to browse available products</p>
+        <h2 style="margin-bottom:10px">Select Door Color</h2>
+        <p style="color:#64748b;margin-bottom:30px">Choose the color for your cabinet doors</p>
         
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px">
-            <?php foreach ($categories as $category): 
-                $thumbnail_id = get_term_meta($category->term_id, 'thumbnail_id', true);
-                $image = $thumbnail_id ? wp_get_attachment_url($thumbnail_id) : '';
-            ?>
-            <a href="<?= home_url('/customer-panel/new-order/category/' . $category->slug) ?>" style="text-decoration:none">
-                <div class="card" style="height:100%;transition:transform 0.2s,box-shadow 0.2s;cursor:pointer" onmouseover="this.style.transform='translateY(-5px)';this.style.boxShadow='0 10px 30px rgba(0,0,0,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
-                    <?php if ($image): ?>
-                        <img src="<?= esc_url($image) ?>" alt="<?= esc_attr($category->name) ?>" style="width:100%;height:150px;object-fit:cover;border-radius:8px;margin-bottom:15px">
-                    <?php else: ?>
-                        <div style="width:100%;height:150px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:8px;margin-bottom:15px;display:flex;align-items:center;justify-content:center">
-                            <i class="fa-solid fa-box" style="font-size:48px;color:rgba(255,255,255,0.8)"></i>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px">
+            <?php if (!empty($colors) && !is_wp_error($colors)): 
+                foreach ($colors as $color): ?>
+                <a href="<?= home_url('/customer-panel/select-category?color=' . $color->slug) ?>" style="text-decoration:none">
+                    <div class="card" style="height:100%;transition:transform 0.2s,box-shadow 0.2s;cursor:pointer;text-align:center;padding:30px 20px" onmouseover="this.style.transform='translateY(-5px)';this.style.boxShadow='0 10px 30px rgba(0,0,0,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+                        <div style="width:80px;height:80px;margin:0 auto 15px;border-radius:50%;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);display:flex;align-items:center;justify-content:center">
+                            <i class="fa-solid fa-palette" style="font-size:32px;color:white"></i>
                         </div>
-                    <?php endif; ?>
-                    
-                    <h3 style="margin-bottom:8px;color:#1e293b"><?= esc_html($category->name) ?></h3>
-                    <p style="font-size:14px;color:#64748b;margin-bottom:12px"><?= $category->count ?> products</p>
-                    <div style="color:#3b82f6;font-weight:600;font-size:14px">
-                        Browse Products <i class="fa-solid fa-arrow-right"></i>
+                        <h3 style="margin-bottom:8px;color:#1e293b;font-size:18px"><?= esc_html($color->name) ?></h3>
+                        <div style="color:#3b82f6;font-weight:600;font-size:14px;margin-top:15px">
+                            Select <i class="fa-solid fa-arrow-right"></i>
+                        </div>
                     </div>
+                </a>
+                <?php endforeach;
+            else: ?>
+                <div style="grid-column:1/-1;text-align:center;padding:40px">
+                    <i class="fa-solid fa-circle-exclamation" style="font-size:48px;color:#64748b;margin-bottom:15px"></i>
+                    <p style="color:#64748b">No door colors available. Please contact administrator.</p>
                 </div>
-            </a>
-            <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
     
@@ -790,409 +789,307 @@ add_action('template_redirect', function () {
 });
 
 /* =====================================================
-   7. PAGE: PRODUCT BROWSING
+   7. PAGE: CATEGORY SELECTION
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('customer_panel') !== 'select-category') return;
+    
+    $user = customer_panel_guard();
+    
+    // Get color from URL
+    $color_slug = sanitize_text_field($_GET['color'] ?? '');
+    if (empty($color_slug)) {
+        wp_redirect(home_url('/customer-panel/new-order'));
+        exit;
+    }
+    
+    $color = get_term_by('slug', $color_slug, 'pa_color');
+    if (!$color) {
+        wp_redirect(home_url('/customer-panel/new-order'));
+        exit;
+    }
+    
+    customer_panel_header('Select Category');
+    
+    // Get main product categories (parent level only)
+    $categories = get_terms([
+        'taxonomy' => 'product_cat',
+        'hide_empty' => true,
+        'parent' => 0
+    ]);
+    
+    $active_category = sanitize_text_field($_GET['category'] ?? ($categories[0]->slug ?? ''));
+    
+    ?>
+    <div class="page-header">
+        <h1 class="page-title">Select Category</h1>
+        <p style="color:var(--text-muted);margin-top:10px">
+            <a href="<?= home_url('/customer-panel/new-order') ?>" style="color:var(--text-muted)">← Back to color selection</a>
+            <span style="margin:0 10px">|</span>
+            Door Color: <strong><?= esc_html($color->name) ?></strong>
+        </p>
+    </div>
+    
+    <div class="card">
+        <!-- Category Tabs -->
+        <div style="border-bottom:2px solid var(--border);margin-bottom:30px">
+            <div style="display:flex;gap:5px;flex-wrap:wrap">
+                <?php foreach ($categories as $category): ?>
+                    <a href="<?= home_url('/customer-panel/products?color=' . $color_slug . '&category=' . $category->slug) ?>" 
+                       style="padding:12px 24px;text-decoration:none;border-bottom:3px solid <?= $category->slug == $active_category ? 'var(--accent)' : 'transparent' ?>;color:<?= $category->slug == $active_category ? 'var(--accent)' : 'var(--text-muted)' ?>;font-weight:<?= $category->slug == $active_category ? '600' : '500' ?>;transition:all 0.2s">
+                        <?= esc_html($category->name) ?>
+                        <span style="color:var(--text-muted);font-size:12px;margin-left:5px">(<?= $category->count ?>)</span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        
+        <div style="text-align:center;padding:60px 20px">
+            <i class="fa-solid fa-arrow-up" style="font-size:48px;color:#64748b;margin-bottom:20px"></i>
+            <h3 style="color:#1e293b;margin-bottom:10px">Select a Category Above</h3>
+            <p style="color:#64748b">Choose a category to view available products</p>
+        </div>
+    </div>
+    
+    <?php
+    customer_panel_footer();
+    exit;
+});
+
+/* =====================================================
+   8. PAGE: PRODUCT TABLE BROWSING
 ===================================================== */
 add_action('template_redirect', function () {
     if (get_query_var('customer_panel') !== 'products') return;
     
     $user = customer_panel_guard();
     
-    // Get category from URL
-    $category_slug = get_query_var('category');
-    if (empty($category_slug)) {
+    // Get parameters from URL
+    $color_slug = sanitize_text_field($_GET['color'] ?? '');
+    $category_slug = sanitize_text_field($_GET['category'] ?? '');
+    
+    if (empty($color_slug) || empty($category_slug)) {
         wp_redirect(home_url('/customer-panel/new-order'));
         exit;
     }
     
+    $color = get_term_by('slug', $color_slug, 'pa_color');
     $category = get_term_by('slug', $category_slug, 'product_cat');
-    if (!$category) {
+    
+    if (!$color || !$category) {
         wp_redirect(home_url('/customer-panel/new-order'));
         exit;
     }
-    
-    // Get filters from query string
-    $paged = max(1, intval($_GET['paged'] ?? 1));
-    $per_page = 12;
-    $search = sanitize_text_field($_GET['s'] ?? '');
-    $orderby = sanitize_text_field($_GET['orderby'] ?? 'title');
-    $order = sanitize_text_field($_GET['order'] ?? 'ASC');
-    $view = sanitize_text_field($_GET['view'] ?? 'grid');
-    
-    // Price filter
-    $min_price = isset($_GET['min_price']) ? floatval($_GET['min_price']) : 0;
-    $max_price = isset($_GET['max_price']) ? floatval($_GET['max_price']) : 999999;
-    
-    // Stock filter
-    $in_stock_only = isset($_GET['in_stock']);
-    
-    // Build query args
-    $args = [
-        'post_type' => 'product',
-        'posts_per_page' => $per_page,
-        'paged' => $paged,
-        'orderby' => $orderby,
-        'order' => $order,
-        'tax_query' => [
-            [
-                'taxonomy' => 'product_cat',
-                'field' => 'term_id',
-                'terms' => $category->term_id,
-                'include_children' => true
-            ]
-        ],
-        'post_status' => 'publish'
-    ];
-    
-    // Add search
-    if (!empty($search)) {
-        $args['s'] = $search;
-    }
-    
-    // Add price filter via meta query
-    if ($min_price > 0 || $max_price < 999999) {
-        $args['meta_query'] = [
-            [
-                'key' => '_price',
-                'value' => [$min_price, $max_price],
-                'type' => 'NUMERIC',
-                'compare' => 'BETWEEN'
-            ]
-        ];
-    }
-    
-    // Stock filter
-    if ($in_stock_only) {
-        if (!isset($args['meta_query'])) {
-            $args['meta_query'] = [];
-        }
-        $args['meta_query'][] = [
-            'key' => '_stock_status',
-            'value' => 'instock',
-            'compare' => '='
-        ];
-    }
-    
-    $query = new WP_Query($args);
     
     customer_panel_header('Browse Products');
+    
+    // Get all product categories (for tabs)
+    $all_categories = get_terms([
+        'taxonomy' => 'product_cat',
+        'hide_empty' => true,
+        'parent' => 0
+    ]);
+    
+    // Get subcategories of selected category
+    $subcategories = get_terms([
+        'taxonomy' => 'product_cat',
+        'hide_empty' => true,
+        'parent' => $category->term_id
+    ]);
+    
     ?>
-    
     <style>
-    .filters-bar {
-        background:var(--white);
-        padding:20px;
-        border-radius:12px;
-        margin-bottom:20px;
-        box-shadow:var(--shadow);
-        display:flex;
-        gap:15px;
-        flex-wrap:wrap;
-        align-items:center;
+    .table-responsive {
+        overflow-x:auto;
+        margin:20px 0;
     }
-    .filter-group {
-        display:flex;
-        align-items:center;
-        gap:8px;
-    }
-    .filter-group label {
-        font-size:14px;
-        font-weight:600;
-        color:var(--text);
-    }
-    .filter-group input,
-    .filter-group select {
-        padding:8px 12px;
-        border:1px solid var(--border);
-        border-radius:6px;
-        font-size:14px;
-    }
-    .filter-group input[type="checkbox"] {
-        width:auto;
-        margin:0;
-    }
-    .products-header {
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        margin-bottom:20px;
-        flex-wrap:wrap;
-        gap:15px;
-    }
-    .view-toggle {
-        display:flex;
-        gap:5px;
-    }
-    .view-btn {
-        padding:8px 12px;
-        border:1px solid var(--border);
-        background:var(--white);
-        border-radius:6px;
-        cursor:pointer;
-        transition:all 0.2s;
-    }
-    .view-btn.active {
-        background:var(--accent);
-        color:var(--white);
-        border-color:var(--accent);
-    }
-    .products-grid {
-        display:grid;
-        grid-template-columns:repeat(auto-fill, minmax(250px, 1fr));
-        gap:20px;
-        margin-bottom:30px;
-    }
-    .products-list {
-        display:flex;
-        flex-direction:column;
-        gap:15px;
-        margin-bottom:30px;
-    }
-    .product-card {
-        background:var(--white);
-        border-radius:12px;
-        overflow:hidden;
-        box-shadow:var(--shadow);
-        transition:all 0.2s;
-        display:flex;
-        flex-direction:column;
-    }
-    .product-card:hover {
-        transform:translateY(-5px);
-        box-shadow:var(--shadow-lg);
-    }
-    .product-image {
+    .products-table {
         width:100%;
-        height:200px;
-        object-fit:cover;
-        background:#f8fafc;
+        border-collapse:collapse;
+        background:white;
     }
-    .product-info {
-        padding:15px;
-        flex:1;
-        display:flex;
-        flex-direction:column;
+    .products-table thead {
+        background:var(--primary);
+        color:white;
     }
-    .product-title {
+    .products-table th {
+        padding:12px;
+        text-align:left;
         font-weight:600;
-        font-size:16px;
-        margin-bottom:8px;
-        color:var(--text);
+        border-bottom:2px solid var(--border);
     }
-    .product-price {
-        font-size:20px;
-        font-weight:700;
-        color:var(--accent);
-        margin-bottom:10px;
+    .products-table td {
+        padding:12px;
+        border-bottom:1px solid var(--border);
     }
-    .product-stock {
-        font-size:12px;
-        margin-bottom:15px;
+    .products-table tr:hover {
+        background:var(--bg);
     }
-    .stock-in {
-        color:var(--success);
+    .subcategory-header {
+        background:var(--primary-light);
+        color:white;
+        padding:15px 20px;
+        margin-top:30px;
+        border-radius:8px;
+        display:flex;
+        align-items:center;
+        gap:15px;
     }
-    .stock-out {
-        color:var(--error);
+    .subcategory-image {
+        width:80px;
+        height:80px;
+        object-fit:cover;
+        border-radius:6px;
     }
-    .product-actions {
-        margin-top:auto;
-    }
-    
-    /* List view specific */
-    .product-card.list-view {
-        flex-direction:row;
-    }
-    .product-card.list-view .product-image {
-        width:200px;
-        height:150px;
-    }
-    .product-card.list-view .product-info {
-        flex:1;
-    }
-    
-    @media (max-width: 768px) {
-        .filters-bar {
-            flex-direction:column;
-            align-items:stretch;
-        }
-        .filter-group {
-            flex-direction:column;
-            align-items:stretch;
-        }
-        .products-grid {
-            grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
-            gap:15px;
-        }
-        .product-card.list-view {
-            flex-direction:column;
-        }
-        .product-card.list-view .product-image {
-            width:100%;
-            height:150px;
+    @media (max-width:768px) {
+        .products-table th,
+        .products-table td {
+            padding:8px;
+            font-size:14px;
         }
     }
     </style>
     
     <div class="page-header">
-        <div>
-            <nav style="margin-bottom:10px;font-size:14px;color:var(--text-muted)">
-                <a href="<?= home_url('/customer-panel') ?>" style="color:var(--text-muted)">Dashboard</a>
-                <span> / </span>
-                <a href="<?= home_url('/customer-panel/new-order') ?>" style="color:var(--text-muted)">New Order</a>
-                <span> / </span>
-                <span style="color:var(--text)"><?= esc_html($category->name) ?></span>
-            </nav>
-            <h1 class="page-title"><?= esc_html($category->name) ?></h1>
-            <?php if ($category->description): ?>
-                <p style="color:var(--text-muted);margin-top:5px"><?= esc_html($category->description) ?></p>
+        <h1 class="page-title">Products</h1>
+        <p style="color:var(--text-muted);margin-top:10px">
+            <a href="<?= home_url('/customer-panel/new-order') ?>" style="color:var(--text-muted)">New Order</a>
+            <span style="margin:0 8px">→</span>
+            <span>Door Color: <strong><?= esc_html($color->name) ?></strong></span>
+            <span style="margin:0 8px">→</span>
+            <span><?= esc_html($category->name) ?></span>
+        </p>
+    </div>
+    
+    <div class="card">
+        <!-- Category Tabs -->
+        <div style="border-bottom:2px solid var(--border);margin-bottom:20px">
+            <div style="display:flex;gap:5px;flex-wrap:wrap;overflow-x:auto">
+                <?php foreach ($all_categories as $cat): ?>
+                    <a href="<?= home_url('/customer-panel/products?color=' . $color_slug . '&category=' . $cat->slug) ?>" 
+                       style="padding:12px 24px;text-decoration:none;border-bottom:3px solid <?= $cat->term_id == $category->term_id ? 'var(--accent)' : 'transparent' ?>;color:<?= $cat->term_id == $category->term_id ? 'var(--accent)' : 'var(--text-muted)' ?>;font-weight:<?= $cat->term_id == $category->term_id ? '600' : '500' ?>;transition:all 0.2s;white-space:nowrap">
+                        <?= esc_html($cat->name) ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        
+        <?php
+        // If no subcategories, treat parent category as the only group
+        if (empty($subcategories)) {
+            $subcategories = [$category];
+        }
+        
+        foreach ($subcategories as $subcat):
+            $thumbnail_id = get_term_meta($subcat->term_id, 'thumbnail_id', true);
+            $image = $thumbnail_id ? wp_get_attachment_url($thumbnail_id) : '';
+            
+            // Get products in this subcategory with selected color
+            $products = new WP_Query([
+                'post_type' => 'product',
+                'posts_per_page' => -1,
+                'tax_query' => [
+                    'relation' => 'AND',
+                    [
+                        'taxonomy' => 'product_cat',
+                        'field' => 'term_id',
+                        'terms' => $subcat->term_id
+                    ],
+                    [
+                        'taxonomy' => 'pa_color',
+                        'field' => 'slug',
+                        'terms' => $color_slug
+                    ]
+                ],
+                'post_status' => 'publish'
+            ]);
+            
+            if (!$products->have_posts()) continue;
+        ?>
+        
+        <!-- Subcategory Header -->
+        <div class="subcategory-header">
+            <?php if ($image): ?>
+                <img src="<?= esc_url($image) ?>" alt="<?= esc_attr($subcat->name) ?>" class="subcategory-image">
             <?php endif; ?>
-        </div>
-    </div>
-    
-    <!-- Filters Bar -->
-    <form method="get" class="filters-bar">
-        <div class="filter-group">
-            <label>
-                <i class="fa-solid fa-search"></i> Search:
-            </label>
-            <input type="text" name="s" value="<?= esc_attr($search) ?>" placeholder="Product name..." style="width:200px">
-        </div>
-        
-        <div class="filter-group">
-            <label>
-                <i class="fa-solid fa-dollar-sign"></i> Price:
-            </label>
-            <input type="number" name="min_price" value="<?= $min_price > 0 ? $min_price : '' ?>" placeholder="Min" style="width:80px">
-            <span>-</span>
-            <input type="number" name="max_price" value="<?= $max_price < 999999 ? $max_price : '' ?>" placeholder="Max" style="width:80px">
-        </div>
-        
-        <div class="filter-group">
-            <label>
-                <input type="checkbox" name="in_stock" value="1" <?= $in_stock_only ? 'checked' : '' ?>>
-                In Stock Only
-            </label>
-        </div>
-        
-        <div class="filter-group">
-            <label>Sort:</label>
-            <select name="orderby" style="width:120px">
-                <option value="title" <?= $orderby == 'title' ? 'selected' : '' ?>>Name</option>
-                <option value="date" <?= $orderby == 'date' ? 'selected' : '' ?>>Date</option>
-                <option value="price" <?= $orderby == 'price' ? 'selected' : '' ?>>Price</option>
-                <option value="popularity" <?= $orderby == 'popularity' ? 'selected' : '' ?>>Popularity</option>
-            </select>
-            <select name="order" style="width:80px">
-                <option value="ASC" <?= $order == 'ASC' ? 'selected' : '' ?>>↑</option>
-                <option value="DESC" <?= $order == 'DESC' ? 'selected' : '' ?>>↓</option>
-            </select>
-        </div>
-        
-        <button type="submit" class="btn" style="padding:8px 16px">
-            <i class="fa-solid fa-filter"></i> Apply
-        </button>
-        
-        <a href="<?= home_url('/customer-panel/new-order/category/' . $category_slug) ?>" class="btn-secondary" style="padding:8px 16px">
-            Clear
-        </a>
-    </form>
-    
-    <!-- Products Header -->
-    <div class="products-header">
-        <div>
-            <strong><?= $query->found_posts ?></strong> products found
-        </div>
-        <div class="view-toggle">
-            <a href="?<?= http_build_query(array_merge($_GET, ['view' => 'grid'])) ?>" class="view-btn <?= $view == 'grid' ? 'active' : '' ?>">
-                <i class="fa-solid fa-grid"></i> Grid
-            </a>
-            <a href="?<?= http_build_query(array_merge($_GET, ['view' => 'list'])) ?>" class="view-btn <?= $view == 'list' ? 'active' : '' ?>">
-                <i class="fa-solid fa-list"></i> List
-            </a>
-        </div>
-    </div>
-    
-    <?php if ($query->have_posts()): ?>
-        <div class="products-<?= $view ?>">
-            <?php while ($query->have_posts()): $query->the_post();
-                $product = wc_get_product(get_the_ID());
-                $image = wp_get_attachment_url($product->get_image_id());
-                $stock_status = $product->get_stock_status();
-            ?>
-            <div class="product-card <?= $view == 'list' ? 'list-view' : '' ?>">
-                <?php if ($image): ?>
-                    <img src="<?= esc_url($image) ?>" alt="<?= esc_attr($product->get_name()) ?>" class="product-image">
-                <?php else: ?>
-                    <div class="product-image" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%)">
-                        <i class="fa-solid fa-box" style="font-size:48px;color:rgba(255,255,255,0.5)"></i>
-                    </div>
-                <?php endif; ?>
-                
-                <div class="product-info">
-                    <div class="product-title"><?= esc_html($product->get_name()) ?></div>
-                    <div class="product-price"><?= $product->get_price_html() ?></div>
-                    
-                    <?php if ($stock_status == 'instock'): ?>
-                        <div class="product-stock stock-in">
-                            <i class="fa-solid fa-check-circle"></i> In Stock
-                        </div>
-                    <?php else: ?>
-                        <div class="product-stock stock-out">
-                            <i class="fa-solid fa-times-circle"></i> Out of Stock
-                        </div>
-                    <?php endif; ?>
-                    
-                    <div class="product-actions">
-                        <?php if ($stock_status == 'instock'): ?>
-                            <button class="btn" style="width:100%;justify-content:center" onclick="alert('Cart feature coming in Phase 3!')">
-                                <i class="fa-solid fa-cart-plus"></i> Add to Cart
-                            </button>
-                        <?php else: ?>
-                            <button class="btn-secondary" style="width:100%;justify-content:center" disabled>
-                                Out of Stock
-                            </button>
-                        <?php endif; ?>
-                    </div>
-                </div>
+            <div>
+                <h2 style="margin:0 0 5px 0"><?= esc_html($subcat->name) ?></h2>
+                <p style="margin:0;opacity:0.9"><?= $products->found_posts ?> products</p>
             </div>
-            <?php endwhile; ?>
         </div>
         
-        <!-- Pagination -->
-        <?php if ($query->max_num_pages > 1): ?>
-            <div style="margin-top:30px;display:flex;justify-content:center;align-items:center;gap:10px">
-                <span style="color:var(--text-muted);font-size:14px">Page:</span>
-                <select onchange="window.location.href=this.value" style="padding:10px;border:1px solid var(--border);border-radius:8px">
-                    <?php for ($i = 1; $i <= $query->max_num_pages; $i++): 
-                        $page_params = array_merge($_GET, ['paged' => $i]);
-                        $page_url = home_url('/customer-panel/new-order/category/' . $category_slug . '?' . http_build_query($page_params));
+        <!-- Products Table -->
+        <div class="table-responsive">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Product Name</th>
+                        <th>Description</th>
+                        <th style="text-align:center;width:120px">Assembly</th>
+                        <th style="text-align:center;width:100px">Quantity</th>
+                        <th style="width:150px">Add to Cart</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php while ($products->have_posts()): $products->the_post();
+                        $product_id = get_the_ID();
+                        $product = wc_get_product($product_id);
+                        $stock_status = $product->get_stock_status();
+                        
+                        // Get assembly data
+                        $assembly_enabled = get_post_meta($product_id, '_assembly_enabled', true) === 'yes';
+                        $assembly_price = get_post_meta($product_id, '_assembly_price', true);
+                        $assembly_tax = get_post_meta($product_id, '_assembly_tax', true);
                     ?>
-                        <option value="<?= esc_url($page_url) ?>" <?= $paged == $i ? 'selected' : '' ?>>
-                            Page <?= $i ?> of <?= $query->max_num_pages ?>
-                        </option>
-                    <?php endfor; ?>
-                </select>
-                <span style="color:var(--text-muted);font-size:14px">
-                    (Showing <?= min($per_page * $paged, $query->found_posts) ?> of <?= $query->found_posts ?> products)
-                </span>
-            </div>
-        <?php endif; ?>
-        
-    <?php else: ?>
-        <div class="card">
-            <div style="text-align:center;padding:60px 20px">
-                <i class="fa-solid fa-search" style="font-size:64px;color:#e5e7eb;margin-bottom:20px"></i>
-                <h2 style="margin-bottom:10px">No Products Found</h2>
-                <p style="color:#64748b">Try adjusting your filters or search terms.</p>
-                <a href="<?= home_url('/customer-panel/new-order/category/' . $category_slug) ?>" class="btn" style="margin-top:20px">
-                    Clear Filters
-                </a>
-            </div>
+                    <tr>
+                        <td>
+                            <strong><?= esc_html(get_the_title()) ?></strong>
+                            <div style="color:var(--text-muted);font-size:13px;margin-top:3px">
+                                <?= $product->get_price_html() ?>
+                            </div>
+                        </td>
+                        <td style="color:var(--text-muted);font-size:14px">
+                            <?= wp_trim_words(get_the_excerpt(), 15) ?>
+                        </td>
+                        <td style="text-align:center">
+                            <?php if ($assembly_enabled): ?>
+                                <label style="display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer">
+                                    <input type="checkbox" name="assembly_<?= $product_id ?>" value="1" style="width:18px;height:18px">
+                                    <span style="font-size:13px">+<?= wc_price($assembly_price) ?></span>
+                                </label>
+                            <?php else: ?>
+                                <span style="color:var(--text-muted);font-size:13px">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="text-align:center">
+                            <input type="number" name="qty_<?= $product_id ?>" value="1" min="1" 
+                                   style="width:60px;padding:6px;border:1px solid var(--border);border-radius:4px;text-align:center">
+                        </td>
+                        <td>
+                            <?php if ($stock_status == 'instock'): ?>
+                                <button class="btn" style="width:100%;justify-content:center;padding:8px" 
+                                        onclick="alert('Cart feature coming in Phase 3!')">
+                                    <i class="fa-solid fa-cart-plus"></i> Add
+                                </button>
+                            <?php else: ?>
+                                <button class="btn-secondary" style="width:100%;justify-content:center;padding:8px" disabled>
+                                    Out of Stock
+                                </button>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endwhile; ?>
+                </tbody>
+            </table>
         </div>
-    <?php endif; ?>
+        
+        <?php
+        wp_reset_postdata();
+        endforeach;
+        ?>
+    </div>
     
     <?php
-    wp_reset_postdata();
     customer_panel_footer();
     exit;
 });

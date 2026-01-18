@@ -662,6 +662,51 @@ function b2b_personnel_form_page($personnel_id = 0) {
         $baslangic = sanitize_text_field($_POST['baslangic_tarihi']);
         $department = intval($_POST['department']);
         
+        // Phase 1: Emergency Contact & Status
+        $emergency_name = sanitize_text_field($_POST['emergency_contact_name'] ?? '');
+        $emergency_rel = sanitize_text_field($_POST['emergency_contact_relationship'] ?? '');
+        $emergency_phone = sanitize_text_field($_POST['emergency_contact_phone'] ?? '');
+        $employment_status = sanitize_text_field($_POST['employment_status'] ?? 'active');
+        $employee_id = sanitize_text_field($_POST['employee_id'] ?? '');
+        
+        // Phase 2: Pay Classification
+        $pay_type = sanitize_text_field($_POST['pay_type'] ?? '');
+        $pay_rate = floatval($_POST['pay_rate'] ?? 0);
+        $flsa_status = sanitize_text_field($_POST['flsa_status'] ?? '');
+        $reports_to = intval($_POST['reports_to'] ?? 0);
+        $termination_date = sanitize_text_field($_POST['termination_date'] ?? '');
+        $rehire_date = sanitize_text_field($_POST['rehire_date'] ?? '');
+        
+        // Phase 3: Time Tracking
+        $meal_break = isset($_POST['meal_break']) ? 1 : 0;
+        $meal_break_duration = intval($_POST['meal_break_duration'] ?? 30);
+        $rest_break = isset($_POST['rest_break']) ? 1 : 0;
+        $rest_break_duration = intval($_POST['rest_break_duration'] ?? 15);
+        $vacation_balance = floatval($_POST['vacation_balance'] ?? 0);
+        $sick_leave_balance = floatval($_POST['sick_leave_balance'] ?? 0);
+        $pto_accrual_rate = floatval($_POST['pto_accrual_rate'] ?? 0);
+        
+        // Phase 4: Payroll
+        $w4_filing_status = sanitize_text_field($_POST['w4_filing_status'] ?? '');
+        $w4_allowances = intval($_POST['w4_allowances'] ?? 0);
+        $w4_additional = floatval($_POST['w4_additional_withholding'] ?? 0);
+        $w4_year = intval($_POST['w4_year'] ?? date('Y'));
+        $bank_name = sanitize_text_field($_POST['bank_name'] ?? '');
+        $routing_number = sanitize_text_field($_POST['routing_number'] ?? '');
+        $account_number = sanitize_text_field($_POST['account_number'] ?? '');
+        $account_type = sanitize_text_field($_POST['account_type'] ?? '');
+        $health_insurance = floatval($_POST['health_insurance_deduction'] ?? 0);
+        $k401_contribution = floatval($_POST['401k_contribution'] ?? 0);
+        $k401_type = sanitize_text_field($_POST['401k_type'] ?? 'percent');
+        
+        // Phase 5: Compliance
+        $work_authorization = sanitize_text_field($_POST['work_authorization'] ?? '');
+        $citizenship_status = sanitize_text_field($_POST['citizenship_status'] ?? '');
+        $i9_completion_date = sanitize_text_field($_POST['i9_completion_date'] ?? '');
+        $i9_document_type = sanitize_text_field($_POST['i9_document_type'] ?? '');
+        $i9_expiration_date = sanitize_text_field($_POST['i9_expiration_date'] ?? '');
+        $ssn = sanitize_text_field($_POST['ssn'] ?? '');
+        
         if (empty($name)) {
             $error = 'Full Name field is required.';
         } else {
@@ -677,14 +722,77 @@ function b2b_personnel_form_page($personnel_id = 0) {
             } else {
                 $result = wp_insert_post($post_data);
                 $personnel_id = $result;
+                // Generate employee ID for new personnel
+                if (empty($employee_id)) {
+                    $employee_id = 'EMP-' . str_pad($personnel_id, 5, '0', STR_PAD_LEFT);
+                }
             }
             
             if ($result && !is_wp_error($result)) {
+                // Basic fields
                 update_post_meta($personnel_id, '_gorev', $gorev);
                 update_post_meta($personnel_id, '_eposta', $eposta);
                 update_post_meta($personnel_id, '_telefon', $telefon);
                 update_post_meta($personnel_id, '_maas', $maas);
                 update_post_meta($personnel_id, '_baslangic_tarihi', $baslangic);
+                
+                // Phase 1 fields
+                update_post_meta($personnel_id, '_emergency_contact_name', $emergency_name);
+                update_post_meta($personnel_id, '_emergency_contact_relationship', $emergency_rel);
+                update_post_meta($personnel_id, '_emergency_contact_phone', $emergency_phone);
+                update_post_meta($personnel_id, '_employment_status', $employment_status);
+                update_post_meta($personnel_id, '_employee_id', $employee_id);
+                
+                // Phase 2 fields
+                update_post_meta($personnel_id, '_pay_type', $pay_type);
+                update_post_meta($personnel_id, '_pay_rate', $pay_rate);
+                update_post_meta($personnel_id, '_flsa_status', $flsa_status);
+                update_post_meta($personnel_id, '_reports_to', $reports_to);
+                update_post_meta($personnel_id, '_termination_date', $termination_date);
+                update_post_meta($personnel_id, '_rehire_date', $rehire_date);
+                
+                // Auto-update status based on termination date
+                if (!empty($termination_date) && strtotime($termination_date) <= time()) {
+                    update_post_meta($personnel_id, '_employment_status', 'inactive');
+                }
+                
+                // Phase 3 fields
+                update_post_meta($personnel_id, '_meal_break', $meal_break);
+                update_post_meta($personnel_id, '_meal_break_duration', $meal_break_duration);
+                update_post_meta($personnel_id, '_rest_break', $rest_break);
+                update_post_meta($personnel_id, '_rest_break_duration', $rest_break_duration);
+                update_post_meta($personnel_id, '_vacation_balance', $vacation_balance);
+                update_post_meta($personnel_id, '_sick_leave_balance', $sick_leave_balance);
+                update_post_meta($personnel_id, '_pto_accrual_rate', $pto_accrual_rate);
+                
+                // Phase 4 fields
+                update_post_meta($personnel_id, '_w4_filing_status', $w4_filing_status);
+                update_post_meta($personnel_id, '_w4_allowances', $w4_allowances);
+                update_post_meta($personnel_id, '_w4_additional_withholding', $w4_additional);
+                update_post_meta($personnel_id, '_w4_year', $w4_year);
+                update_post_meta($personnel_id, '_bank_name', $bank_name);
+                // Encrypt sensitive banking info
+                if (!empty($routing_number)) {
+                    update_post_meta($personnel_id, '_routing_number', wp_hash_password($routing_number));
+                }
+                if (!empty($account_number)) {
+                    update_post_meta($personnel_id, '_account_number', wp_hash_password($account_number));
+                }
+                update_post_meta($personnel_id, '_account_type', $account_type);
+                update_post_meta($personnel_id, '_health_insurance_deduction', $health_insurance);
+                update_post_meta($personnel_id, '_401k_contribution', $k401_contribution);
+                update_post_meta($personnel_id, '_401k_type', $k401_type);
+                
+                // Phase 5 fields
+                update_post_meta($personnel_id, '_work_authorization', $work_authorization);
+                update_post_meta($personnel_id, '_citizenship_status', $citizenship_status);
+                update_post_meta($personnel_id, '_i9_completion_date', $i9_completion_date);
+                update_post_meta($personnel_id, '_i9_document_type', $i9_document_type);
+                update_post_meta($personnel_id, '_i9_expiration_date', $i9_expiration_date);
+                // Encrypt SSN
+                if (!empty($ssn)) {
+                    update_post_meta($personnel_id, '_ssn', wp_hash_password($ssn));
+                }
                 
                 if ($department) {
                     wp_set_object_terms($personnel_id, $department, 'b2b_departman');
@@ -715,16 +823,93 @@ function b2b_personnel_form_page($personnel_id = 0) {
         $baslangic = get_post_meta($personnel_id, '_baslangic_tarihi', true);
         $terms = get_the_terms($personnel_id, 'b2b_departman');
         $current_dept = $terms && !is_wp_error($terms) ? $terms[0]->term_id : 0;
+        
+        // Phase 1
+        $emergency_name = get_post_meta($personnel_id, '_emergency_contact_name', true);
+        $emergency_rel = get_post_meta($personnel_id, '_emergency_contact_relationship', true);
+        $emergency_phone = get_post_meta($personnel_id, '_emergency_contact_phone', true);
+        $employment_status = get_post_meta($personnel_id, '_employment_status', true) ?: 'active';
+        $employee_id = get_post_meta($personnel_id, '_employee_id', true);
+        
+        // Phase 2
+        $pay_type = get_post_meta($personnel_id, '_pay_type', true);
+        $pay_rate = get_post_meta($personnel_id, '_pay_rate', true);
+        $flsa_status = get_post_meta($personnel_id, '_flsa_status', true);
+        $reports_to = get_post_meta($personnel_id, '_reports_to', true);
+        $termination_date = get_post_meta($personnel_id, '_termination_date', true);
+        $rehire_date = get_post_meta($personnel_id, '_rehire_date', true);
+        
+        // Phase 3
+        $meal_break = get_post_meta($personnel_id, '_meal_break', true);
+        $meal_break_duration = get_post_meta($personnel_id, '_meal_break_duration', true) ?: 30;
+        $rest_break = get_post_meta($personnel_id, '_rest_break', true);
+        $rest_break_duration = get_post_meta($personnel_id, '_rest_break_duration', true) ?: 15;
+        $vacation_balance = get_post_meta($personnel_id, '_vacation_balance', true) ?: 0;
+        $sick_leave_balance = get_post_meta($personnel_id, '_sick_leave_balance', true) ?: 0;
+        $pto_accrual_rate = get_post_meta($personnel_id, '_pto_accrual_rate', true) ?: 0;
+        
+        // Phase 4
+        $w4_filing_status = get_post_meta($personnel_id, '_w4_filing_status', true);
+        $w4_allowances = get_post_meta($personnel_id, '_w4_allowances', true) ?: 0;
+        $w4_additional = get_post_meta($personnel_id, '_w4_additional_withholding', true) ?: 0;
+        $w4_year = get_post_meta($personnel_id, '_w4_year', true) ?: date('Y');
+        $bank_name = get_post_meta($personnel_id, '_bank_name', true);
+        $routing_number = ''; // Don't retrieve encrypted data
+        $account_number = ''; // Don't retrieve encrypted data
+        $account_type = get_post_meta($personnel_id, '_account_type', true);
+        $health_insurance = get_post_meta($personnel_id, '_health_insurance_deduction', true) ?: 0;
+        $k401_contribution = get_post_meta($personnel_id, '_401k_contribution', true) ?: 0;
+        $k401_type = get_post_meta($personnel_id, '_401k_type', true) ?: 'percent';
+        
+        // Phase 5
+        $work_authorization = get_post_meta($personnel_id, '_work_authorization', true);
+        $citizenship_status = get_post_meta($personnel_id, '_citizenship_status', true);
+        $i9_completion_date = get_post_meta($personnel_id, '_i9_completion_date', true);
+        $i9_document_type = get_post_meta($personnel_id, '_i9_document_type', true);
+        $i9_expiration_date = get_post_meta($personnel_id, '_i9_expiration_date', true);
+        $ssn = ''; // Don't retrieve encrypted SSN
     } else {
         $name = $gorev = $eposta = $telefon = $baslangic = '';
         $maas = 0;
         $current_dept = 0;
+        
+        // Initialize all new fields for add mode
+        $emergency_name = $emergency_rel = $emergency_phone = '';
+        $employment_status = 'active';
+        $employee_id = '';
+        $pay_type = $flsa_status = '';
+        $pay_rate = 0;
+        $reports_to = 0;
+        $termination_date = $rehire_date = '';
+        $meal_break = $rest_break = 0;
+        $meal_break_duration = 30;
+        $rest_break_duration = 15;
+        $vacation_balance = $sick_leave_balance = $pto_accrual_rate = 0;
+        $w4_filing_status = '';
+        $w4_allowances = 0;
+        $w4_additional = 0;
+        $w4_year = date('Y');
+        $bank_name = $routing_number = $account_number = $account_type = '';
+        $health_insurance = $k401_contribution = 0;
+        $k401_type = 'percent';
+        $work_authorization = $citizenship_status = '';
+        $i9_completion_date = $i9_document_type = $i9_expiration_date = '';
+        $ssn = '';
     }
     
     // Get departments
     $departments = get_terms([
         'taxonomy'   => 'b2b_departman',
         'hide_empty' => false,
+    ]);
+    
+    // Get all active personnel for Reports-To dropdown
+    $all_personnel = get_posts([
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1,
+        'post_status' => 'publish',
+        'orderby' => 'title',
+        'order' => 'ASC'
     ]);
     
     ?>
@@ -853,10 +1038,55 @@ function b2b_personnel_form_page($personnel_id = 0) {
             }
             .btn-secondary:hover { background: #d1d5db; }
             
+            .form-section {
+                margin-bottom: 2rem;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            .section-header {
+                background: #f9fafb;
+                padding: 1rem 1.5rem;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                user-select: none;
+            }
+            .section-header:hover {
+                background: #f3f4f6;
+            }
+            .section-header h3 {
+                font-size: 1rem;
+                font-weight: 600;
+                color: #374151;
+                margin: 0;
+            }
+            .section-toggle {
+                color: #6b7280;
+                transition: transform 0.2s;
+            }
+            .section-content {
+                padding: 1.5rem;
+                display: none;
+            }
+            .section-content.active {
+                display: block;
+            }
+            .section-content .form-group:last-child {
+                margin-bottom: 0;
+            }
+            .form-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }
+            
             @media (max-width: 768px) {
                 .header { flex-direction: column; gap: 1rem; }
                 .form-card { padding: 1.5rem; }
                 .form-actions { flex-direction: column; }
+                .form-row { grid-template-columns: 1fr; }
             }
         </style>
     </head>
@@ -887,46 +1117,388 @@ function b2b_personnel_form_page($personnel_id = 0) {
                 <?php endif; ?>
                 
                 <form method="POST">
-                    <div class="form-group">
-                        <label><i class="fas fa-user"></i> Ad Soyad *</label>
-                        <input type="text" name="name" value="<?= esc_attr($name) ?>" required>
+                    <!-- Section 1: Basic Information -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-user"></i> Basic Information</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content active">
+                            <div class="form-group">
+                                <label><i class="fas fa-user"></i> Full Name *</label>
+                                <input type="text" name="name" value="<?= esc_attr($name) ?>" required>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-envelope"></i> Email</label>
+                                    <input type="email" name="eposta" value="<?= esc_attr($eposta) ?>">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-phone"></i> Phone</label>
+                                    <input type="tel" name="telefon" value="<?= esc_attr($telefon) ?>">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-id-badge"></i> Employee ID</label>
+                                    <input type="text" name="employee_id" value="<?= esc_attr($employee_id) ?>" placeholder="Auto-generated if empty">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-toggle-on"></i> Employment Status</label>
+                                    <select name="employment_status">
+                                        <option value="active" <?= selected($employment_status, 'active', false) ?>>Active</option>
+                                        <option value="inactive" <?= selected($employment_status, 'inactive', false) ?>>Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-building"></i> Department</label>
-                        <select name="department">
-                            <option value="">Select...</option>
-                            <?php foreach ($departments as $dept): ?>
-                                <option value="<?= $dept->term_id ?>" <?= selected($current_dept, $dept->term_id, false) ?>>
-                                    <?= esc_html($dept->name) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                    <!-- Section 2: Employment Details -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-briefcase"></i> Employment Details</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content active">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-building"></i> Department</label>
+                                    <select name="department">
+                                        <option value="">Select...</option>
+                                        <?php foreach ($departments as $dept): ?>
+                                            <option value="<?= $dept->term_id ?>" <?= selected($current_dept, $dept->term_id, false) ?>>
+                                                <?= esc_html($dept->name) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-briefcase"></i> Position / Job Title</label>
+                                    <input type="text" name="gorev" value="<?= esc_attr($gorev) ?>">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-user-tie"></i> Reports To (Manager)</label>
+                                <select name="reports_to">
+                                    <option value="0">None</option>
+                                    <?php foreach ($all_personnel as $person): 
+                                        if ($is_edit && $person->ID == $personnel_id) continue; // Skip self
+                                    ?>
+                                        <option value="<?= $person->ID ?>" <?= selected($reports_to, $person->ID, false) ?>>
+                                            <?= esc_html($person->post_title) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-calendar-plus"></i> Hire Date</label>
+                                    <input type="date" name="baslangic_tarihi" value="<?= esc_attr($baslangic) ?>">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-calendar-minus"></i> Termination Date</label>
+                                    <input type="date" name="termination_date" value="<?= esc_attr($termination_date) ?>">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-calendar-check"></i> Re-hire Date (if applicable)</label>
+                                <input type="date" name="rehire_date" value="<?= esc_attr($rehire_date) ?>">
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-briefcase"></i> Position / Title</label>
-                        <input type="text" name="gorev" value="<?= esc_attr($gorev) ?>">
+                    <!-- Section 3: Pay & Classification -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-dollar-sign"></i> Pay & Classification</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-money-bill-wave"></i> Pay Type</label>
+                                    <select name="pay_type">
+                                        <option value="">Select...</option>
+                                        <option value="hourly" <?= selected($pay_type, 'hourly', false) ?>>Hourly</option>
+                                        <option value="salaried" <?= selected($pay_type, 'salaried', false) ?>>Salaried</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-coins"></i> Pay Rate ($/hr or Annual)</label>
+                                    <input type="number" name="pay_rate" value="<?= esc_attr($pay_rate) ?>" step="0.01">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-dollar-sign"></i> Base Salary ($)</label>
+                                    <input type="number" name="maas" value="<?= esc_attr($maas) ?>" step="0.01">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-balance-scale"></i> FLSA Status</label>
+                                    <select name="flsa_status">
+                                        <option value="">Select...</option>
+                                        <option value="exempt" <?= selected($flsa_status, 'exempt', false) ?>>Exempt (No OT)</option>
+                                        <option value="non-exempt" <?= selected($flsa_status, 'non-exempt', false) ?>>Non-Exempt (OT Eligible)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-envelope"></i> E-posta</label>
-                        <input type="email" name="eposta" value="<?= esc_attr($eposta) ?>">
+                    <!-- Section 4: Time & Attendance Settings -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-clock"></i> Time & Attendance Settings</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" name="meal_break" value="1" <?= checked($meal_break, 1, false) ?>>
+                                        <i class="fas fa-utensils"></i> Meal Break (30+ min, unpaid)
+                                    </label>
+                                    <input type="number" name="meal_break_duration" value="<?= esc_attr($meal_break_duration) ?>" placeholder="Duration in minutes">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" name="rest_break" value="1" <?= checked($rest_break, 1, false) ?>>
+                                        <i class="fas fa-coffee"></i> Rest Break (15 min, paid)
+                                    </label>
+                                    <input type="number" name="rest_break_duration" value="<?= esc_attr($rest_break_duration) ?>" placeholder="Duration in minutes">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-umbrella-beach"></i> Vacation Balance (hours)</label>
+                                    <input type="number" name="vacation_balance" value="<?= esc_attr($vacation_balance) ?>" step="0.5">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-thermometer"></i> Sick Leave Balance (hours)</label>
+                                    <input type="number" name="sick_leave_balance" value="<?= esc_attr($sick_leave_balance) ?>" step="0.5">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-chart-line"></i> PTO Accrual Rate (hours per pay period)</label>
+                                <input type="number" name="pto_accrual_rate" value="<?= esc_attr($pto_accrual_rate) ?>" step="0.01">
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-phone"></i> Phone</label>
-                        <input type="tel" name="telefon" value="<?= esc_attr($telefon) ?>">
+                    <!-- Section 5: Tax Information (W-4 & SSN) -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-file-invoice-dollar"></i> Tax Information (W-4 & SSN)</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-users"></i> W-4 Filing Status</label>
+                                    <select name="w4_filing_status">
+                                        <option value="">Select...</option>
+                                        <option value="single" <?= selected($w4_filing_status, 'single', false) ?>>Single</option>
+                                        <option value="married_joint" <?= selected($w4_filing_status, 'married_joint', false) ?>>Married Filing Jointly</option>
+                                        <option value="married_separate" <?= selected($w4_filing_status, 'married_separate', false) ?>>Married Filing Separately</option>
+                                        <option value="head_of_household" <?= selected($w4_filing_status, 'head_of_household', false) ?>>Head of Household</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-hashtag"></i> Number of Allowances</label>
+                                    <input type="number" name="w4_allowances" value="<?= esc_attr($w4_allowances) ?>" min="0">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-plus-circle"></i> Additional Withholding ($)</label>
+                                    <input type="number" name="w4_additional_withholding" value="<?= esc_attr($w4_additional) ?>" step="0.01">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-calendar-alt"></i> Tax Year</label>
+                                    <input type="number" name="w4_year" value="<?= esc_attr($w4_year) ?>" min="2020" max="2030">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-shield-alt"></i> Social Security Number (SSN)</label>
+                                <input type="text" name="ssn" value="<?= esc_attr($ssn) ?>" placeholder="XXX-XX-XXXX (encrypted storage)" maxlength="11">
+                                <?php if ($is_edit): ?>
+                                    <small style="color: #6b7280;">Leave empty to keep existing SSN</small>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-money-bill-wave"></i> Salary ($)</label>
-                        <input type="number" name="maas" value="<?= esc_attr($maas) ?>" step="0.01">
+                    <!-- Section 6: Direct Deposit & Banking -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-university"></i> Direct Deposit & Banking</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-group">
+                                <label><i class="fas fa-landmark"></i> Bank Name</label>
+                                <input type="text" name="bank_name" value="<?= esc_attr($bank_name) ?>">
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-route"></i> Routing Number (9 digits)</label>
+                                    <input type="text" name="routing_number" value="<?= esc_attr($routing_number) ?>" placeholder="XXXXXXXXX" maxlength="9">
+                                    <?php if ($is_edit): ?>
+                                        <small style="color: #6b7280;">Leave empty to keep existing</small>
+                                    <?php endif; ?>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-credit-card"></i> Account Number</label>
+                                    <input type="text" name="account_number" value="<?= esc_attr($account_number) ?>" placeholder="Encrypted storage">
+                                    <?php if ($is_edit): ?>
+                                        <small style="color: #6b7280;">Leave empty to keep existing</small>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-wallet"></i> Account Type</label>
+                                <select name="account_type">
+                                    <option value="">Select...</option>
+                                    <option value="checking" <?= selected($account_type, 'checking', false) ?>>Checking</option>
+                                    <option value="savings" <?= selected($account_type, 'savings', false) ?>>Savings</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label><i class="fas fa-calendar"></i> Start Date</label>
-                        <input type="date" name="baslangic_tarihi" value="<?= esc_attr($baslangic) ?>">
+                    <!-- Section 7: Deductions -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-calculator"></i> Deductions</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-group">
+                                <label><i class="fas fa-heart"></i> Health Insurance Deduction ($)</label>
+                                <input type="number" name="health_insurance_deduction" value="<?= esc_attr($health_insurance) ?>" step="0.01">
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-piggy-bank"></i> 401(k) Contribution</label>
+                                    <input type="number" name="401k_contribution" value="<?= esc_attr($k401_contribution) ?>" step="0.01">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-percent"></i> 401(k) Type</label>
+                                    <select name="401k_type">
+                                        <option value="percent" <?= selected($k401_type, 'percent', false) ?>>Percentage (%)</option>
+                                        <option value="dollar" <?= selected($k401_type, 'dollar', false) ?>>Dollar Amount ($)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Section 8: Compliance (I-9 & Work Authorization) -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-file-contract"></i> Compliance (I-9 & Work Authorization)</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-passport"></i> Work Authorization</label>
+                                    <select name="work_authorization">
+                                        <option value="">Select...</option>
+                                        <option value="citizen" <?= selected($work_authorization, 'citizen', false) ?>>US Citizen</option>
+                                        <option value="green_card" <?= selected($work_authorization, 'green_card', false) ?>>Permanent Resident (Green Card)</option>
+                                        <option value="work_visa" <?= selected($work_authorization, 'work_visa', false) ?>>Work Visa</option>
+                                        <option value="other" <?= selected($work_authorization, 'other', false) ?>>Other</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-flag-usa"></i> Citizenship Status</label>
+                                    <select name="citizenship_status">
+                                        <option value="">Select...</option>
+                                        <option value="us_citizen" <?= selected($citizenship_status, 'us_citizen', false) ?>>US Citizen</option>
+                                        <option value="permanent_resident" <?= selected($citizenship_status, 'permanent_resident', false) ?>>Permanent Resident</option>
+                                        <option value="work_visa" <?= selected($citizenship_status, 'work_visa', false) ?>>Work Visa</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-calendar-check"></i> I-9 Completion Date</label>
+                                    <input type="date" name="i9_completion_date" value="<?= esc_attr($i9_completion_date) ?>">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-id-card"></i> I-9 Document Type</label>
+                                    <input type="text" name="i9_document_type" value="<?= esc_attr($i9_document_type) ?>" placeholder="e.g., Passport, Driver's License">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label><i class="fas fa-calendar-times"></i> Document Expiration Date</label>
+                                <input type="date" name="i9_expiration_date" value="<?= esc_attr($i9_expiration_date) ?>">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Section 9: Emergency Contact -->
+                    <div class="form-section">
+                        <div class="section-header" onclick="toggleSection(this)">
+                            <h3><i class="fas fa-phone-alt"></i> Emergency Contact</h3>
+                            <i class="fas fa-chevron-down section-toggle"></i>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-group">
+                                <label><i class="fas fa-user"></i> Emergency Contact Name</label>
+                                <input type="text" name="emergency_contact_name" value="<?= esc_attr($emergency_name) ?>">
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label><i class="fas fa-users"></i> Relationship</label>
+                                    <select name="emergency_contact_relationship">
+                                        <option value="">Select...</option>
+                                        <option value="spouse" <?= selected($emergency_rel, 'spouse', false) ?>>Spouse</option>
+                                        <option value="parent" <?= selected($emergency_rel, 'parent', false) ?>>Parent</option>
+                                        <option value="sibling" <?= selected($emergency_rel, 'sibling', false) ?>>Sibling</option>
+                                        <option value="friend" <?= selected($emergency_rel, 'friend', false) ?>>Friend</option>
+                                        <option value="other" <?= selected($emergency_rel, 'other', false) ?>>Other</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label><i class="fas fa-phone"></i> Emergency Contact Phone</label>
+                                    <input type="tel" name="emergency_contact_phone" value="<?= esc_attr($emergency_phone) ?>">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="form-actions">
@@ -940,6 +1512,16 @@ function b2b_personnel_form_page($personnel_id = 0) {
                 </form>
             </div>
         </div>
+        
+        <script>
+            function toggleSection(header) {
+                const content = header.nextElementSibling;
+                const toggle = header.querySelector('.section-toggle');
+                
+                content.classList.toggle('active');
+                toggle.style.transform = content.classList.contains('active') ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+        </script>
     </body>
     </html>
     <?php

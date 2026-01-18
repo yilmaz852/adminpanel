@@ -90,7 +90,7 @@ function b2b_personnel_template_redirect() {
 
     // Admin-only access control
     if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/admin-panel'));
+        wp_redirect(home_url('/b2b-panel'));
         exit;
     }
 
@@ -335,7 +335,7 @@ function b2b_personnel_list_page() {
     <body>
         <div class="header">
             <h1><i class="fas fa-users"></i> Personel Yönetimi</h1>
-            <a href="/admin-panel" class="back-btn">
+            <a href="/b2b-panel" class="back-btn">
                 <i class="fas fa-arrow-left"></i> Admin Panele Dön
             </a>
         </div>

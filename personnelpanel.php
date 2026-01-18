@@ -80,6 +80,14 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/delete-note/([0-9]+)/?$', 'index.php?personnel_panel=delete_note&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/upload-document/([0-9]+)/?$', 'index.php?personnel_panel=upload_document&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/delete-document/([0-9]+)/?$', 'index.php?personnel_panel=delete_document&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/clock-in-form/([0-9]+)/?$', 'index.php?personnel_panel=clock_in_form&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/clock-out-form/([0-9]+)/?$', 'index.php?personnel_panel=clock_out_form&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/process-clock-in/?$', 'index.php?personnel_panel=process_clock_in', 'top');
+    add_rewrite_rule('^personnel-panel/process-clock-out/?$', 'index.php?personnel_panel=process_clock_out', 'top');
+    add_rewrite_rule('^personnel-panel/edit-attendance/([0-9]+)/([0-9]+)/?$', 'index.php?personnel_panel=edit_attendance&personnel_id=$matches[1]&attendance_index=$matches[2]', 'top');
+    add_rewrite_rule('^personnel-panel/update-attendance/?$', 'index.php?personnel_panel=update_attendance', 'top');
+    add_rewrite_rule('^personnel-panel/delete-attendance/([0-9]+)/([0-9]+)/?$', 'index.php?personnel_panel=delete_attendance&personnel_id=$matches[1]&attendance_index=$matches[2]', 'top');
+    add_rewrite_rule('^personnel-panel/reports/?$', 'index.php?personnel_panel=reports', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -87,6 +95,7 @@ function b2b_personnel_query_vars($vars) {
     $vars[] = 'personnel_panel';
     $vars[] = 'personnel_id';
     $vars[] = 'department_id';
+    $vars[] = 'attendance_index';
     return $vars;
 }
 
@@ -157,6 +166,30 @@ function b2b_personnel_template_redirect() {
             break;
         case 'delete_document':
             b2b_personnel_delete_document();
+            break;
+        case 'clock_in_form':
+            b2b_personnel_clock_in_form();
+            break;
+        case 'clock_out_form':
+            b2b_personnel_clock_out_form();
+            break;
+        case 'process_clock_in':
+            b2b_personnel_process_clock_in();
+            break;
+        case 'process_clock_out':
+            b2b_personnel_process_clock_out();
+            break;
+        case 'edit_attendance':
+            b2b_personnel_edit_attendance_form();
+            break;
+        case 'update_attendance':
+            b2b_personnel_update_attendance();
+            break;
+        case 'delete_attendance':
+            b2b_personnel_delete_attendance();
+            break;
+        case 'reports':
+            b2b_personnel_reports_page();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -1611,6 +1644,7 @@ function b2b_personnel_view_page() {
                                     <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Date & Time</th>
                                     <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Action</th>
                                     <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Hours</th>
+                                    <th style="padding:12px;text-align:center;font-weight:600;color:#374151;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1622,6 +1656,7 @@ function b2b_personnel_view_page() {
                                     $grouped[$date][] = $record;
                                 }
                                 
+                                $index = count($attendance) - 1;
                                 foreach (array_reverse($attendance) as $record): 
                                     $is_clock_in = $record['type'] === 'clock_in';
                                 ?>
@@ -1658,8 +1693,18 @@ function b2b_personnel_view_page() {
                                             }
                                             ?>
                                         </td>
+                                        <td style="padding:12px;text-align:center;">
+                                            <a href="<?= home_url('/personnel-panel/edit-attendance/' . $personnel_id . '/' . $index) ?>" style="color:#3b82f6;margin-right:10px;" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="<?= home_url('/personnel-panel/delete-attendance/' . $personnel_id . '/' . $index) ?>" onclick="return confirm('Delete this attendance record?')" style="color:#ef4444;" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                        </td>
                                     </tr>
-                                <?php endforeach; ?>
+                                <?php 
+                                    $index--;
+                                endforeach; ?>
                             </tbody>
                         </table>
                     </div>
@@ -1829,16 +1874,21 @@ function b2b_personnel_attendance_page() {
         <div class="container">
     
     <div class="main-content">
-        <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
             <h1 style="margin:0;font-size:28px;color:#111827;">Attendance Dashboard</h1>
-            <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
-                <i class="fas fa-arrow-left"></i> Back to Personnel
-            </a>
+            <div style="display:flex;gap:10px;">
+                <a href="<?= home_url('/personnel-panel/reports') ?>" class="add-btn" style="background:#8b5cf6;">
+                    <i class="fas fa-chart-bar"></i> Reports
+                </a>
+                <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
+                    <i class="fas fa-arrow-left"></i> Back to Personnel
+                </a>
+            </div>
         </div>
 
         <!-- Date Selector -->
         <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
-            <form method="GET" style="display:flex;gap:15px;align-items:end;">
+            <form method="GET" style="display:flex;gap:15px;align-items:end;flex-wrap:wrap;">
                 <div style="flex:1;max-width:300px;">
                     <label style="display:block;margin-bottom:5px;font-weight:600;color:#374151;">Select Date</label>
                     <input type="date" name="date" value="<?= esc_attr($selected_date) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;">
@@ -1962,11 +2012,11 @@ function b2b_personnel_attendance_page() {
                                 <td style="padding:12px;color:#111827;font-weight:600;"><?= $hours_worked > 0 ? $hours_worked . ' hrs' : '-' ?></td>
                                 <td style="padding:12px;text-align:center;">
                                     <?php if (!$clock_in_time): ?>
-                                        <a href="<?= home_url('/personnel-panel/clock-in/' . $person->ID . '?date=' . $selected_date) ?>" class="btn btn-edit" style="background:#10b981;">
+                                        <a href="<?= home_url('/personnel-panel/clock-in-form/' . $person->ID) ?>" class="btn btn-edit" style="background:#10b981;padding:0.375rem 0.75rem;font-size:0.75rem;">
                                             <i class="fas fa-sign-in-alt"></i> Clock In
                                         </a>
                                     <?php elseif ($is_clocked_in): ?>
-                                        <a href="<?= home_url('/personnel-panel/clock-out/' . $person->ID . '?date=' . $selected_date) ?>" class="btn btn-delete" style="background:#ef4444;">
+                                        <a href="<?= home_url('/personnel-panel/clock-out-form/' . $person->ID) ?>" class="btn btn-delete" style="padding:0.375rem 0.75rem;font-size:0.75rem;">
                                             <i class="fas fa-sign-out-alt"></i> Clock Out
                                         </a>
                                     <?php else: ?>
@@ -2465,4 +2515,986 @@ function b2b_personnel_flush_rewrites() {
     b2b_register_personnel_post_type();
     b2b_personnel_rewrite_rules();
     flush_rewrite_rules();
+}
+
+/* =====================================================
+ * 19. CLOCK IN/OUT FORMS WITH MANUAL TIME ENTRY
+ * ===================================================== */
+function b2b_personnel_clock_in_form() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Clock In - <?= esc_html($person->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }
+            .header {
+                background: white;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+                color: #111827;
+            }
+            .back-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: #6b7280;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .back-btn:hover { background: #4b5563; }
+            .container {
+                max-width: 600px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            .form-card {
+                background: white;
+                border-radius: 8px;
+                padding: 2rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+                font-size: 0.875rem;
+                color: #374151;
+            }
+            input[type="date"],
+            input[type="number"],
+            select {
+                width: 100%;
+                padding: 0.625rem;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            input:focus, select:focus {
+                outline: none;
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            }
+            .time-inputs {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }
+            .btn {
+                padding: 0.625rem 1.5rem;
+                border: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+                font-weight: 500;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .btn-primary {
+                background: #10b981;
+                color: white;
+            }
+            .btn-primary:hover { background: #059669; }
+            .btn-secondary {
+                background: #e5e7eb;
+                color: #374151;
+            }
+            .btn-secondary:hover { background: #d1d5db; }
+            .form-actions {
+                display: flex;
+                gap: 1rem;
+                margin-top: 2rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><i class="fas fa-sign-in-alt"></i> Clock In</h1>
+            <a href="<?= home_url('/personnel-panel/attendance') ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Attendance
+            </a>
+        </div>
+        
+        <div class="container">
+            <div class="form-card">
+                <h2 style="margin-bottom:1rem;font-size:1.25rem;">Clock In: <?= esc_html($person->post_title) ?></h2>
+                <p style="color:#6b7280;margin-bottom:1.5rem;">Enter the clock in time for this personnel.</p>
+                
+                <form method="POST" action="<?= home_url('/personnel-panel/process-clock-in') ?>">
+                    <input type="hidden" name="personnel_id" value="<?= $personnel_id ?>">
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-calendar"></i> Date</label>
+                        <input type="date" name="clock_date" value="<?= date('Y-m-d') ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-clock"></i> Time (24-hour format)</label>
+                        <div class="time-inputs">
+                            <div>
+                                <label style="font-size:0.75rem;color:#6b7280;">Hour (0-23)</label>
+                                <input type="number" name="clock_hour" min="0" max="23" value="<?= date('H') ?>" required>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:#6b7280;">Minute (0-59)</label>
+                                <input type="number" name="clock_minute" min="0" max="59" value="<?= date('i') ?>" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-check"></i> Clock In
+                        </button>
+                        <a href="<?= home_url('/personnel-panel/attendance') ?>" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+function b2b_personnel_clock_out_form() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Clock Out - <?= esc_html($person->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }
+            .header {
+                background: white;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+                color: #111827;
+            }
+            .back-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: #6b7280;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .back-btn:hover { background: #4b5563; }
+            .container {
+                max-width: 600px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            .form-card {
+                background: white;
+                border-radius: 8px;
+                padding: 2rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+                font-size: 0.875rem;
+                color: #374151;
+            }
+            input[type="date"],
+            input[type="number"] {
+                width: 100%;
+                padding: 0.625rem;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            input:focus {
+                outline: none;
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            }
+            .time-inputs {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }
+            .btn {
+                padding: 0.625rem 1.5rem;
+                border: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+                font-weight: 500;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .btn-primary {
+                background: #ef4444;
+                color: white;
+            }
+            .btn-primary:hover { background: #dc2626; }
+            .btn-secondary {
+                background: #e5e7eb;
+                color: #374151;
+            }
+            .btn-secondary:hover { background: #d1d5db; }
+            .form-actions {
+                display: flex;
+                gap: 1rem;
+                margin-top: 2rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><i class="fas fa-sign-out-alt"></i> Clock Out</h1>
+            <a href="<?= home_url('/personnel-panel/attendance') ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Attendance
+            </a>
+        </div>
+        
+        <div class="container">
+            <div class="form-card">
+                <h2 style="margin-bottom:1rem;font-size:1.25rem;">Clock Out: <?= esc_html($person->post_title) ?></h2>
+                <p style="color:#6b7280;margin-bottom:1.5rem;">Enter the clock out time for this personnel.</p>
+                
+                <form method="POST" action="<?= home_url('/personnel-panel/process-clock-out') ?>">
+                    <input type="hidden" name="personnel_id" value="<?= $personnel_id ?>">
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-calendar"></i> Date</label>
+                        <input type="date" name="clock_date" value="<?= date('Y-m-d') ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-clock"></i> Time (24-hour format)</label>
+                        <div class="time-inputs">
+                            <div>
+                                <label style="font-size:0.75rem;color:#6b7280;">Hour (0-23)</label>
+                                <input type="number" name="clock_hour" min="0" max="23" value="<?= date('H') ?>" required>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:#6b7280;">Minute (0-59)</label>
+                                <input type="number" name="clock_minute" min="0" max="59" value="<?= date('i') ?>" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-check"></i> Clock Out
+                        </button>
+                        <a href="<?= home_url('/personnel-panel/attendance') ?>" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+function b2b_personnel_process_clock_in() {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $personnel_id = intval($_POST['personnel_id']);
+        $date = sanitize_text_field($_POST['clock_date']);
+        $hour = str_pad(intval($_POST['clock_hour']), 2, '0', STR_PAD_LEFT);
+        $minute = str_pad(intval($_POST['clock_minute']), 2, '0', STR_PAD_LEFT);
+        
+        $datetime = $date . ' ' . $hour . ':' . $minute . ':00';
+        
+        $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+        $attendance[] = [
+            'type' => 'clock_in',
+            'date' => $datetime,
+            'user_id' => get_current_user_id()
+        ];
+        update_post_meta($personnel_id, '_attendance', $attendance);
+        
+        b2b_log_personnel_activity($personnel_id, 'clock_in', 'Clocked in at ' . date('g:i A', strtotime($datetime)));
+    }
+    
+    wp_redirect(home_url('/personnel-panel/attendance'));
+    exit;
+}
+
+function b2b_personnel_process_clock_out() {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $personnel_id = intval($_POST['personnel_id']);
+        $date = sanitize_text_field($_POST['clock_date']);
+        $hour = str_pad(intval($_POST['clock_hour']), 2, '0', STR_PAD_LEFT);
+        $minute = str_pad(intval($_POST['clock_minute']), 2, '0', STR_PAD_LEFT);
+        
+        $datetime = $date . ' ' . $hour . ':' . $minute . ':00';
+        
+        $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+        $attendance[] = [
+            'type' => 'clock_out',
+            'date' => $datetime,
+            'user_id' => get_current_user_id()
+        ];
+        update_post_meta($personnel_id, '_attendance', $attendance);
+        
+        b2b_log_personnel_activity($personnel_id, 'clock_out', 'Clocked out at ' . date('g:i A', strtotime($datetime)));
+    }
+    
+    wp_redirect(home_url('/personnel-panel/attendance'));
+    exit;
+}
+
+/* =====================================================
+ * 20. EDIT/DELETE ATTENDANCE RECORDS
+ * ===================================================== */
+function b2b_personnel_edit_attendance_form() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $attendance_index = intval(get_query_var('attendance_index'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    if (!isset($attendance[$attendance_index])) {
+        wp_redirect(home_url('/personnel-panel/view/' . $personnel_id));
+        exit;
+    }
+    
+    $record = $attendance[$attendance_index];
+    $datetime = strtotime($record['date']);
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Edit Attendance - <?= esc_html($person->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }
+            .header {
+                background: white;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+                color: #111827;
+            }
+            .back-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: #6b7280;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .back-btn:hover { background: #4b5563; }
+            .container {
+                max-width: 600px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            .form-card {
+                background: white;
+                border-radius: 8px;
+                padding: 2rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+                font-size: 0.875rem;
+                color: #374151;
+            }
+            input[type="date"],
+            input[type="number"],
+            select {
+                width: 100%;
+                padding: 0.625rem;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            input:focus, select:focus {
+                outline: none;
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            }
+            .time-inputs {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }
+            .btn {
+                padding: 0.625rem 1.5rem;
+                border: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+                font-weight: 500;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .btn-primary {
+                background: #3b82f6;
+                color: white;
+            }
+            .btn-primary:hover { background: #2563eb; }
+            .btn-secondary {
+                background: #e5e7eb;
+                color: #374151;
+            }
+            .btn-secondary:hover { background: #d1d5db; }
+            .form-actions {
+                display: flex;
+                gap: 1rem;
+                margin-top: 2rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><i class="fas fa-edit"></i> Edit Attendance Record</h1>
+            <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Personnel
+            </a>
+        </div>
+        
+        <div class="container">
+            <div class="form-card">
+                <h2 style="margin-bottom:1rem;font-size:1.25rem;">Edit Attendance: <?= esc_html($person->post_title) ?></h2>
+                
+                <form method="POST" action="<?= home_url('/personnel-panel/update-attendance') ?>">
+                    <input type="hidden" name="personnel_id" value="<?= $personnel_id ?>">
+                    <input type="hidden" name="attendance_index" value="<?= $attendance_index ?>">
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-clipboard-check"></i> Type</label>
+                        <select name="attendance_type" required>
+                            <option value="clock_in" <?= $record['type'] === 'clock_in' ? 'selected' : '' ?>>Clock In</option>
+                            <option value="clock_out" <?= $record['type'] === 'clock_out' ? 'selected' : '' ?>>Clock Out</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-calendar"></i> Date</label>
+                        <input type="date" name="clock_date" value="<?= date('Y-m-d', $datetime) ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><i class="fas fa-clock"></i> Time (24-hour format)</label>
+                        <div class="time-inputs">
+                            <div>
+                                <label style="font-size:0.75rem;color:#6b7280;">Hour (0-23)</label>
+                                <input type="number" name="clock_hour" min="0" max="23" value="<?= date('H', $datetime) ?>" required>
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:#6b7280;">Minute (0-59)</label>
+                                <input type="number" name="clock_minute" min="0" max="59" value="<?= date('i', $datetime) ?>" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Update Attendance
+                        </button>
+                        <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+function b2b_personnel_update_attendance() {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $personnel_id = intval($_POST['personnel_id']);
+        $attendance_index = intval($_POST['attendance_index']);
+        $type = sanitize_text_field($_POST['attendance_type']);
+        $date = sanitize_text_field($_POST['clock_date']);
+        $hour = str_pad(intval($_POST['clock_hour']), 2, '0', STR_PAD_LEFT);
+        $minute = str_pad(intval($_POST['clock_minute']), 2, '0', STR_PAD_LEFT);
+        
+        $datetime = $date . ' ' . $hour . ':' . $minute . ':00';
+        
+        $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+        if (isset($attendance[$attendance_index])) {
+            $attendance[$attendance_index] = [
+                'type' => $type,
+                'date' => $datetime,
+                'user_id' => get_current_user_id()
+            ];
+            update_post_meta($personnel_id, '_attendance', $attendance);
+            
+            b2b_log_personnel_activity($personnel_id, 'attendance_edited', 'Attendance record updated');
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . intval($_POST['personnel_id'])));
+    exit;
+}
+
+function b2b_personnel_delete_attendance() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $attendance_index = intval(get_query_var('attendance_index'));
+    
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    if (isset($attendance[$attendance_index])) {
+        unset($attendance[$attendance_index]);
+        $attendance = array_values($attendance);
+        update_post_meta($personnel_id, '_attendance', $attendance);
+        
+        b2b_log_personnel_activity($personnel_id, 'attendance_deleted', 'Attendance record deleted');
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id));
+    exit;
+}
+
+/* =====================================================
+ * 21. COMPREHENSIVE REPORTS PAGE
+ * ===================================================== */
+function b2b_personnel_reports_page() {
+    // Get selected month and year
+    $selected_month = isset($_GET['month']) ? intval($_GET['month']) : date('n');
+    $selected_year = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
+    
+    // Get all personnel
+    $personnel = get_posts([
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1,
+        'orderby' => 'title',
+        'order' => 'ASC'
+    ]);
+    
+    // Calculate working days in selected month
+    $first_day = strtotime("$selected_year-$selected_month-01");
+    $last_day = strtotime(date('Y-m-t', $first_day));
+    $working_days = 0;
+    
+    for ($d = $first_day; $d <= $last_day; $d = strtotime('+1 day', $d)) {
+        $day_of_week = date('N', $d);
+        if ($day_of_week < 6) { // Monday-Friday
+            $working_days++;
+        }
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Attendance Reports</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }
+            .header {
+                background: white;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+                color: #111827;
+            }
+            .back-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: #6b7280;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .back-btn:hover { background: #4b5563; }
+            .container {
+                max-width: 1400px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            .card {
+                background: white;
+                border-radius: 8px;
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            th {
+                background: #f9fafb;
+                padding: 0.75rem 1rem;
+                text-align: left;
+                font-weight: 600;
+                font-size: 0.875rem;
+                color: #374151;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            td {
+                padding: 1rem;
+                border-bottom: 1px solid #e5e7eb;
+                font-size: 0.875rem;
+            }
+            tr:hover { background: #f9fafb; }
+            select {
+                padding: 0.5rem 1rem;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .btn {
+                padding: 0.625rem 1.25rem;
+                border: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+                font-weight: 500;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                text-decoration: none;
+                background: #3b82f6;
+                color: white;
+            }
+            .btn:hover { background: #2563eb; }
+            .badge {
+                display: inline-block;
+                padding: 0.25rem 0.75rem;
+                border-radius: 9999px;
+                font-size: 0.75rem;
+                font-weight: 500;
+            }
+            .badge-success { background: #d1fae5; color: #065f46; }
+            .badge-warning { background: #fef3c7; color: #92400e; }
+            .badge-danger { background: #fee2e2; color: #991b1b; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><i class="fas fa-chart-bar"></i> Attendance Reports</h1>
+            <a href="<?= home_url('/personnel-panel') ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Personnel
+            </a>
+        </div>
+        
+        <div class="container">
+            <!-- Period Selector -->
+            <div class="card">
+                <form method="GET" style="display:flex;gap:1rem;align-items:end;flex-wrap:wrap;">
+                    <div>
+                        <label style="display:block;margin-bottom:0.5rem;font-weight:500;color:#374151;">Month</label>
+                        <select name="month">
+                            <?php for ($m = 1; $m <= 12; $m++): ?>
+                                <option value="<?= $m ?>" <?= $m == $selected_month ? 'selected' : '' ?>>
+                                    <?= date('F', mktime(0, 0, 0, $m, 1)) ?>
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:0.5rem;font-weight:500;color:#374151;">Year</label>
+                        <select name="year">
+                            <?php for ($y = date('Y') - 2; $y <= date('Y') + 1; $y++): ?>
+                                <option value="<?= $y ?>" <?= $y == $selected_year ? 'selected' : '' ?>>
+                                    <?= $y ?>
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn">
+                        <i class="fas fa-filter"></i> View Report
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Summary Stats -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem;">
+                <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:8px;padding:1.5rem;color:#fff;">
+                    <div style="font-size:2rem;font-weight:700;margin-bottom:0.5rem;"><?= $working_days ?></div>
+                    <div style="font-size:0.875rem;opacity:0.9;">Working Days in Month</div>
+                </div>
+                <div style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);border-radius:8px;padding:1.5rem;color:#fff;">
+                    <div style="font-size:2rem;font-weight:700;margin-bottom:0.5rem;"><?= count($personnel) ?></div>
+                    <div style="font-size:0.875rem;opacity:0.9;">Total Personnel</div>
+                </div>
+            </div>
+            
+            <!-- Detailed Report Table -->
+            <div class="card">
+                <h2 style="margin-bottom:1rem;font-size:1.25rem;">Monthly Report - <?= date('F Y', $first_day) ?></h2>
+                
+                <div style="overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Personnel Name</th>
+                                <th>Department</th>
+                                <th>Base Salary</th>
+                                <th>Days Worked</th>
+                                <th>Attendance Rate</th>
+                                <th>Total Hours</th>
+                                <th>Calculated Salary</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($personnel as $person):
+                                $person_id = $person->ID;
+                                $base_salary = floatval(get_post_meta($person_id, '_maas', true));
+                                $attendance = get_post_meta($person_id, '_attendance', true) ?: [];
+                                
+                                // Get department
+                                $depts = get_the_terms($person_id, 'b2b_departman');
+                                $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : 'N/A';
+                                
+                                // Calculate days worked and total hours
+                                $days_worked = [];
+                                $total_hours = 0;
+                                
+                                foreach ($attendance as $record) {
+                                    $record_time = strtotime($record['date']);
+                                    if ($record_time >= $first_day && $record_time <= $last_day) {
+                                        $day = date('Y-m-d', $record_time);
+                                        if ($record['type'] === 'clock_in') {
+                                            $days_worked[$day] = ['in' => $record_time];
+                                        } elseif ($record['type'] === 'clock_out' && isset($days_worked[$day]['in'])) {
+                                            $days_worked[$day]['out'] = $record_time;
+                                            $hours = ($record_time - $days_worked[$day]['in']) / 3600;
+                                            $total_hours += $hours;
+                                        }
+                                    }
+                                }
+                                
+                                $days_count = count($days_worked);
+                                $attendance_rate = $working_days > 0 ? ($days_count / $working_days) * 100 : 0;
+                                $calculated_salary = $base_salary * ($attendance_rate / 100);
+                                
+                                // Determine badge color
+                                if ($attendance_rate >= 90) {
+                                    $badge_class = 'badge-success';
+                                } elseif ($attendance_rate >= 70) {
+                                    $badge_class = 'badge-warning';
+                                } else {
+                                    $badge_class = 'badge-danger';
+                                }
+                            ?>
+                                <tr>
+                                    <td>
+                                        <a href="<?= home_url('/personnel-panel/view/' . $person_id) ?>" style="color:#3b82f6;font-weight:500;">
+                                            <?= esc_html($person->post_title) ?>
+                                        </a>
+                                    </td>
+                                    <td><?= esc_html($dept_name) ?></td>
+                                    <td style="font-weight:600;">$<?= number_format($base_salary, 2) ?></td>
+                                    <td><?= $days_count ?> / <?= $working_days ?> days</td>
+                                    <td>
+                                        <span class="badge <?= $badge_class ?>">
+                                            <?= round($attendance_rate, 1) ?>%
+                                        </span>
+                                    </td>
+                                    <td><?= round($total_hours, 2) ?> hrs</td>
+                                    <td style="font-weight:600;color:#10b981;">$<?= number_format($calculated_salary, 2) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr style="background:#f9fafb;font-weight:600;">
+                                <td colspan="2">TOTAL</td>
+                                <td>
+                                    $<?php
+                                    $total_base = 0;
+                                    foreach ($personnel as $p) {
+                                        $total_base += floatval(get_post_meta($p->ID, '_maas', true));
+                                    }
+                                    echo number_format($total_base, 2);
+                                    ?>
+                                </td>
+                                <td colspan="3"></td>
+                                <td style="color:#10b981;">
+                                    $<?php
+                                    $total_calculated = 0;
+                                    foreach ($personnel as $p) {
+                                        $pid = $p->ID;
+                                        $base_sal = floatval(get_post_meta($pid, '_maas', true));
+                                        $att = get_post_meta($pid, '_attendance', true) ?: [];
+                                        $dw = [];
+                                        foreach ($att as $r) {
+                                            $rt = strtotime($r['date']);
+                                            if ($rt >= $first_day && $rt <= $last_day) {
+                                                $d = date('Y-m-d', $rt);
+                                                if ($r['type'] === 'clock_in') {
+                                                    $dw[$d] = true;
+                                                }
+                                            }
+                                        }
+                                        $dc = count($dw);
+                                        $ar = $working_days > 0 ? ($dc / $working_days) : 0;
+                                        $total_calculated += $base_sal * $ar;
+                                    }
+                                    echo number_format($total_calculated, 2);
+                                    ?>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Weekly Breakdown -->
+            <div class="card">
+                <h2 style="margin-bottom:1rem;font-size:1.25rem;">Weekly Breakdown</h2>
+                <p style="color:#6b7280;margin-bottom:1rem;">Average attendance per week in selected month</p>
+                
+                <?php
+                // Calculate weekly stats
+                $weeks = [];
+                for ($d = $first_day; $d <= $last_day; $d = strtotime('+1 day', $d)) {
+                    $week_num = date('W', $d);
+                    if (!isset($weeks[$week_num])) {
+                        $weeks[$week_num] = ['start' => $d, 'end' => $d, 'working_days' => 0];
+                    }
+                    $weeks[$week_num]['end'] = $d;
+                    if (date('N', $d) < 6) {
+                        $weeks[$week_num]['working_days']++;
+                    }
+                }
+                ?>
+                
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+                    <?php foreach ($weeks as $week_num => $week_data): 
+                        // Calculate attendance for this week
+                        $week_attendance = 0;
+                        $week_total = 0;
+                        
+                        foreach ($personnel as $p) {
+                            $att = get_post_meta($p->ID, '_attendance', true) ?: [];
+                            $present_days = [];
+                            foreach ($att as $r) {
+                                $rt = strtotime($r['date']);
+                                if ($rt >= $week_data['start'] && $rt <= $week_data['end'] && $r['type'] === 'clock_in') {
+                                    $present_days[date('Y-m-d', $rt)] = true;
+                                }
+                            }
+                            $week_attendance += count($present_days);
+                            $week_total += $week_data['working_days'];
+                        }
+                        
+                        $week_rate = $week_total > 0 ? ($week_attendance / $week_total) * 100 : 0;
+                    ?>
+                        <div style="background:#f9fafb;border-radius:8px;padding:1rem;border-left:4px solid #3b82f6;">
+                            <div style="font-size:0.875rem;color:#6b7280;margin-bottom:0.5rem;">
+                                Week <?= $week_num ?>
+                            </div>
+                            <div style="font-size:1.5rem;font-weight:700;color:#111827;margin-bottom:0.5rem;">
+                                <?= round($week_rate, 1) ?>%
+                            </div>
+                            <div style="font-size:0.75rem;color:#6b7280;">
+                                <?= date('M d', $week_data['start']) ?> - <?= date('M d', $week_data['end']) ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }

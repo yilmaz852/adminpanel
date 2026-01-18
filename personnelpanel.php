@@ -29,15 +29,15 @@ add_action('init', 'b2b_register_personnel_post_type');
 function b2b_register_personnel_post_type() {
     register_post_type('b2b_personel', [
         'labels' => [
-            'name'               => 'Personel',
-            'singular_name'      => 'Personel',
-            'add_new'            => 'Yeni Ekle',
-            'add_new_item'       => 'Yeni Personel Ekle',
-            'edit_item'          => 'Personel Düzenle',
-            'view_item'          => 'Personel Görüntüle',
-            'search_items'       => 'Personel Ara',
-            'not_found'          => 'Personel bulunamadı',
-            'not_found_in_trash' => 'Çöp kutusunda personel yok'
+            'name'               => 'Personnel',
+            'singular_name'      => 'Personnel',
+            'add_new'            => 'Add New',
+            'add_new_item'       => 'Add New Personnel',
+            'edit_item'          => 'Edit Personnel',
+            'view_item'          => 'View Personnel',
+            'search_items'       => 'Search Personnel',
+            'not_found'          => 'No personnel found',
+            'not_found_in_trash' => 'No personnel in trash'
         ],
         'public'              => false,
         'show_ui'             => false, // We use custom panel
@@ -49,7 +49,7 @@ function b2b_register_personnel_post_type() {
     ]);
 
     register_taxonomy('b2b_departman', 'b2b_personel', [
-        'label'             => 'Departmanlar',
+        'label'             => 'Departments',
         'hierarchical'      => true,
         'show_ui'           => false, // We use custom panel
         'show_admin_column' => false,
@@ -334,32 +334,32 @@ function b2b_personnel_list_page() {
     </head>
     <body>
         <div class="header">
-            <h1><i class="fas fa-users"></i> Personel Yönetimi</h1>
-            <a href="/b2b-panel" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Admin Panele Dön
+            <h1><i class="fas fa-users"></i> Personnel Management</h1>
+            <a href="<?= home_url('/b2b-panel') ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Admin Panel
             </a>
         </div>
         
         <div class="container">
             <div class="toolbar">
                 <form method="GET" class="search-filters">
-                    <input type="text" name="s" class="search-box" placeholder="Personel ara..." value="<?= esc_attr($search) ?>">
+                    <input type="text" name="s" class="search-box" placeholder="Search personnel..." value="<?= esc_attr($search) ?>">
                     <select name="department" class="filter-select" onchange="this.form.submit()">
-                        <option value="">Tüm Departmanlar</option>
+                        <option value="">All Departments</option>
                         <?php foreach ($departments as $dept): ?>
                             <option value="<?= esc_attr($dept->slug) ?>" <?= selected($department, $dept->slug, false) ?>>
                                 <?= esc_html($dept->name) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <button type="submit" class="btn btn-edit"><i class="fas fa-search"></i> Ara</button>
+                    <button type="submit" class="btn btn-edit"><i class="fas fa-search"></i> Search</button>
                 </form>
                 <div style="display: flex; gap: 0.5rem;">
-                    <a href="/personnel-panel/departments" class="add-btn" style="background: #10b981;">
-                        <i class="fas fa-building"></i> Departmanlar
+                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn" style="background: #10b981;">
+                        <i class="fas fa-building"></i> Departments
                     </a>
-                    <a href="/personnel-panel/add" class="add-btn">
-                        <i class="fas fa-plus"></i> Yeni Personel Ekle
+                    <a href="<?= home_url('/personnel-panel/add') ?>" class="add-btn">
+                        <i class="fas fa-plus"></i> Add New Personnel
                     </a>
                 </div>
             </div>
@@ -369,14 +369,14 @@ function b2b_personnel_list_page() {
                     <table>
                         <thead>
                             <tr>
-                                <th>Ad Soyad</th>
-                                <th>Departman</th>
-                                <th>Görev</th>
-                                <th>E-posta</th>
-                                <th>Telefon</th>
-                                <th>Maaş</th>
-                                <th>Başlangıç</th>
-                                <th>İşlemler</th>
+                                <th>Full Name</th>
+                                <th>Department</th>
+                                <th>Position</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th>Salary</th>
+                                <th>Start Date</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -397,17 +397,17 @@ function b2b_personnel_list_page() {
                                     <td><?= esc_html($gorev ?: '-') ?></td>
                                     <td><?= esc_html($eposta ?: '-') ?></td>
                                     <td><?= esc_html($telefon ?: '-') ?></td>
-                                    <td><?= $maas ? '₺' . number_format($maas, 0, ',', '.') : '-' ?></td>
-                                    <td><?= $baslangic ? date('d.m.Y', strtotime($baslangic)) : '-' ?></td>
+                                    <td><?= $maas ? '$' . number_format($maas, 0, '.', ',') : '-' ?></td>
+                                    <td><?= $baslangic ? date('m/d/Y', strtotime($baslangic)) : '-' ?></td>
                                     <td>
                                         <div class="actions">
-                                            <a href="/personnel-panel/edit/<?= $id ?>" class="btn btn-edit">
-                                                <i class="fas fa-edit"></i> Düzenle
+                                            <a href="<?= home_url('/personnel-panel/edit/' . $id) ?>" class="btn btn-edit">
+                                                <i class="fas fa-edit"></i> Edit
                                             </a>
-                                            <a href="/personnel-panel/delete/<?= $id ?>" 
+                                            <a href="<?= home_url('/personnel-panel/delete/' . $id) ?>" 
                                                class="btn btn-delete" 
-                                               onclick="return confirm('Bu personeli silmek istediğinizden emin misiniz?')">
-                                                <i class="fas fa-trash"></i> Sil
+                                               onclick="return confirm('Are you sure you want to delete this personnel?')">
+                                                <i class="fas fa-trash"></i> Delete
                                             </a>
                                         </div>
                                     </td>
@@ -418,10 +418,10 @@ function b2b_personnel_list_page() {
                 <?php else: ?>
                     <div class="empty-state">
                         <i class="fas fa-users"></i>
-                        <p>Henüz personel eklenmemiş.</p>
+                        <p>No personnel added yet.</p>
                         <p style="margin-top: 1rem;">
-                            <a href="/personnel-panel/add" class="add-btn">
-                                <i class="fas fa-plus"></i> İlk Personeli Ekle
+                            <a href="<?= home_url('/personnel-panel/add') ?>" class="add-btn">
+                                <i class="fas fa-plus"></i> Add First Personnel
                             </a>
                         </p>
                     </div>
@@ -466,7 +466,7 @@ function b2b_personnel_form_page($personnel_id = 0) {
         $department = intval($_POST['department']);
         
         if (empty($name)) {
-            $error = 'Ad Soyad alanı zorunludur.';
+            $error = 'Full Name field is required.';
         } else {
             $post_data = [
                 'post_title'  => $name,
@@ -495,7 +495,7 @@ function b2b_personnel_form_page($personnel_id = 0) {
                 
                 $success = true;
             } else {
-                $error = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+                $error = 'An error occurred. Please try again.';
             }
         }
     }
@@ -529,7 +529,7 @@ function b2b_personnel_form_page($personnel_id = 0) {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title><?= $is_edit ? 'Personel Düzenle' : 'Yeni Personel Ekle' ?> - Admin Panel</title>
+        <title><?= $is_edit ? 'Edit Personnel' : 'Add New Personnel' ?> - Admin Panel</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -658,7 +658,7 @@ function b2b_personnel_form_page($personnel_id = 0) {
     </head>
     <body>
         <div class="header">
-            <h1><i class="fas fa-user-plus"></i> <?= $is_edit ? 'Personel Düzenle' : 'Yeni Personel Ekle' ?></h1>
+            <h1><i class="fas fa-user-plus"></i> <?= $is_edit ? 'Edit Personnel' : 'Add New Personnel' ?></h1>
             <a href="/personnel-panel" class="back-btn">
                 <i class="fas fa-arrow-left"></i> Personel Listesi
             </a>
@@ -689,9 +689,9 @@ function b2b_personnel_form_page($personnel_id = 0) {
                     </div>
                     
                     <div class="form-group">
-                        <label><i class="fas fa-building"></i> Departman</label>
+                        <label><i class="fas fa-building"></i> Department</label>
                         <select name="department">
-                            <option value="">Seçiniz...</option>
+                            <option value="">Select...</option>
                             <?php foreach ($departments as $dept): ?>
                                 <option value="<?= $dept->term_id ?>" <?= selected($current_dept, $dept->term_id, false) ?>>
                                     <?= esc_html($dept->name) ?>
@@ -701,7 +701,7 @@ function b2b_personnel_form_page($personnel_id = 0) {
                     </div>
                     
                     <div class="form-group">
-                        <label><i class="fas fa-briefcase"></i> Görev / Ünvan</label>
+                        <label><i class="fas fa-briefcase"></i> Position / Title</label>
                         <input type="text" name="gorev" value="<?= esc_attr($gorev) ?>">
                     </div>
                     
@@ -711,26 +711,26 @@ function b2b_personnel_form_page($personnel_id = 0) {
                     </div>
                     
                     <div class="form-group">
-                        <label><i class="fas fa-phone"></i> Telefon</label>
+                        <label><i class="fas fa-phone"></i> Phone</label>
                         <input type="tel" name="telefon" value="<?= esc_attr($telefon) ?>">
                     </div>
                     
                     <div class="form-group">
-                        <label><i class="fas fa-money-bill-wave"></i> Maaş (₺)</label>
+                        <label><i class="fas fa-money-bill-wave"></i> Salary ($)</label>
                         <input type="number" name="maas" value="<?= esc_attr($maas) ?>" step="0.01">
                     </div>
                     
                     <div class="form-group">
-                        <label><i class="fas fa-calendar"></i> Başlangıç Tarihi</label>
+                        <label><i class="fas fa-calendar"></i> Start Date</label>
                         <input type="date" name="baslangic_tarihi" value="<?= esc_attr($baslangic) ?>">
                     </div>
                     
                     <div class="form-actions">
                         <button type="submit" name="personnel_submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> <?= $is_edit ? 'Güncelle' : 'Kaydet' ?>
+                            <i class="fas fa-save"></i> <?= $is_edit ? 'Update' : 'Save' ?>
                         </button>
-                        <a href="/personnel-panel" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> İptal
+                        <a href="<?= home_url('/personnel-panel') ?>" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
                         </a>
                     </div>
                 </form>
@@ -773,12 +773,12 @@ function b2b_personnel_departments_page() {
             ]);
             
             if (!is_wp_error($result)) {
-                $success = 'Departman başarıyla eklendi!';
+                $success = 'Department added successfully!';
             } else {
-                $error = 'Departman eklenemedi: ' . $result->get_error_message();
+                $error = 'Could not add department: ' . $result->get_error_message();
             }
         } else {
-            $error = 'Departman adı boş olamaz.';
+            $error = 'Department name cannot be empty.';
         }
     }
     
@@ -794,7 +794,7 @@ function b2b_personnel_departments_page() {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Departman Yönetimi - Admin Panel</title>
+        <title>Department Management - Admin Panel</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -957,7 +957,7 @@ function b2b_personnel_departments_page() {
     </head>
     <body>
         <div class="header">
-            <h1><i class="fas fa-building"></i> Departman Yönetimi</h1>
+            <h1><i class="fas fa-building"></i> Department Management</h1>
             <a href="/personnel-panel" class="back-btn">
                 <i class="fas fa-arrow-left"></i> Personel Listesine Dön
             </a>
@@ -977,30 +977,30 @@ function b2b_personnel_departments_page() {
             <?php endif; ?>
             
             <div class="card">
-                <h2>Yeni Departman Ekle</h2>
+                <h2>Add New Department</h2>
                 <form method="POST">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="department_name">Departman Adı</label>
-                            <input type="text" id="department_name" name="department_name" placeholder="Örn: Satış, Üretim, Lojistik" required>
+                            <label for="department_name">Department Name</label>
+                            <input type="text" id="department_name" name="department_name" placeholder="e.g: Sales, Production, Logistics" required>
                         </div>
                         <button type="submit" name="add_department" class="btn btn-primary">
-                            <i class="fas fa-plus"></i> Ekle
+                            <i class="fas fa-plus"></i> Add
                         </button>
                     </div>
                 </form>
             </div>
             
             <div class="card">
-                <h2>Mevcut Departmanlar</h2>
+                <h2>Existing Departments</h2>
                 <div class="table-container">
                     <?php if ($departments && count($departments) > 0): ?>
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Departman Adı</th>
+                                    <th>Department Name</th>
                                     <th>Slug</th>
-                                    <th style="width: 120px;">İşlemler</th>
+                                    <th style="width: 120px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1009,11 +1009,11 @@ function b2b_personnel_departments_page() {
                                         <td><strong><?= esc_html($dept->name) ?></strong></td>
                                         <td><?= esc_html($dept->slug) ?></td>
                                         <td>
-                                            <a href="/personnel-panel/department-delete/<?= $dept->term_id ?>" 
+                                            <a href="<?= home_url('/personnel-panel/department-delete/' . $dept->term_id) ?>" 
                                                class="btn btn-danger" 
-                                               onclick="return confirm('Bu departmanı silmek istediğinizden emin misiniz?')"
+                                               onclick="return confirm('Are you sure you want to delete this department?')"
                                                style="padding: 0.375rem 0.75rem; font-size: 0.75rem;">
-                                                <i class="fas fa-trash"></i> Sil
+                                                <i class="fas fa-trash"></i> Delete
                                             </a>
                                         </td>
                                     </tr>
@@ -1023,7 +1023,7 @@ function b2b_personnel_departments_page() {
                     <?php else: ?>
                         <div class="empty-state">
                             <i class="fas fa-building"></i>
-                            <p>Henüz departman eklenmemiş.</p>
+                            <p>No departments added yet.</p>
                             <p style="margin-top: 0.5rem; font-size: 0.875rem;">
                                 Yukarıdaki formu kullanarak ilk departmanı ekleyin.
                             </p>

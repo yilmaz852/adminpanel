@@ -2081,9 +2081,24 @@ function b2b_personnel_view_page() {
     
     <div class="main-content">
         <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-            <div>
-                <h1 style="margin:0 0 5px 0;font-size:28px;color:#111827;"><?= esc_html($person->post_title) ?></h1>
-                <p style="margin:0;color:#6b7280;"><?= esc_html($gorev) ?> • <?= esc_html($dept_name) ?></p>
+            <div style="display:flex;align-items:center;gap:20px;">
+                <?php
+                $photo_url = get_post_meta($personnel_id, '_photo_url', true);
+                if ($photo_url): ?>
+                    <img src="<?= esc_url($photo_url) ?>" alt="<?= esc_attr($person->post_title) ?>" 
+                         style="width:150px;height:150px;border-radius:50%;object-fit:cover;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <?php else: ?>
+                    <div style="width:150px;height:150px;border-radius:50%;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                        <i class="fas fa-user" style="font-size:60px;color:#fff;"></i>
+                    </div>
+                <?php endif; ?>
+                <div>
+                    <h1 style="margin:0 0 5px 0;font-size:28px;color:#111827;"><?= esc_html($person->post_title) ?></h1>
+                    <p style="margin:0 0 10px 0;color:#6b7280;"><?= esc_html($gorev) ?> • <?= esc_html($dept_name) ?></p>
+                    <a href="<?= home_url('/personnel-panel/upload-photo/' . $personnel_id) ?>" class="add-btn" style="background:#8b5cf6;font-size:13px;padding:6px 12px;">
+                        <i class="fas fa-camera"></i> <?= $photo_url ? 'Change Photo' : 'Upload Photo' ?>
+                    </a>
+                </div>
             </div>
             <div style="display:flex;gap:10px;">
                 <a href="<?= home_url('/personnel-panel/edit/' . $personnel_id) ?>" class="add-btn" style="background:#6366f1;">

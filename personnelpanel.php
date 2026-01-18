@@ -546,11 +546,11 @@ function b2b_personnel_list_page() {
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <?php if (!$clocked_in): ?>
-                                                <a href="<?= home_url('/personnel-panel/clock-in/' . $id) ?>" class="btn btn-edit" style="background:#10b981;" title="Clock In">
+                                                <a href="<?= home_url('/personnel-panel/clock-in-form/' . $id) ?>" class="btn btn-edit" style="background:#10b981;" title="Clock In">
                                                     <i class="fas fa-sign-in-alt"></i>
                                                 </a>
                                             <?php else: ?>
-                                                <a href="<?= home_url('/personnel-panel/clock-out/' . $id) ?>" class="btn btn-delete" title="Clock Out">
+                                                <a href="<?= home_url('/personnel-panel/clock-out-form/' . $id) ?>" class="btn btn-delete" title="Clock Out">
                                                     <i class="fas fa-sign-out-alt"></i>
                                                 </a>
                                             <?php endif; ?>

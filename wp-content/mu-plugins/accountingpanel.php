@@ -150,137 +150,138 @@ function b2b_accounting_dashboard_page() {
     $end_date = date('Y-m-t');
     $stats = b2b_accounting_get_dashboard_stats($start_date, $end_date);
     
-    get_header();
+    // Use B2B admin panel header
+    b2b_adm_header('Accounting Dashboard');
     ?>
-    <div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">
-        <h1>📊 Accounting Dashboard</h1>
-        <p style="color: #6b7280; margin-bottom: 30px;">Income & Expense tracking for your B2B business</p>
+    
+    <div class="page-header">
+        <h1 class="page-title">📊 Accounting Dashboard</h1>
+        <p style="color: #6b7280; margin: 5px 0 0 0;">Income & Expense tracking for your B2B business</p>
+    </div>
         
-        <!-- Summary Cards -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
-            <!-- Total Income -->
-            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    <!-- Summary Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
+        <!-- Total Income -->
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Income (This Month)</div>
                 <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['total_income'], 2) ?></div>
                 <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $stats['income_count'] ?> transactions</div>
-            </div>
-            
-            <!-- Total Expenses -->
-            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        </div>
+        
+        <!-- Total Expenses -->
+        <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Expenses (This Month)</div>
                 <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['total_expenses'], 2) ?></div>
                 <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $stats['expense_count'] ?> transactions</div>
-            </div>
-            
-            <!-- Net Income -->
-            <?php $net_income = $stats['total_income'] - $stats['total_expenses']; ?>
-            <div style="background: linear-gradient(135deg, <?= $net_income >= 0 ? '#3b82f6, #2563eb' : '#f59e0b, #d97706' ?>); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        </div>
+        
+        <!-- Net Income -->
+        <?php $net_income = $stats['total_income'] - $stats['total_expenses']; ?>
+        <div style="background: linear-gradient(135deg, <?= $net_income >= 0 ? '#3b82f6, #2563eb' : '#f59e0b, #d97706' ?>); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Net Income (This Month)</div>
                 <div style="font-size: 32px; font-weight: bold;">$<?= number_format($net_income, 2) ?></div>
                 <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $net_income >= 0 ? 'Profit' : 'Loss' ?></div>
-            </div>
-            
-            <!-- Personnel Payroll -->
-            <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        </div>
+        
+        <!-- Personnel Payroll -->
+        <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                 <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Personnel Payroll (Pending)</div>
                 <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['personnel_balance'], 2) ?></div>
                 <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">From personnel module</div>
-            </div>
-        </div>
-        
-        <!-- Quick Actions -->
-        <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 30px 0;">
-            <h2 style="margin: 0 0 20px 0; font-size: 20px;">Quick Actions</h2>
-            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                <a href="<?= home_url('/accounting-panel/add-transaction') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    ➕ Add Transaction
-                </a>
-                <a href="<?= home_url('/accounting-panel/transactions') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    📋 View All Transactions
-                </a>
-                <a href="<?= home_url('/accounting-panel/profit-loss') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    📊 Profit & Loss Report
-                </a>
-                <a href="<?= home_url('/accounting-panel/tax-summary') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    💰 Tax Summary
-                </a>
-            </div>
-        </div>
-        
-        <!-- Recent Transactions -->
-        <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <h2 style="margin: 0 0 20px 0; font-size: 20px;">Recent Transactions</h2>
-            <?php
-            $recent_transactions = b2b_accounting_get_recent_transactions(10);
-            if (!empty($recent_transactions)) {
-                ?>
-                <table style="width: 100%; border-collapse: collapse;">
-                    <thead>
-                        <tr style="border-bottom: 2px solid #e5e7eb;">
-                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Date</th>
-                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Type</th>
-                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Category</th>
-                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Description</th>
-                            <th style="text-align: right; padding: 12px 8px; font-weight: 600; color: #6b7280;">Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($recent_transactions as $txn): ?>
-                        <tr style="border-bottom: 1px solid #f3f4f6;">
-                            <td style="padding: 12px 8px;"><?= date('M d, Y', strtotime($txn['date'])) ?></td>
-                            <td style="padding: 12px 8px;">
-                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; background: <?= $txn['type'] === 'income' ? '#d1fae5' : '#fee2e2' ?>; color: <?= $txn['type'] === 'income' ? '#065f46' : '#991b1b' ?>;">
-                                    <?= ucfirst($txn['type']) ?>
-                                </span>
-                            </td>
-                            <td style="padding: 12px 8px;"><?= esc_html($txn['category']) ?></td>
-                            <td style="padding: 12px 8px;"><?= esc_html($txn['description']) ?></td>
-                            <td style="padding: 12px 8px; text-align: right; font-weight: 600; color: <?= $txn['type'] === 'income' ? '#059669' : '#dc2626' ?>;">
-                                <?= $txn['type'] === 'income' ? '+' : '-' ?>$<?= number_format($txn['amount'], 2) ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-                <?php
-            } else {
-                echo '<p style="color: #6b7280; text-align: center; padding: 40px 0;">No transactions yet. Add your first transaction to get started!</p>';
-            }
-            ?>
         </div>
     </div>
+    
+    <!-- Quick Actions -->
+    <div class="card" style="margin: 30px 0;">
+        <h2 style="margin: 0 0 20px 0; font-size: 20px;">Quick Actions</h2>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <a href="<?= home_url('/accounting-panel/add-transaction') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                ➕ Add Transaction
+            </a>
+            <a href="<?= home_url('/accounting-panel/transactions') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                📋 View All Transactions
+            </a>
+            <a href="<?= home_url('/accounting-panel/profit-loss') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                📊 Profit & Loss Report
+            </a>
+            <a href="<?= home_url('/accounting-panel/tax-summary') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                💰 Tax Summary
+            </a>
+        </div>
+    </div>
+    
+    <!-- Recent Transactions -->
+    <div class="card">
+        <h2 style="margin: 0 0 20px 0; font-size: 20px;">Recent Transactions</h2>
+        <?php
+        $recent_transactions = b2b_accounting_get_recent_transactions(10);
+        if (!empty($recent_transactions)) {
+            ?>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #e5e7eb;">
+                        <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Date</th>
+                        <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Type</th>
+                        <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Category</th>
+                        <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Description</th>
+                        <th style="text-align: right; padding: 12px 8px; font-weight: 600; color: #6b7280;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($recent_transactions as $txn): ?>
+                    <tr style="border-bottom: 1px solid #f3f4f6;">
+                        <td style="padding: 12px 8px;"><?= date('M d, Y', strtotime($txn['date'])) ?></td>
+                        <td style="padding: 12px 8px;">
+                            <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; background: <?= $txn['type'] === 'income' ? '#d1fae5' : '#fee2e2' ?>; color: <?= $txn['type'] === 'income' ? '#065f46' : '#991b1b' ?>;">
+                                <?= ucfirst($txn['type']) ?>
+                            </span>
+                        </td>
+                        <td style="padding: 12px 8px;"><?= esc_html($txn['category']) ?></td>
+                        <td style="padding: 12px 8px;"><?= esc_html($txn['description']) ?></td>
+                        <td style="padding: 12px 8px; text-align: right; font-weight: 600; color: <?= $txn['type'] === 'income' ? '#059669' : '#dc2626' ?>;">
+                            <?= $txn['type'] === 'income' ? '+' : '-' ?>$<?= number_format($txn['amount'], 2) ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php
+        } else {
+            echo '<p style="color: #6b7280; text-align: center; padding: 40px 0;">No transactions yet. Add your first transaction to get started!</p>';
+        }
+        ?>
+    </div>
+    
     <?php
-    get_footer();
+    b2b_adm_footer();
+    exit;
 }
 
 /**
  * Placeholder pages (to be implemented)
  */
 function b2b_accounting_transactions_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>All Transactions</h1>';
-    echo '<p>Transaction list page - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('All Transactions');
+    echo '<div class="page-header"><h1 class="page-title">All Transactions</h1></div>';
+    echo '<div class="card"><p>Transaction list page - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_add_transaction_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 800px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Add Transaction</h1>';
-    echo '<p>Add transaction form - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Add Transaction');
+    echo '<div class="page-header"><h1 class="page-title">Add Transaction</h1></div>';
+    echo '<div class="card"><p>Add transaction form - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_edit_transaction_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 800px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Edit Transaction</h1>';
-    echo '<p>Edit transaction form - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Edit Transaction');
+    echo '<div class="page-header"><h1 class="page-title">Edit Transaction</h1></div>';
+    echo '<div class="card"><p>Edit transaction form - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_delete_transaction() {
@@ -292,57 +293,51 @@ function b2b_accounting_process_transaction() {
 }
 
 function b2b_accounting_reports_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Reports</h1>';
-    echo '<p>Reports overview - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Reports');
+    echo '<div class="page-header"><h1 class="page-title">Reports</h1></div>';
+    echo '<div class="card"><p>Reports overview - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_profit_loss_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Profit & Loss Report</h1>';
-    echo '<p>P&L report - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Profit & Loss Report');
+    echo '<div class="page-header"><h1 class="page-title">Profit & Loss Report</h1></div>';
+    echo '<div class="card"><p>P&L report - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_cash_flow_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Cash Flow Report</h1>';
-    echo '<p>Cash flow report - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Cash Flow Report');
+    echo '<div class="page-header"><h1 class="page-title">Cash Flow Report</h1></div>';
+    echo '<div class="card"><p>Cash flow report - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_tax_summary_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Tax Summary</h1>';
-    echo '<p>Tax summary - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Tax Summary');
+    echo '<div class="page-header"><h1 class="page-title">Tax Summary</h1></div>';
+    echo '<div class="card"><p>Tax summary - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_categories_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Categories</h1>';
-    echo '<p>Category management - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Categories');
+    echo '<div class="page-header"><h1 class="page-title">Categories</h1></div>';
+    echo '<div class="card"><p>Category management - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_accounting_settings_page() {
-    get_header();
-    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-    echo '<h1>Settings</h1>';
-    echo '<p>Settings page - Implementation in progress</p>';
-    echo '</div>';
-    get_footer();
+    b2b_adm_header('Settings');
+    echo '<div class="page-header"><h1 class="page-title">Settings</h1></div>';
+    echo '<div class="card"><p>Settings page - Implementation in progress</p></div>';
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================

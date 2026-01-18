@@ -1916,7 +1916,7 @@ function b2b_personnel_view_page() {
         exit;
     }
     
-    // Get personnel data
+    // Get basic personnel data
     $gorev = get_post_meta($personnel_id, '_gorev', true);
     $eposta = get_post_meta($personnel_id, '_eposta', true);
     $telefon = get_post_meta($personnel_id, '_telefon', true);
@@ -1924,6 +1924,57 @@ function b2b_personnel_view_page() {
     $baslangic = get_post_meta($personnel_id, '_baslangic_tarihi', true);
     $depts = get_the_terms($personnel_id, 'b2b_departman');
     $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : 'N/A';
+    
+    // Get Phase 1 data (Critical Compliance)
+    $employee_id = get_post_meta($personnel_id, '_employee_id', true);
+    $employment_status = get_post_meta($personnel_id, '_employment_status', true);
+    $emergency_name = get_post_meta($personnel_id, '_emergency_contact_name', true);
+    $emergency_relationship = get_post_meta($personnel_id, '_emergency_contact_relationship', true);
+    $emergency_phone = get_post_meta($personnel_id, '_emergency_contact_phone', true);
+    
+    // Get Phase 2 data (Employment Basics)
+    $pay_type = get_post_meta($personnel_id, '_pay_type', true);
+    $pay_rate = get_post_meta($personnel_id, '_pay_rate', true);
+    $flsa_status = get_post_meta($personnel_id, '_flsa_status', true);
+    $reports_to = get_post_meta($personnel_id, '_reports_to', true);
+    $termination_date = get_post_meta($personnel_id, '_termination_date', true);
+    $rehire_date = get_post_meta($personnel_id, '_rehire_date', true);
+    
+    // Get manager name if exists
+    $manager_name = 'N/A';
+    if ($reports_to) {
+        $manager = get_post($reports_to);
+        if ($manager) {
+            $manager_name = $manager->post_title;
+        }
+    }
+    
+    // Get Phase 3 data (Time Tracking)
+    $meal_break = get_post_meta($personnel_id, '_meal_break', true);
+    $meal_break_duration = get_post_meta($personnel_id, '_meal_break_duration', true);
+    $rest_break = get_post_meta($personnel_id, '_rest_break', true);
+    $rest_break_duration = get_post_meta($personnel_id, '_rest_break_duration', true);
+    $vacation_balance = get_post_meta($personnel_id, '_vacation_balance', true);
+    $sick_leave_balance = get_post_meta($personnel_id, '_sick_leave_balance', true);
+    $pto_accrual_rate = get_post_meta($personnel_id, '_pto_accrual_rate', true);
+    
+    // Get Phase 4 data (Payroll)
+    $w4_filing_status = get_post_meta($personnel_id, '_w4_filing_status', true);
+    $w4_allowances = get_post_meta($personnel_id, '_w4_allowances', true);
+    $w4_additional = get_post_meta($personnel_id, '_w4_additional_withholding', true);
+    $w4_year = get_post_meta($personnel_id, '_w4_year', true);
+    $bank_name = get_post_meta($personnel_id, '_bank_name', true);
+    $account_type = get_post_meta($personnel_id, '_account_type', true);
+    $health_insurance = get_post_meta($personnel_id, '_health_insurance_deduction', true);
+    $k401_contribution = get_post_meta($personnel_id, '_401k_contribution', true);
+    $k401_type = get_post_meta($personnel_id, '_401k_type', true);
+    
+    // Get Phase 5 data (Advanced Compliance)
+    $work_authorization = get_post_meta($personnel_id, '_work_authorization', true);
+    $citizenship_status = get_post_meta($personnel_id, '_citizenship_status', true);
+    $i9_completion_date = get_post_meta($personnel_id, '_i9_completion_date', true);
+    $i9_document_type = get_post_meta($personnel_id, '_i9_document_type', true);
+    $i9_expiration_date = get_post_meta($personnel_id, '_i9_expiration_date', true);
     
     // Get notes, documents, attendance
     $notes = get_post_meta($personnel_id, '_notes', true) ?: [];
@@ -2055,42 +2106,47 @@ function b2b_personnel_view_page() {
 
         <!-- Tab Content: Information -->
         <div id="tab-info" class="tab-content">
-            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;">Employee Details</h2>
+            <!-- Basic Information Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-user"></i> Basic Information
+                </h2>
                 <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
                     <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Full Name</label>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Full Name</label>
                         <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($person->post_title) ?></p>
                     </div>
                     <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Department</label>
-                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($dept_name) ?></p>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Employee ID</label>
+                        <p style="margin:0;font-size:16px;color:#111827;font-family:monospace;background:#f3f4f6;padding:4px 8px;border-radius:4px;display:inline-block;"><?= esc_html($employee_id ?: 'N/A') ?></p>
                     </div>
                     <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Position/Title</label>
-                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($gorev) ?></p>
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Email</label>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Email</label>
                         <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($eposta) ?></p>
                     </div>
                     <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Phone</label>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Phone</label>
                         <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($telefon) ?></p>
                     </div>
                     <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Salary</label>
-                        <p style="margin:0;font-size:16px;color:#111827;">$<?= number_format((float)$maas, 2) ?></p>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Employment Status</label>
+                        <p style="margin:0;font-size:16px;">
+                            <?php if ($employment_status === 'active'): ?>
+                                <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                    <i class="fas fa-check-circle"></i> Active
+                                </span>
+                            <?php else: ?>
+                                <span style="background:#ef4444;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                    <i class="fas fa-times-circle"></i> Inactive
+                                </span>
+                            <?php endif; ?>
+                        </p>
                     </div>
                     <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Start Date</label>
-                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($baslangic) ?></p>
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Status</label>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Clock Status</label>
                         <p style="margin:0;font-size:16px;">
                             <?php if ($clocked_in): ?>
-                                <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                <span style="background:#3b82f6;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
                                     <i class="fas fa-circle" style="font-size:8px;"></i> Clocked In (<?= $clock_in_time ?>)
                                 </span>
                             <?php else: ?>
@@ -2098,6 +2154,304 @@ function b2b_personnel_view_page() {
                                     <i class="fas fa-circle" style="font-size:8px;"></i> Not Clocked In
                                 </span>
                             <?php endif; ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Employment Details Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-briefcase"></i> Employment Details
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Department</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($dept_name) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Position/Title</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($gorev) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Reports To</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($manager_name) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Hire Date</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($baslangic ?: 'N/A') ?></p>
+                    </div>
+                    <?php if ($termination_date): ?>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Termination Date</label>
+                        <p style="margin:0;font-size:16px;color:#ef4444;"><?= esc_html($termination_date) ?></p>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($rehire_date): ?>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Re-hire Date</label>
+                        <p style="margin:0;font-size:16px;color:#10b981;"><?= esc_html($rehire_date) ?></p>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Pay & Classification Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-dollar-sign"></i> Pay & Classification
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Pay Type</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?php if ($pay_type === 'hourly'): ?>
+                                <span style="background:#3b82f6;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">Hourly</span>
+                            <?php elseif ($pay_type === 'salaried'): ?>
+                                <span style="background:#8b5cf6;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">Salaried</span>
+                            <?php else: ?>
+                                N/A
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Pay Rate</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?php if ($pay_rate): ?>
+                                $<?= number_format((float)$pay_rate, 2) ?><?= $pay_type === 'hourly' ? '/hr' : '/year' ?>
+                            <?php else: ?>
+                                N/A
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Base Salary</label>
+                        <p style="margin:0;font-size:16px;color:#111827;font-weight:600;">$<?= number_format((float)$maas, 2) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">FLSA Status</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?php if ($flsa_status === 'exempt'): ?>
+                                <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">Exempt</span>
+                            <?php elseif ($flsa_status === 'non-exempt'): ?>
+                                <span style="background:#f59e0b;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">Non-Exempt (OT Eligible)</span>
+                            <?php else: ?>
+                                N/A
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Time & Attendance Settings Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-clock"></i> Time & Attendance Settings
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Meal Break</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?= $meal_break ? 'Yes (' . esc_html($meal_break_duration) . ' min)' : 'No' ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Rest Break</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?= $rest_break ? 'Yes (' . esc_html($rest_break_duration) . ' min)' : 'No' ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Vacation Balance</label>
+                        <p style="margin:0;font-size:16px;color:#111827;font-weight:600;color:#3b82f6;">
+                            <?= esc_html($vacation_balance ?: '0') ?> hours
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Sick Leave Balance</label>
+                        <p style="margin:0;font-size:16px;color:#111827;font-weight:600;color:#10b981;">
+                            <?= esc_html($sick_leave_balance ?: '0') ?> hours
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">PTO Accrual Rate</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?= esc_html($pto_accrual_rate ?: '0') ?> hrs/pay period
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tax Information Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-file-invoice-dollar"></i> Tax Information (W-4)
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Filing Status</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html(ucwords(str_replace('_', ' ', $w4_filing_status)) ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Allowances</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($w4_allowances ?: '0') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Additional Withholding</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?= $w4_additional ? '$' . number_format((float)$w4_additional, 2) : 'None' ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Tax Year</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($w4_year ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">SSN</label>
+                        <p style="margin:0;font-size:16px;color:#6b7280;font-family:monospace;">
+                            <i class="fas fa-lock"></i> ***-**-**** (Encrypted)
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payroll Information Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-university"></i> Payroll & Banking
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Bank Name</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($bank_name ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Account Type</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html(ucfirst($account_type) ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Routing Number</label>
+                        <p style="margin:0;font-size:16px;color:#6b7280;font-family:monospace;">
+                            <i class="fas fa-lock"></i> ********* (Encrypted)
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Account Number</label>
+                        <p style="margin:0;font-size:16px;color:#6b7280;font-family:monospace;">
+                            <i class="fas fa-lock"></i> ********** (Encrypted)
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deductions Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-calculator"></i> Deductions
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Health Insurance</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?= $health_insurance ? '$' . number_format((float)$health_insurance, 2) : 'None' ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">401(k) Contribution</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?php if ($k401_contribution): ?>
+                                <?= esc_html($k401_contribution) ?><?= $k401_type === 'percent' ? '%' : '$' ?>
+                            <?php else: ?>
+                                None
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compliance & I-9 Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-file-contract"></i> Compliance & I-9
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Work Authorization</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?php if ($work_authorization): ?>
+                                <?php
+                                $auth_labels = [
+                                    'citizen' => 'US Citizen',
+                                    'green_card' => 'Permanent Resident',
+                                    'work_visa' => 'Work Visa',
+                                    'other' => 'Other'
+                                ];
+                                ?>
+                                <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                    <?= esc_html($auth_labels[$work_authorization] ?? $work_authorization) ?>
+                                </span>
+                            <?php else: ?>
+                                N/A
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Citizenship Status</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html(ucwords(str_replace('_', ' ', $citizenship_status)) ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">I-9 Completion Date</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($i9_completion_date ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">I-9 Document Type</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($i9_document_type ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Document Expiration</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">
+                            <?php if ($i9_expiration_date): ?>
+                                <?php
+                                $exp_date = strtotime($i9_expiration_date);
+                                $days_until = floor(($exp_date - time()) / (60*60*24));
+                                if ($days_until < 0):
+                                ?>
+                                    <span style="background:#ef4444;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                        <i class="fas fa-exclamation-triangle"></i> Expired: <?= esc_html($i9_expiration_date) ?>
+                                    </span>
+                                <?php elseif ($days_until < 30): ?>
+                                    <span style="background:#f59e0b;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                        <i class="fas fa-clock"></i> Expires Soon: <?= esc_html($i9_expiration_date) ?> (<?= $days_until ?> days)
+                                    </span>
+                                <?php else: ?>
+                                    <?= esc_html($i9_expiration_date) ?>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                N/A
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Emergency Contact Section -->
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:10px;">
+                    <i class="fas fa-phone-alt"></i> Emergency Contact
+                </h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Contact Name</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($emergency_name ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Relationship</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html(ucfirst($emergency_relationship) ?: 'N/A') ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;font-weight:600;">Emergency Phone</label>
+                        <p style="margin:0;font-size:16px;color:#111827;font-weight:600;">
+                            <?= esc_html($emergency_phone ?: 'N/A') ?>
                         </p>
                     </div>
                 </div>

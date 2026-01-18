@@ -7041,27 +7041,29 @@ function b2b_personnel_add_payment($personnel_id) {
                 </div>
                 
                 <div class="form-group">
-                    <label>Payment Type</label>
-                    <select name="payment_type" required>
+                    <label>Transaction Type (İşlem Türü)</label>
+                    <select name="transaction_type" id="transaction_type" required onchange="updateCategories()">
                         <option value="">Select...</option>
-                        <option value="salary" selected>Salary</option>
-                        <option value="bonus">Bonus</option>
-                        <option value="commission">Commission</option>
-                        <option value="allowance">Allowance</option>
-                        <option value="reimbursement">Reimbursement</option>
-                        <option value="adjustment">Adjustment</option>
-                        <option value="other">Other</option>
+                        <option value="income">Income (Gelir)</option>
+                        <option value="expense" selected>Expense (Gider)</option>
                     </select>
                 </div>
                 
                 <div class="form-group">
-                    <label>Payment Amount ($)</label>
-                    <input type="number" name="amount" step="0.01" required min="0">
+                    <label>Category (Kategori)</label>
+                    <select name="category" id="category" required>
+                        <option value="">Select transaction type first...</option>
+                    </select>
                 </div>
                 
                 <div class="form-group">
+                    <label>Amount ($)</label>
+                    <input type="number" name="amount" step="0.01" required min="0">
+                </div>
+                
+                <div class="form-group" id="payment_method_field">
                     <label>Payment Method</label>
-                    <select name="payment_method" required>
+                    <select name="payment_method" id="payment_method">
                         <option value="">Select...</option>
                         <option value="cash">Cash</option>
                         <option value="check">Check</option>
@@ -7069,6 +7071,60 @@ function b2b_personnel_add_payment($personnel_id) {
                         <option value="wire_transfer">Wire Transfer</option>
                     </select>
                 </div>
+                
+                <script>
+                const incomeCategories = {
+                    'accrued_salary': 'Accrued Salary (Maaş Tahakkuku)',
+                    'bonus': 'Bonus',
+                    'commission': 'Commission',
+                    'allowance': 'Allowance (Ödenek)',
+                    'overtime_pay': 'Overtime Pay (Mesai Ücreti)',
+                    'other_income': 'Other Income (Diğer Gelir)'
+                };
+                
+                const expenseCategories = {
+                    'salary_payment': 'Salary Payment (Maaş Ödemesi)',
+                    'deduction': 'Deduction (Kesinti)',
+                    'advance_payment': 'Advance Payment (Avans)',
+                    'tax_withholding': 'Tax Withholding (Vergi Kesintisi)',
+                    'insurance_deduction': 'Insurance Deduction (Sigorta Kesintisi)',
+                    'other_expense': 'Other Expense (Diğer Gider)'
+                };
+                
+                function updateCategories() {
+                    const transactionType = document.getElementById('transaction_type').value;
+                    const categorySelect = document.getElementById('category');
+                    const paymentMethodField = document.getElementById('payment_method_field');
+                    const paymentMethodSelect = document.getElementById('payment_method');
+                    
+                    categorySelect.innerHTML = '<option value="">Select...</option>';
+                    
+                    if (transactionType === 'income') {
+                        Object.keys(incomeCategories).forEach(key => {
+                            const option = document.createElement('option');
+                            option.value = key;
+                            option.textContent = incomeCategories[key];
+                            categorySelect.appendChild(option);
+                        });
+                        paymentMethodField.style.display = 'none';
+                        paymentMethodSelect.removeAttribute('required');
+                    } else if (transactionType === 'expense') {
+                        Object.keys(expenseCategories).forEach(key => {
+                            const option = document.createElement('option');
+                            option.value = key;
+                            option.textContent = expenseCategories[key];
+                            categorySelect.appendChild(option);
+                        });
+                        paymentMethodField.style.display = 'block';
+                        paymentMethodSelect.setAttribute('required', 'required');
+                    }
+                }
+                
+                // Initialize on page load
+                document.addEventListener('DOMContentLoaded', function() {
+                    updateCategories();
+                });
+                </script>
                 
                 <div class="form-group">
                     <label>Reference Number (Check #, Transaction ID, etc.)</label>
@@ -7096,7 +7152,7 @@ function b2b_personnel_add_payment($personnel_id) {
     exit;
 }
 
-// Process Payment
+// Process Payment/Transaction
 function b2b_personnel_process_payment() {
     if (!current_user_can('manage_options')) {
         wp_die('Unauthorized access');
@@ -7105,29 +7161,40 @@ function b2b_personnel_process_payment() {
     $personnel_id = intval($_POST['personnel_id']);
     $amount = floatval($_POST['amount']);
     $payment_date = sanitize_text_field($_POST['payment_date']);
-    $payment_type = sanitize_text_field($_POST['payment_type']);
-    $payment_method = sanitize_text_field($_POST['payment_method']);
+    $transaction_type = sanitize_text_field($_POST['transaction_type']); // income or expense
+    $category = sanitize_text_field($_POST['category']);
+    $payment_method = isset($_POST['payment_method']) ? sanitize_text_field($_POST['payment_method']) : '';
     $reference_number = sanitize_text_field($_POST['reference_number']);
     $notes = sanitize_textarea_field($_POST['notes']);
     
+    // Calculate signed amount (positive for income, negative for expense)
+    $amount_signed = ($transaction_type === 'income') ? $amount : -$amount;
+    
     // Get current balance
     $current_balance = b2b_get_payment_balance($personnel_id);
-    $accrued = b2b_calculate_monthly_accrual($personnel_id, date('Y-m', strtotime($payment_date)));
     
-    // Create payment record
+    // Create transaction record
     $payment = [
-        'id' => uniqid('pay_'),
+        'id' => uniqid('txn_'),
         'employee_id' => $personnel_id,
-        'payment_date' => $payment_date,
-        'payment_type' => $payment_type,
+        'date' => $payment_date,
+        'transaction_type' => $transaction_type,
+        'category' => $category,
         'amount' => $amount,
+        'amount_signed' => $amount_signed,
         'payment_method' => $payment_method,
         'reference_number' => $reference_number,
         'month' => date('Y-m', strtotime($payment_date)),
-        'accrued_amount' => $accrued,
         'balance_before' => $current_balance,
-        'balance_after' => $current_balance + $accrued - $amount,
+        'balance_after' => $current_balance + $amount_signed,
         'notes' => $notes,
+        'description' => $notes,
+        // Accounting fields
+        'debit_credit' => ($transaction_type === 'income') ? 'debit' : 'credit',
+        'expense_category' => 'Payroll Expense',
+        'gl_code' => null,
+        'posted_to_accounting' => false,
+        'accounting_entry_id' => null,
         'recorded_by' => get_current_user_id(),
         'recorded_date' => current_time('mysql'),
         // Accounting integration fields

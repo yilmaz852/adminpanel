@@ -103,6 +103,12 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/leave-calendar/?$', 'index.php?personnel_panel=leave_calendar', 'top');
     add_rewrite_rule('^personnel-panel/leave-history/([0-9]+)/?$', 'index.php?personnel_panel=leave_history&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/leave-accounting-export/?$', 'index.php?personnel_panel=leave_accounting_export', 'top');
+    // Payroll Payment Routes
+    add_rewrite_rule('^personnel-panel/payroll-payments/?$', 'index.php?personnel_panel=payroll_payments', 'top');
+    add_rewrite_rule('^personnel-panel/add-payment/([0-9]+)/?$', 'index.php?personnel_panel=add_payment&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/process-payment/?$', 'index.php?personnel_panel=process_payment', 'top');
+    add_rewrite_rule('^personnel-panel/payment-history/([0-9]+)/?$', 'index.php?personnel_panel=payment_history&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/payroll-accounting-export/?$', 'index.php?personnel_panel=payroll_accounting_export', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -248,6 +254,23 @@ function b2b_personnel_template_redirect() {
             break;
         case 'leave_accounting_export':
             b2b_personnel_leave_accounting_export();
+            break;
+        case 'payroll_payments':
+            b2b_personnel_payroll_payments();
+            break;
+        case 'add_payment':
+            $personnel_id = get_query_var('personnel_id');
+            b2b_personnel_add_payment($personnel_id);
+            break;
+        case 'process_payment':
+            b2b_personnel_process_payment();
+            break;
+        case 'payment_history':
+            $personnel_id = get_query_var('personnel_id');
+            b2b_personnel_payment_history($personnel_id);
+            break;
+        case 'payroll_accounting_export':
+            b2b_personnel_payroll_accounting_export();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -508,6 +531,9 @@ function b2b_personnel_list_page() {
                     <a href="<?= home_url('/personnel-panel/leave-approvals') ?>" class="add-btn" style="background: #14b8a6;">
                         <i class="fas fa-check-circle"></i> Leave Approvals
                     </a>
+                    <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="add-btn" style="background: #10b981;">
+                        <i class="fas fa-money-check-alt"></i> Payroll Payments
+                    </a>
                     <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background: #8b5cf6;">
                         <i class="fas fa-history"></i> Activity Log
                     </a>
@@ -630,6 +656,9 @@ function b2b_personnel_list_page() {
                                             </a>
                                             <a href="<?= home_url('/personnel-panel/request-leave/' . $id) ?>" class="btn btn-edit" style="background:#0ea5e9;" title="Request Leave">
                                                 <i class="fas fa-calendar-check"></i>
+                                            </a>
+                                            <a href="<?= home_url('/personnel-panel/add-payment/' . $id) ?>" class="btn btn-edit" style="background:#10b981;" title="Add Payment">
+                                                <i class="fas fa-dollar-sign"></i>
                                             </a>
                                         </div>
                                     </td>
@@ -2856,6 +2885,14 @@ function b2b_personnel_view_page() {
            onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
            onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
             <i class="fas fa-calendar-check" style="font-size:20px;"></i>
+        </a>
+        <a href="<?= home_url('/personnel-panel/add-payment/' . $personnel_id) ?>" 
+           class="quick-action-btn" 
+           style="width:56px;height:56px;background:#10b981;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+           title="Add Payment"
+           onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+           onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+            <i class="fas fa-dollar-sign" style="font-size:20px;"></i>
         </a>
         <a href="#" 
            onclick="document.querySelector('.tab-btn:nth-child(2)').click();setTimeout(function(){document.querySelector('#addNoteForm textarea').focus();},100);return false;"
@@ -6510,6 +6547,645 @@ function b2b_personnel_leave_accounting_export() {
     // Export as CSV
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=leave-accounting-export-' . date('Y-m-d') . '.csv');
+    
+    $output = fopen('php://output', 'w');
+    
+    // CSV headers
+    fputcsv($output, array_keys($export_data[0]));
+    
+    // CSV data
+    foreach ($export_data as $row) {
+        fputcsv($output, $row);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+// ========================================
+// PAYROLL PAYMENT TRACKING SYSTEM
+// ========================================
+
+// Payroll Payments Dashboard
+function b2b_personnel_payroll_payments() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    // Get current month
+    $current_month = isset($_GET['month']) ? sanitize_text_field($_GET['month']) : date('Y-m');
+    
+    // Get all personnel
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1,
+        'meta_key' => '_employee_status',
+        'meta_value' => 'active'
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    
+    $payroll_data = [];
+    $total_accrued = 0;
+    $total_paid = 0;
+    $total_balance = 0;
+    
+    foreach ($all_personnel as $person) {
+        $accrued = b2b_calculate_monthly_accrual($person->ID, $current_month);
+        $paid = b2b_calculate_monthly_payments($person->ID, $current_month);
+        $balance = b2b_get_payment_balance($person->ID);
+        
+        $payroll_data[] = [
+            'id' => $person->ID,
+            'name' => $person->post_title,
+            'accrued' => $accrued,
+            'paid' => $paid,
+            'balance' => $balance
+        ];
+        
+        $total_accrued += $accrued;
+        $total_paid += $paid;
+        $total_balance += $balance;
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payroll Payments Dashboard</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 15px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                padding: 30px;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 30px;
+                padding-bottom: 20px;
+                border-bottom: 2px solid #e5e7eb;
+            }
+            h1 { color: #1f2937; font-size: 28px; }
+            .summary-cards {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 20px;
+                margin-bottom: 30px;
+            }
+            .summary-card {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 20px;
+                border-radius: 10px;
+                color: white;
+            }
+            .summary-card h3 { font-size: 14px; opacity: 0.9; margin-bottom: 10px; }
+            .summary-card .amount { font-size: 28px; font-weight: bold; }
+            .summary-card.green { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+            .summary-card.red { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+            .btn {
+                padding: 10px 20px;
+                border-radius: 8px;
+                text-decoration: none;
+                color: white;
+                font-weight: 500;
+                display: inline-block;
+                transition: all 0.3s;
+            }
+            .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+            .btn-primary { background: #10b981; }
+            .btn-secondary { background: #6366f1; }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            th, td {
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            th {
+                background: #f3f4f6;
+                font-weight: 600;
+                color: #374151;
+            }
+            tr:hover { background: #f9fafb; }
+            .balance-positive { color: #ef4444; font-weight: bold; }
+            .balance-zero { color: #10b981; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1><i class="fas fa-money-check-alt"></i> Payroll Payments Dashboard</h1>
+                <div>
+                    <a href="<?= home_url('/personnel-panel') ?>" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Personnel
+                    </a>
+                    <a href="<?= home_url('/personnel-panel/payroll-accounting-export') ?>" class="btn btn-primary">
+                        <i class="fas fa-file-export"></i> Export for Accounting
+                    </a>
+                </div>
+            </div>
+            
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <h3>Total Accrued (This Month)</h3>
+                    <div class="amount">$<?= number_format($total_accrued, 2) ?></div>
+                </div>
+                <div class="summary-card green">
+                    <h3>Total Paid (This Month)</h3>
+                    <div class="amount">$<?= number_format($total_paid, 2) ?></div>
+                </div>
+                <div class="summary-card red">
+                    <h3>Outstanding Balance</h3>
+                    <div class="amount">$<?= number_format($total_balance, 2) ?></div>
+                </div>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Accrued (This Month)</th>
+                        <th>Paid (This Month)</th>
+                        <th>Balance</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($payroll_data as $data): ?>
+                        <tr>
+                            <td><?= esc_html($data['name']) ?></td>
+                            <td>$<?= number_format($data['accrued'], 2) ?></td>
+                            <td>$<?= number_format($data['paid'], 2) ?></td>
+                            <td class="<?= $data['balance'] > 0 ? 'balance-positive' : 'balance-zero' ?>">
+                                $<?= number_format($data['balance'], 2) ?>
+                            </td>
+                            <td>
+                                <a href="<?= home_url('/personnel-panel/add-payment/' . $data['id']) ?>" class="btn btn-primary" style="padding: 6px 12px; font-size: 14px;">
+                                    <i class="fas fa-money-bill-wave"></i> Add Payment
+                                </a>
+                                <a href="<?= home_url('/personnel-panel/payment-history/' . $data['id']) ?>" class="btn btn-secondary" style="padding: 6px 12px; font-size: 14px;">
+                                    <i class="fas fa-history"></i> History
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+// Calculate monthly salary accrual based on attendance
+function b2b_calculate_monthly_accrual($personnel_id, $month) {
+    $salary = floatval(get_post_meta($personnel_id, '_salary', true));
+    $pay_type = get_post_meta($personnel_id, '_pay_type', true);
+    $pay_rate = floatval(get_post_meta($personnel_id, '_pay_rate', true));
+    
+    if (empty($salary) && empty($pay_rate)) {
+        return 0;
+    }
+    
+    // Get attendance for the month
+    $attendance = get_post_meta($personnel_id, '_attendance', true);
+    if (!is_array($attendance)) {
+        return 0;
+    }
+    
+    $days_worked = 0;
+    $hours_worked = 0;
+    $overtime_hours = 0;
+    
+    foreach ($attendance as $record) {
+        $record_date = date('Y-m', strtotime($record['date']));
+        if ($record_date === $month) {
+            $days_worked++;
+            if (isset($record['clock_in']) && isset($record['clock_out'])) {
+                $in = strtotime($record['clock_in']);
+                $out = strtotime($record['clock_out']);
+                $hours = ($out - $in) / 3600;
+                $hours_worked += $hours;
+                if ($hours > 8) {
+                    $overtime_hours += ($hours - 8);
+                }
+            }
+        }
+    }
+    
+    // Calculate accrual
+    if ($pay_type === 'hourly') {
+        $regular_pay = $hours_worked * $pay_rate;
+        $overtime_pay = $overtime_hours * $pay_rate * 1.5;
+        return $regular_pay + $overtime_pay;
+    } else {
+        // Salaried - calculate based on days worked
+        $working_days = date('t', strtotime($month . '-01'));
+        return ($salary / $working_days) * $days_worked;
+    }
+}
+
+// Calculate total payments made in a month
+function b2b_calculate_monthly_payments($personnel_id, $month) {
+    $payments = get_post_meta($personnel_id, '_payment_records', true);
+    if (!is_array($payments)) {
+        return 0;
+    }
+    
+    $total = 0;
+    foreach ($payments as $payment) {
+        $payment_month = date('Y-m', strtotime($payment['payment_date']));
+        if ($payment_month === $month) {
+            $total += floatval($payment['amount']);
+        }
+    }
+    
+    return $total;
+}
+
+// Get current payment balance for an employee
+function b2b_get_payment_balance($personnel_id) {
+    $balance = floatval(get_post_meta($personnel_id, '_payment_balance', true));
+    return $balance;
+}
+
+// Add Payment Form
+function b2b_personnel_add_payment($personnel_id) {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    $personnel = get_post($personnel_id);
+    if (!$personnel) {
+        wp_die('Personnel not found');
+    }
+    
+    $current_balance = b2b_get_payment_balance($personnel_id);
+    $current_accrual = b2b_calculate_monthly_accrual($personnel_id, date('Y-m'));
+    
+    ?>
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Add Payment - <?= esc_html($personnel->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 15px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                padding: 30px;
+            }
+            h1 { color: #1f2937; margin-bottom: 20px; }
+            .info-box {
+                background: #f3f4f6;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+            .info-box p { margin: 5px 0; }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: 600;
+                color: #374151;
+            }
+            input, select, textarea {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                font-size: 14px;
+            }
+            .btn {
+                padding: 12px 24px;
+                border-radius: 8px;
+                text-decoration: none;
+                color: white;
+                font-weight: 500;
+                display: inline-block;
+                transition: all 0.3s;
+                border: none;
+                cursor: pointer;
+            }
+            .btn-primary { background: #10b981; }
+            .btn-secondary { background: #6366f1; }
+            .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1><i class="fas fa-money-bill-wave"></i> Add Payment for <?= esc_html($personnel->post_title) ?></h1>
+            
+            <div class="info-box">
+                <p><strong>Current Balance:</strong> $<?= number_format($current_balance, 2) ?></p>
+                <p><strong>Accrued This Month:</strong> $<?= number_format($current_accrual, 2) ?></p>
+            </div>
+            
+            <form method="POST" action="<?= home_url('/personnel-panel/process-payment') ?>">
+                <input type="hidden" name="personnel_id" value="<?= $personnel_id ?>">
+                
+                <div class="form-group">
+                    <label>Payment Date</label>
+                    <input type="date" name="payment_date" required value="<?= date('Y-m-d') ?>">
+                </div>
+                
+                <div class="form-group">
+                    <label>Payment Amount ($)</label>
+                    <input type="number" name="amount" step="0.01" required min="0">
+                </div>
+                
+                <div class="form-group">
+                    <label>Payment Method</label>
+                    <select name="payment_method" required>
+                        <option value="">Select...</option>
+                        <option value="cash">Cash</option>
+                        <option value="check">Check</option>
+                        <option value="direct_deposit">Direct Deposit</option>
+                        <option value="wire_transfer">Wire Transfer</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Reference Number (Check #, Transaction ID, etc.)</label>
+                    <input type="text" name="reference_number">
+                </div>
+                
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="3"></textarea>
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Record Payment
+                    </button>
+                    <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+// Process Payment
+function b2b_personnel_process_payment() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    $personnel_id = intval($_POST['personnel_id']);
+    $amount = floatval($_POST['amount']);
+    $payment_date = sanitize_text_field($_POST['payment_date']);
+    $payment_method = sanitize_text_field($_POST['payment_method']);
+    $reference_number = sanitize_text_field($_POST['reference_number']);
+    $notes = sanitize_textarea_field($_POST['notes']);
+    
+    // Get current balance
+    $current_balance = b2b_get_payment_balance($personnel_id);
+    $accrued = b2b_calculate_monthly_accrual($personnel_id, date('Y-m', strtotime($payment_date)));
+    
+    // Create payment record
+    $payment = [
+        'id' => uniqid('pay_'),
+        'employee_id' => $personnel_id,
+        'payment_date' => $payment_date,
+        'amount' => $amount,
+        'payment_method' => $payment_method,
+        'reference_number' => $reference_number,
+        'month' => date('Y-m', strtotime($payment_date)),
+        'accrued_amount' => $accrued,
+        'balance_before' => $current_balance,
+        'balance_after' => $current_balance + $accrued - $amount,
+        'notes' => $notes,
+        'recorded_by' => get_current_user_id(),
+        'recorded_date' => current_time('mysql'),
+        // Accounting integration fields
+        'expense_category' => 'Payroll Expense',
+        'gl_code' => null,
+        'posted_to_accounting' => false,
+        'accounting_entry_id' => null
+    ];
+    
+    // Save payment record
+    $payments = get_post_meta($personnel_id, '_payment_records', true);
+    if (!is_array($payments)) {
+        $payments = [];
+    }
+    $payments[] = $payment;
+    update_post_meta($personnel_id, '_payment_records', $payments);
+    
+    // Update balance
+    $new_balance = $current_balance + $accrued - $amount;
+    update_post_meta($personnel_id, '_payment_balance', $new_balance);
+    
+    // Log activity
+    b2b_log_personnel_activity($personnel_id, 'payment_added', "Payment of $" . number_format($amount, 2) . " recorded");
+    
+    wp_redirect(home_url('/personnel-panel/payroll-payments?msg=payment_added'));
+    exit;
+}
+
+// Payment History
+function b2b_personnel_payment_history($personnel_id) {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    $personnel = get_post($personnel_id);
+    if (!$personnel) {
+        wp_die('Personnel not found');
+    }
+    
+    $payments = get_post_meta($personnel_id, '_payment_records', true);
+    if (!is_array($payments)) {
+        $payments = [];
+    }
+    
+    // Sort by date descending
+    usort($payments, function($a, $b) {
+        return strtotime($b['payment_date']) - strtotime($a['payment_date']);
+    });
+    
+    ?>
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment History - <?= esc_html($personnel->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 15px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                padding: 30px;
+            }
+            h1 { color: #1f2937; margin-bottom: 20px; }
+            .btn {
+                padding: 10px 20px;
+                border-radius: 8px;
+                text-decoration: none;
+                color: white;
+                font-weight: 500;
+                display: inline-block;
+                transition: all 0.3s;
+                background: #6366f1;
+                margin-bottom: 20px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            th, td {
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            th {
+                background: #f3f4f6;
+                font-weight: 600;
+                color: #374151;
+            }
+            tr:hover { background: #f9fafb; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1><i class="fas fa-history"></i> Payment History - <?= esc_html($personnel->post_title) ?></h1>
+            <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="btn">
+                <i class="fas fa-arrow-left"></i> Back to Payroll
+            </a>
+            
+            <?php if (empty($payments)): ?>
+                <p>No payment records found.</p>
+            <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Method</th>
+                            <th>Reference</th>
+                            <th>Balance After</th>
+                            <th>Recorded By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($payments as $payment): ?>
+                            <tr>
+                                <td><?= date('M d, Y', strtotime($payment['payment_date'])) ?></td>
+                                <td>$<?= number_format($payment['amount'], 2) ?></td>
+                                <td><?= ucfirst(str_replace('_', ' ', $payment['payment_method'])) ?></td>
+                                <td><?= esc_html($payment['reference_number'] ?? '-') ?></td>
+                                <td>$<?= number_format($payment['balance_after'] ?? 0, 2) ?></td>
+                                <td><?php 
+                                    $user = get_userdata($payment['recorded_by']);
+                                    echo $user ? esc_html($user->display_name) : 'System';
+                                ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+// Payroll Accounting Export
+function b2b_personnel_payroll_accounting_export() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    // Get all payment records not yet posted to accounting
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    $export_data = [];
+    
+    foreach ($all_personnel as $person) {
+        $payments = get_post_meta($person->ID, '_payment_records', true);
+        if (is_array($payments)) {
+            foreach ($payments as $payment) {
+                if (!$payment['posted_to_accounting']) {
+                    $export_data[] = [
+                        'Payment ID' => $payment['id'],
+                        'Employee' => $person->post_title,
+                        'Employee ID' => $person->ID,
+                        'Payment Date' => $payment['payment_date'],
+                        'Amount' => $payment['amount'],
+                        'Payment Method' => ucfirst(str_replace('_', ' ', $payment['payment_method'])),
+                        'Reference Number' => $payment['reference_number'] ?? '',
+                        'Expense Category' => $payment['expense_category'],
+                        'Month' => $payment['month']
+                    ];
+                }
+            }
+        }
+    }
+    
+    if (empty($export_data)) {
+        wp_redirect(home_url('/personnel-panel/payroll-payments?msg=no_payments_to_export'));
+        exit;
+    }
+    
+    // Export as CSV
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=payroll-accounting-export-' . date('Y-m-d') . '.csv');
     
     $output = fopen('php://output', 'w');
     

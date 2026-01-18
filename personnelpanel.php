@@ -2903,6 +2903,7 @@ function b2b_personnel_view_page() {
                             <thead>
                                 <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;">
                                     <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Date</th>
+                                    <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Type</th>
                                     <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Amount</th>
                                     <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Method</th>
                                     <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Reference</th>
@@ -2911,9 +2912,26 @@ function b2b_personnel_view_page() {
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($payment_records as $payment): ?>
+                                <?php foreach ($payment_records as $payment): 
+                                    $payment_type = isset($payment['payment_type']) ? $payment['payment_type'] : 'salary';
+                                    $type_colors = [
+                                        'salary' => '#3b82f6',
+                                        'bonus' => '#10b981',
+                                        'commission' => '#8b5cf6',
+                                        'allowance' => '#f59e0b',
+                                        'reimbursement' => '#14b8a6',
+                                        'adjustment' => '#6b7280',
+                                        'other' => '#6b7280'
+                                    ];
+                                    $type_color = $type_colors[$payment_type] ?? '#6b7280';
+                                ?>
                                     <tr style="border-bottom:1px solid #e5e7eb;">
                                         <td style="padding:12px;font-size:14px;color:#374151;"><?= date('M d, Y', strtotime($payment['payment_date'])) ?></td>
+                                        <td style="padding:12px;font-size:14px;">
+                                            <span style="background:<?= $type_color ?>;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:600;">
+                                                <?= ucfirst($payment_type) ?>
+                                            </span>
+                                        </td>
                                         <td style="padding:12px;font-size:14px;color:#374151;font-weight:600;">$<?= number_format($payment['amount'], 2) ?></td>
                                         <td style="padding:12px;font-size:14px;color:#374151;"><?= esc_html(ucwords(str_replace('_', ' ', $payment['payment_method']))) ?></td>
                                         <td style="padding:12px;font-size:14px;color:#374151;"><?= esc_html($payment['reference_number']) ?></td>
@@ -7023,6 +7041,20 @@ function b2b_personnel_add_payment($personnel_id) {
                 </div>
                 
                 <div class="form-group">
+                    <label>Payment Type</label>
+                    <select name="payment_type" required>
+                        <option value="">Select...</option>
+                        <option value="salary" selected>Salary</option>
+                        <option value="bonus">Bonus</option>
+                        <option value="commission">Commission</option>
+                        <option value="allowance">Allowance</option>
+                        <option value="reimbursement">Reimbursement</option>
+                        <option value="adjustment">Adjustment</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
                     <label>Payment Amount ($)</label>
                     <input type="number" name="amount" step="0.01" required min="0">
                 </div>
@@ -7073,6 +7105,7 @@ function b2b_personnel_process_payment() {
     $personnel_id = intval($_POST['personnel_id']);
     $amount = floatval($_POST['amount']);
     $payment_date = sanitize_text_field($_POST['payment_date']);
+    $payment_type = sanitize_text_field($_POST['payment_type']);
     $payment_method = sanitize_text_field($_POST['payment_method']);
     $reference_number = sanitize_text_field($_POST['reference_number']);
     $notes = sanitize_textarea_field($_POST['notes']);
@@ -7086,6 +7119,7 @@ function b2b_personnel_process_payment() {
         'id' => uniqid('pay_'),
         'employee_id' => $personnel_id,
         'payment_date' => $payment_date,
+        'payment_type' => $payment_type,
         'amount' => $amount,
         'payment_method' => $payment_method,
         'reference_number' => $reference_number,
@@ -7210,6 +7244,7 @@ function b2b_personnel_payment_history($personnel_id) {
                     <thead>
                         <tr>
                             <th>Date</th>
+                            <th>Type</th>
                             <th>Amount</th>
                             <th>Method</th>
                             <th>Reference</th>
@@ -7219,8 +7254,22 @@ function b2b_personnel_payment_history($personnel_id) {
                     </thead>
                     <tbody>
                         <?php foreach ($payments as $payment): ?>
+                            <?php 
+                            $payment_type = isset($payment['payment_type']) ? $payment['payment_type'] : 'salary';
+                            $type_colors = [
+                                'salary' => '#3b82f6',
+                                'bonus' => '#10b981',
+                                'commission' => '#8b5cf6',
+                                'allowance' => '#f59e0b',
+                                'reimbursement' => '#14b8a6',
+                                'adjustment' => '#6b7280',
+                                'other' => '#6b7280'
+                            ];
+                            $type_color = $type_colors[$payment_type] ?? '#6b7280';
+                            ?>
                             <tr>
                                 <td><?= date('M d, Y', strtotime($payment['payment_date'])) ?></td>
+                                <td><span style="background:<?= $type_color ?>;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:600;"><?= ucfirst($payment_type) ?></span></td>
                                 <td>$<?= number_format($payment['amount'], 2) ?></td>
                                 <td><?= ucfirst(str_replace('_', ' ', $payment['payment_method'])) ?></td>
                                 <td><?= esc_html($payment['reference_number'] ?? '-') ?></td>
@@ -7338,6 +7387,7 @@ function b2b_personnel_edit_payment($payment_id) {
     // Handle form submission
     if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_payment"])) {
         $payment_date = sanitize_text_field($_POST["payment_date"]);
+        $payment_type = sanitize_text_field($_POST["payment_type"]);
         $amount = floatval($_POST["amount"]);
         $payment_method = sanitize_text_field($_POST["payment_method"]);
         $reference_number = sanitize_text_field($_POST["reference_number"]);
@@ -7355,6 +7405,7 @@ function b2b_personnel_edit_payment($payment_id) {
                 $balance_diff = $amount - $old_amount;
                 
                 $payment_records[$key]["payment_date"] = $payment_date;
+                $payment_records[$key]["payment_type"] = $payment_type;
                 $payment_records[$key]["amount"] = $amount;
                 $payment_records[$key]["payment_method"] = $payment_method;
                 $payment_records[$key]["reference_number"] = $reference_number;
@@ -7412,6 +7463,28 @@ function b2b_personnel_edit_payment($payment_id) {
                     <div class="form-group">
                         <label>Payment Date *</label>
                         <input type="date" name="payment_date" value="<?= esc_attr($payment_to_edit["payment_date"]) ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Payment Type *</label>
+                        <select name="payment_type" required>
+                            <?php
+                            $current_type = isset($payment_to_edit["payment_type"]) ? $payment_to_edit["payment_type"] : 'salary';
+                            $payment_types = [
+                                'salary' => 'Salary',
+                                'bonus' => 'Bonus',
+                                'commission' => 'Commission',
+                                'allowance' => 'Allowance',
+                                'reimbursement' => 'Reimbursement',
+                                'adjustment' => 'Adjustment',
+                                'other' => 'Other'
+                            ];
+                            foreach ($payment_types as $value => $label) {
+                                $selected = ($current_type === $value) ? 'selected' : '';
+                                echo "<option value=\"$value\" $selected>$label</option>";
+                            }
+                            ?>
+                        </select>
                     </div>
                     
                     <div class="form-group">

@@ -69,6 +69,8 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/delete/([0-9]+)/?$', 'index.php?personnel_panel=delete&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/departments/?$', 'index.php?personnel_panel=departments', 'top');
     add_rewrite_rule('^personnel-panel/department-delete/([0-9]+)/?$', 'index.php?personnel_panel=department_delete&department_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/export/?$', 'index.php?personnel_panel=export', 'top');
+    add_rewrite_rule('^personnel-panel/bulk-delete/?$', 'index.php?personnel_panel=bulk_delete', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -114,6 +116,12 @@ function b2b_personnel_template_redirect() {
         case 'department_delete':
             b2b_personnel_department_delete();
             break;
+        case 'export':
+            b2b_personnel_export_csv();
+            break;
+        case 'bulk_delete':
+            b2b_personnel_bulk_delete();
+            break;
         default:
             wp_redirect(home_url('/personnel-panel'));
             exit;
@@ -122,17 +130,20 @@ function b2b_personnel_template_redirect() {
 }
 
 /* =====================================================
- * 4. PERSONNEL LIST PAGE
+ * 4. PERSONNEL LIST PAGE (WITH ENHANCED FEATURES)
  * ===================================================== */
 function b2b_personnel_list_page() {
     // Handle search and filters
     $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
     $department = isset($_GET['department']) ? sanitize_text_field($_GET['department']) : '';
+    $paged = max(1, get_query_var('paged', 1));
+    $per_page = 20;
     
     // Query personnel
     $args = [
         'post_type'      => 'b2b_personel',
-        'posts_per_page' => 50,
+        'posts_per_page' => $per_page,
+        'paged'          => $paged,
         'orderby'        => 'title',
         'order'          => 'ASC',
     ];
@@ -321,6 +332,12 @@ function b2b_personnel_list_page() {
                 font-weight: 500;
             }
             
+            /* Table Responsive Wrapper */
+            .table-responsive {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            
             /* Mobile responsive */
             @media (max-width: 768px) {
                 .header { flex-direction: column; gap: 1rem; }
@@ -354,8 +371,11 @@ function b2b_personnel_list_page() {
                     </select>
                     <button type="submit" class="btn btn-edit"><i class="fas fa-search"></i> Search</button>
                 </form>
-                <div style="display: flex; gap: 0.5rem;">
-                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn" style="background: #10b981;">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <a href="<?= home_url('/personnel-panel/export') ?>" class="add-btn" style="background: #10b981;">
+                        <i class="fas fa-file-csv"></i> Export CSV
+                    </a>
+                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn" style="background: #6366f1;">
                         <i class="fas fa-building"></i> Departments
                     </a>
                     <a href="<?= home_url('/personnel-panel/add') ?>" class="add-btn">
@@ -364,11 +384,32 @@ function b2b_personnel_list_page() {
                 </div>
             </div>
             
+            <!-- Bulk Actions Bar -->
+            <div id="bulkActionsBar" style="display:none; background:white; padding:1rem 1.5rem; border-radius:8px; margin-bottom:1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <form method="POST" action="<?= home_url('/personnel-panel/bulk-delete') ?>" onsubmit="return confirm('Are you sure you want to delete selected personnel?');">
+                    <div style="display: flex; align-items: center; gap:1rem; flex-wrap:wrap;">
+                        <span style="font-weight:600; color:#374151;"><span id="selectedCount">0</span> selected</span>
+                        <button type="submit" class="btn btn-delete" style="padding:0.5rem 1rem;">
+                            <i class="fas fa-trash"></i> Delete Selected
+                        </button>
+                        <button type="button" class="btn" style="background:#6b7280; color:white; padding:0.5rem 1rem;" onclick="clearSelection()">
+                            <i class="fas fa-times"></i> Clear Selection
+                        </button>
+                    </div>
+                    <input type="hidden" name="selected_ids" id="selectedIdsInput">
+                </form>
+            </div>
+            
+            <div class="table-responsive">
             <div class="table-container">
                 <?php if ($personnel_query->have_posts()): ?>
+                    <form id="personnelTableForm">
                     <table>
                         <thead>
                             <tr>
+                                <th style="width:40px;">
+                                    <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+                                </th>
                                 <th>Full Name</th>
                                 <th>Department</th>
                                 <th>Position</th>
@@ -392,6 +433,9 @@ function b2b_personnel_list_page() {
                                 $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : '-';
                                 ?>
                                 <tr>
+                                    <td>
+                                        <input type="checkbox" class="personnel-checkbox" value="<?= $id ?>" onchange="updateBulkActions()">
+                                    </td>
                                     <td><strong><?= get_the_title() ?></strong></td>
                                     <td><span class="badge"><?= esc_html($dept_name) ?></span></td>
                                     <td><?= esc_html($gorev ?: '-') ?></td>
@@ -415,6 +459,28 @@ function b2b_personnel_list_page() {
                             <?php endwhile; ?>
                         </tbody>
                     </table>
+                    </form>
+                    
+                    <!-- Pagination -->
+                    <?php if ($personnel_query->max_num_pages > 1): ?>
+                    <div style="margin-top:20px; display:flex; justify-content:center; align-items:center; gap:10px; padding: 1rem;">
+                        <span style="color:#6b7280; font-size:14px;">Page:</span>
+                        <select onchange="window.location.href=this.value" style="padding:8px 16px; border:1px solid #d1d5db; border-radius:6px; background:white; cursor:pointer;">
+                            <?php for ($i = 1; $i <= $personnel_query->max_num_pages; $i++): ?>
+                                <?php
+                                $page_url = add_query_arg(['paged' => $i, 's' => $search, 'department' => $department], home_url('/personnel-panel'));
+                                ?>
+                                <option value="<?= esc_url($page_url) ?>" <?= selected($paged, $i, false) ?>>
+                                    Page <?= $i ?> of <?= $personnel_query->max_num_pages ?>
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                        <span style="color:#6b7280; font-size:14px;">
+                            (Showing <?= min($per_page, $personnel_query->found_posts) ?> of <?= $personnel_query->found_posts ?> personnel)
+                        </span>
+                    </div>
+                    <?php endif; ?>
+                    
                 <?php else: ?>
                     <div class="empty-state">
                         <i class="fas fa-users"></i>
@@ -427,6 +493,39 @@ function b2b_personnel_list_page() {
                     </div>
                 <?php endif; ?>
             </div>
+            </div>
+            
+            <script>
+            // Bulk Actions Functions
+            function toggleSelectAll(checkbox) {
+                const checkboxes = document.querySelectorAll('.personnel-checkbox');
+                checkboxes.forEach(cb => cb.checked = checkbox.checked);
+                updateBulkActions();
+            }
+            
+            function updateBulkActions() {
+                const checkboxes = document.querySelectorAll('.personnel-checkbox:checked');
+                const count = checkboxes.length;
+                const bulkBar = document.getElementById('bulkActionsBar');
+                const countSpan = document.getElementById('selectedCount');
+                const idsInput = document.getElementById('selectedIdsInput');
+                
+                if (count > 0) {
+                    bulkBar.style.display = 'block';
+                    countSpan.textContent = count;
+                    const ids = Array.from(checkboxes).map(cb => cb.value);
+                    idsInput.value = ids.join(',');
+                } else {
+                    bulkBar.style.display = 'none';
+                }
+            }
+            
+            function clearSelection() {
+                document.querySelectorAll('.personnel-checkbox').forEach(cb => cb.checked = false);
+                document.getElementById('selectAll').checked = false;
+                updateBulkActions();
+            }
+            </script>
         </div>
     </body>
     </html>
@@ -1047,12 +1146,77 @@ function b2b_personnel_department_delete() {
         wp_delete_term($id, 'b2b_departman');
     }
     
-    wp_redirect('/personnel-panel/departments');
+    wp_redirect(home_url('/personnel-panel/departments'));
     exit;
 }
 
 /* =====================================================
- * 7. FLUSH REWRITE RULES ON ACTIVATION
+ * 9. EXPORT PERSONNEL TO CSV
+ * ===================================================== */
+function b2b_personnel_export_csv() {
+    // Query all personnel
+    $personnel = get_posts([
+        'post_type'      => 'b2b_personel',
+        'posts_per_page' => -1,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ]);
+    
+    // Set headers for CSV download
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=personnel_' . date('Y-m-d') . '.csv');
+    
+    // Create output stream
+    $output = fopen('php://output', 'w');
+    
+    // Add BOM for Excel UTF-8 support
+    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+    
+    // Add CSV headers
+    fputcsv($output, ['Full Name', 'Department', 'Position', 'Email', 'Phone', 'Salary', 'Start Date']);
+    
+    // Add data rows
+    foreach ($personnel as $person) {
+        $id = $person->ID;
+        $depts = get_the_terms($id, 'b2b_departman');
+        $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : '';
+        
+        fputcsv($output, [
+            $person->post_title,
+            $dept_name,
+            get_post_meta($id, '_gorev', true),
+            get_post_meta($id, '_eposta', true),
+            get_post_meta($id, '_telefon', true),
+            get_post_meta($id, '_maas', true),
+            get_post_meta($id, '_baslangic_tarihi', true),
+        ]);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+/* =====================================================
+ * 10. BULK DELETE PERSONNEL
+ * ===================================================== */
+function b2b_personnel_bulk_delete() {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['selected_ids'])) {
+        $ids = explode(',', sanitize_text_field($_POST['selected_ids']));
+        
+        foreach ($ids as $id) {
+            $id = intval($id);
+            if ($id > 0) {
+                wp_delete_post($id, true);
+            }
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel'));
+    exit;
+}
+
+/* =====================================================
+ * 11. FLUSH REWRITE RULES ON ACTIVATION
  * ===================================================== */
 register_activation_hook(__FILE__, 'b2b_personnel_flush_rewrites');
 function b2b_personnel_flush_rewrites() {

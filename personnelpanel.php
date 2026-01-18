@@ -67,10 +67,19 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/add/?$', 'index.php?personnel_panel=add', 'top');
     add_rewrite_rule('^personnel-panel/edit/([0-9]+)/?$', 'index.php?personnel_panel=edit&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/delete/([0-9]+)/?$', 'index.php?personnel_panel=delete&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/view/([0-9]+)/?$', 'index.php?personnel_panel=view&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/departments/?$', 'index.php?personnel_panel=departments', 'top');
     add_rewrite_rule('^personnel-panel/department-delete/([0-9]+)/?$', 'index.php?personnel_panel=department_delete&department_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/export/?$', 'index.php?personnel_panel=export', 'top');
     add_rewrite_rule('^personnel-panel/bulk-delete/?$', 'index.php?personnel_panel=bulk_delete', 'top');
+    add_rewrite_rule('^personnel-panel/attendance/?$', 'index.php?personnel_panel=attendance', 'top');
+    add_rewrite_rule('^personnel-panel/clock-in/([0-9]+)/?$', 'index.php?personnel_panel=clock_in&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/clock-out/([0-9]+)/?$', 'index.php?personnel_panel=clock_out&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/activity/?$', 'index.php?personnel_panel=activity', 'top');
+    add_rewrite_rule('^personnel-panel/add-note/([0-9]+)/?$', 'index.php?personnel_panel=add_note&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/delete-note/([0-9]+)/?$', 'index.php?personnel_panel=delete_note&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/upload-document/([0-9]+)/?$', 'index.php?personnel_panel=upload_document&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/delete-document/([0-9]+)/?$', 'index.php?personnel_panel=delete_document&personnel_id=$matches[1]', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -121,6 +130,33 @@ function b2b_personnel_template_redirect() {
             break;
         case 'bulk_delete':
             b2b_personnel_bulk_delete();
+            break;
+        case 'view':
+            b2b_personnel_view_page();
+            break;
+        case 'attendance':
+            b2b_personnel_attendance_page();
+            break;
+        case 'clock_in':
+            b2b_personnel_clock_in();
+            break;
+        case 'clock_out':
+            b2b_personnel_clock_out();
+            break;
+        case 'activity':
+            b2b_personnel_activity_page();
+            break;
+        case 'add_note':
+            b2b_personnel_add_note();
+            break;
+        case 'delete_note':
+            b2b_personnel_delete_note();
+            break;
+        case 'upload_document':
+            b2b_personnel_upload_document();
+            break;
+        case 'delete_document':
+            b2b_personnel_delete_document();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -372,6 +408,12 @@ function b2b_personnel_list_page() {
                     <button type="submit" class="btn btn-edit"><i class="fas fa-search"></i> Search</button>
                 </form>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <a href="<?= home_url('/personnel-panel/attendance') ?>" class="add-btn" style="background: #f59e0b;">
+                        <i class="fas fa-clock"></i> Attendance
+                    </a>
+                    <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background: #8b5cf6;">
+                        <i class="fas fa-history"></i> Activity Log
+                    </a>
                     <a href="<?= home_url('/personnel-panel/export') ?>" class="add-btn" style="background: #10b981;">
                         <i class="fas fa-file-csv"></i> Export CSV
                     </a>
@@ -431,12 +473,31 @@ function b2b_personnel_list_page() {
                                 $baslangic = get_post_meta($id, '_baslangic_tarihi', true);
                                 $depts = get_the_terms($id, 'b2b_departman');
                                 $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : '-';
+                                
+                                // Check today's attendance status
+                                $attendance = get_post_meta($id, '_attendance', true) ?: [];
+                                $today = date('Y-m-d');
+                                $clocked_in = false;
+                                foreach (array_reverse($attendance) as $record) {
+                                    if (strpos($record['date'], $today) === 0) {
+                                        $clocked_in = ($record['type'] === 'clock_in');
+                                    }
+                                }
                                 ?>
                                 <tr>
                                     <td>
                                         <input type="checkbox" class="personnel-checkbox" value="<?= $id ?>" onchange="updateBulkActions()">
                                     </td>
-                                    <td><strong><?= get_the_title() ?></strong></td>
+                                    <td>
+                                        <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" style="color:#3b82f6;font-weight:600;text-decoration:none;">
+                                            <?= get_the_title() ?>
+                                        </a>
+                                        <?php if ($clocked_in): ?>
+                                            <span style="background:#10b981;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:8px;">
+                                                <i class="fas fa-circle" style="font-size:6px;"></i> Active
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><span class="badge"><?= esc_html($dept_name) ?></span></td>
                                     <td><?= esc_html($gorev ?: '-') ?></td>
                                     <td><?= esc_html($eposta ?: '-') ?></td>
@@ -444,15 +505,22 @@ function b2b_personnel_list_page() {
                                     <td><?= $maas ? '$' . number_format($maas, 0, '.', ',') : '-' ?></td>
                                     <td><?= $baslangic ? date('m/d/Y', strtotime($baslangic)) : '-' ?></td>
                                     <td>
-                                        <div class="actions">
-                                            <a href="<?= home_url('/personnel-panel/edit/' . $id) ?>" class="btn btn-edit">
-                                                <i class="fas fa-edit"></i> Edit
+                                        <div class="actions" style="display:flex;gap:5px;flex-wrap:wrap;">
+                                            <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" class="btn btn-edit" style="background:#6366f1;" title="View Details">
+                                                <i class="fas fa-eye"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/delete/' . $id) ?>" 
-                                               class="btn btn-delete" 
-                                               onclick="return confirm('Are you sure you want to delete this personnel?')">
-                                                <i class="fas fa-trash"></i> Delete
+                                            <a href="<?= home_url('/personnel-panel/edit/' . $id) ?>" class="btn btn-edit" title="Edit">
+                                                <i class="fas fa-edit"></i>
                                             </a>
+                                            <?php if (!$clocked_in): ?>
+                                                <a href="<?= home_url('/personnel-panel/clock-in/' . $id) ?>" class="btn btn-edit" style="background:#10b981;" title="Clock In">
+                                                    <i class="fas fa-sign-in-alt"></i>
+                                                </a>
+                                            <?php else: ?>
+                                                <a href="<?= home_url('/personnel-panel/clock-out/' . $id) ?>" class="btn btn-delete" title="Clock Out">
+                                                    <i class="fas fa-sign-out-alt"></i>
+                                                </a>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -590,6 +658,13 @@ function b2b_personnel_form_page($personnel_id = 0) {
                 
                 if ($department) {
                     wp_set_object_terms($personnel_id, $department, 'b2b_departman');
+                }
+                
+                // Log activity
+                if ($is_edit) {
+                    b2b_log_personnel_activity($personnel_id, 'personnel_edited', 'Personnel information updated');
+                } else {
+                    b2b_log_personnel_activity($personnel_id, 'personnel_added', 'Personnel added to system');
                 }
                 
                 $success = true;
@@ -1207,6 +1282,8 @@ function b2b_personnel_bulk_delete() {
             $id = intval($id);
             if ($id > 0) {
                 wp_delete_post($id, true);
+                // Log activity
+                b2b_log_personnel_activity($id, 'personnel_deleted', 'Personnel deleted');
             }
         }
     }
@@ -1216,7 +1293,902 @@ function b2b_personnel_bulk_delete() {
 }
 
 /* =====================================================
- * 11. FLUSH REWRITE RULES ON ACTIVATION
+ * 11. PERSONNEL DETAIL VIEW PAGE
+ * ===================================================== */
+function b2b_personnel_view_page() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    // Get personnel data
+    $gorev = get_post_meta($personnel_id, '_gorev', true);
+    $eposta = get_post_meta($personnel_id, '_eposta', true);
+    $telefon = get_post_meta($personnel_id, '_telefon', true);
+    $maas = get_post_meta($personnel_id, '_maas', true);
+    $baslangic = get_post_meta($personnel_id, '_baslangic_tarihi', true);
+    $depts = get_the_terms($personnel_id, 'b2b_departman');
+    $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : 'N/A';
+    
+    // Get notes, documents, attendance
+    $notes = get_post_meta($personnel_id, '_notes', true) ?: [];
+    $documents = get_post_meta($personnel_id, '_documents', true) ?: [];
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    $activity = b2b_get_personnel_activity($personnel_id, 10);
+    
+    // Calculate today's status
+    $today = date('Y-m-d');
+    $clocked_in = false;
+    $clock_in_time = '';
+    foreach (array_reverse($attendance) as $record) {
+        if (strpos($record['date'], $today) === 0 && $record['type'] === 'clock_in') {
+            $clocked_in = true;
+            $clock_in_time = date('g:i A', strtotime($record['date']));
+            break;
+        }
+        if (strpos($record['date'], $today) === 0 && $record['type'] === 'clock_out') {
+            break;
+        }
+    }
+    
+    b2b_personnel_header('View Personnel - ' . esc_html($person->post_title));
+    ?>
+    
+    <div class="main-content">
+        <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <div>
+                <h1 style="margin:0 0 5px 0;font-size:28px;color:#111827;"><?= esc_html($person->post_title) ?></h1>
+                <p style="margin:0;color:#6b7280;"><?= esc_html($gorev) ?> • <?= esc_html($dept_name) ?></p>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <a href="<?= home_url('/personnel-panel/edit/' . $personnel_id) ?>" class="add-btn" style="background:#6366f1;">
+                    <i class="fas fa-edit"></i> Edit
+                </a>
+                <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </a>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div style="border-bottom:2px solid #e5e7eb;margin-bottom:20px;">
+            <div style="display:flex;gap:20px;">
+                <button class="tab-btn active" onclick="showTab('info')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid #3b82f6;color:#3b82f6;font-weight:600;">
+                    <i class="fas fa-user"></i> Information
+                </button>
+                <button class="tab-btn" onclick="showTab('notes')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600;">
+                    <i class="fas fa-sticky-note"></i> Notes (<?= count($notes) ?>)
+                </button>
+                <button class="tab-btn" onclick="showTab('documents')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600;">
+                    <i class="fas fa-file"></i> Documents (<?= count($documents) ?>)
+                </button>
+                <button class="tab-btn" onclick="showTab('attendance')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600;">
+                    <i class="fas fa-clock"></i> Attendance
+                </button>
+                <button class="tab-btn" onclick="showTab('activity')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600;">
+                    <i class="fas fa-history"></i> Activity
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab Content: Information -->
+        <div id="tab-info" class="tab-content">
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;">Employee Details</h2>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Full Name</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($person->post_title) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Department</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($dept_name) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Position/Title</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($gorev) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Email</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($eposta) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Phone</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($telefon) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Salary</label>
+                        <p style="margin:0;font-size:16px;color:#111827;">$<?= number_format((float)$maas, 2) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Start Date</label>
+                        <p style="margin:0;font-size:16px;color:#111827;"><?= esc_html($baslangic) ?></p>
+                    </div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;color:#6b7280;font-size:14px;">Status</label>
+                        <p style="margin:0;font-size:16px;">
+                            <?php if ($clocked_in): ?>
+                                <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                    <i class="fas fa-circle" style="font-size:8px;"></i> Clocked In (<?= $clock_in_time ?>)
+                                </span>
+                            <?php else: ?>
+                                <span style="background:#6b7280;color:#fff;padding:4px 12px;border-radius:20px;font-size:14px;">
+                                    <i class="fas fa-circle" style="font-size:8px;"></i> Not Clocked In
+                                </span>
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Notes -->
+        <div id="tab-notes" class="tab-content" style="display:none;">
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h2 style="margin:0;font-size:20px;color:#111827;">Notes & Comments</h2>
+                    <button onclick="document.getElementById('addNoteForm').style.display='block'" class="add-btn">
+                        <i class="fas fa-plus"></i> Add Note
+                    </button>
+                </div>
+
+                <!-- Add Note Form -->
+                <div id="addNoteForm" style="display:none;background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px;">
+                    <form method="POST" action="<?= home_url('/personnel-panel/add-note/' . $personnel_id) ?>">
+                        <textarea name="note_content" rows="4" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;" placeholder="Enter note..." required></textarea>
+                        <div style="display:flex;gap:10px;margin-top:10px;">
+                            <button type="submit" class="add-btn" style="background:#10b981;">Save Note</button>
+                            <button type="button" onclick="document.getElementById('addNoteForm').style.display='none'" class="add-btn" style="background:#6b7280;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Notes List -->
+                <?php if (empty($notes)): ?>
+                    <p style="color:#6b7280;text-align:center;padding:40px 0;">No notes yet. Add your first note above.</p>
+                <?php else: ?>
+                    <div style="display:flex;flex-direction:column;gap:15px;">
+                        <?php foreach (array_reverse($notes) as $index => $note): ?>
+                            <div style="background:#f9fafb;padding:15px;border-radius:8px;border-left:4px solid #3b82f6;">
+                                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+                                    <div>
+                                        <span style="font-weight:600;color:#111827;"><?= esc_html($note['author']) ?></span>
+                                        <span style="color:#6b7280;font-size:13px;margin-left:10px;"><?= date('M d, Y g:i A', strtotime($note['date'])) ?></span>
+                                    </div>
+                                    <a href="<?= home_url('/personnel-panel/delete-note/' . $personnel_id . '?note_index=' . $index) ?>" onclick="return confirm('Delete this note?')" style="color:#ef4444;"><i class="fas fa-trash"></i></a>
+                                </div>
+                                <p style="margin:0;color:#374151;line-height:1.6;"><?= nl2br(esc_html($note['content'])) ?></p>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Tab Content: Documents -->
+        <div id="tab-documents" class="tab-content" style="display:none;">
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h2 style="margin:0;font-size:20px;color:#111827;">Attached Documents</h2>
+                    <button onclick="document.getElementById('uploadDocForm').style.display='block'" class="add-btn">
+                        <i class="fas fa-upload"></i> Upload Document
+                    </button>
+                </div>
+
+                <!-- Upload Form -->
+                <div id="uploadDocForm" style="display:none;background:#f9fafb;padding:20px;border-radius:8px;margin-bottom:20px;">
+                    <form method="POST" action="<?= home_url('/personnel-panel/upload-document/' . $personnel_id) ?>" enctype="multipart/form-data">
+                        <div style="margin-bottom:15px;">
+                            <label style="display:block;margin-bottom:5px;font-weight:600;">Document Type</label>
+                            <select name="doc_type" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required>
+                                <option value="Contract">Employment Contract</option>
+                                <option value="Certificate">Certificate</option>
+                                <option value="ID">ID Copy</option>
+                                <option value="Training">Training Certificate</option>
+                                <option value="Review">Performance Review</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom:15px;">
+                            <label style="display:block;margin-bottom:5px;font-weight:600;">Select File (Max 5MB)</label>
+                            <input type="file" name="document_file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;" required>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button type="submit" class="add-btn" style="background:#10b981;">Upload</button>
+                            <button type="button" onclick="document.getElementById('uploadDocForm').style.display='none'" class="add-btn" style="background:#6b7280;">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Documents List -->
+                <?php if (empty($documents)): ?>
+                    <p style="color:#6b7280;text-align:center;padding:40px 0;">No documents uploaded yet.</p>
+                <?php else: ?>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:15px;">
+                        <?php foreach ($documents as $index => $doc): ?>
+                            <div style="background:#f9fafb;padding:15px;border-radius:8px;border:1px solid #e5e7eb;">
+                                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
+                                    <div style="background:#3b82f6;color:#fff;width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;">
+                                        <i class="fas fa-file-<?= $doc['type'] === 'pdf' ? 'pdf' : 'alt' ?>"></i>
+                                    </div>
+                                    <a href="<?= home_url('/personnel-panel/delete-document/' . $personnel_id . '?doc_index=' . $index) ?>" onclick="return confirm('Delete this document?')" style="color:#ef4444;"><i class="fas fa-trash"></i></a>
+                                </div>
+                                <h4 style="margin:0 0 5px 0;font-size:14px;font-weight:600;color:#111827;"><?= esc_html($doc['doc_type']) ?></h4>
+                                <p style="margin:0 0 10px 0;font-size:13px;color:#6b7280;"><?= esc_html($doc['filename']) ?></p>
+                                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#6b7280;">
+                                    <span><?= date('M d, Y', strtotime($doc['upload_date'])) ?></span>
+                                    <a href="<?= esc_url($doc['url']) ?>" download style="color:#3b82f6;"><i class="fas fa-download"></i> Download</a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Tab Content: Attendance -->
+        <div id="tab-attendance" class="tab-content" style="display:none;">
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;">Attendance History</h2>
+
+                <?php if (empty($attendance)): ?>
+                    <p style="color:#6b7280;text-align:center;padding:40px 0;">No attendance records yet.</p>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;">
+                                    <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Date & Time</th>
+                                    <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Action</th>
+                                    <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Hours</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php 
+                                // Group by date for hours calculation
+                                $grouped = [];
+                                foreach (array_reverse($attendance) as $record) {
+                                    $date = date('Y-m-d', strtotime($record['date']));
+                                    $grouped[$date][] = $record;
+                                }
+                                
+                                foreach (array_reverse($attendance) as $record): 
+                                    $is_clock_in = $record['type'] === 'clock_in';
+                                ?>
+                                    <tr style="border-bottom:1px solid #e5e7eb;">
+                                        <td style="padding:12px;color:#111827;"><?= date('M d, Y g:i A', strtotime($record['date'])) ?></td>
+                                        <td style="padding:12px;">
+                                            <?php if ($is_clock_in): ?>
+                                                <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;">
+                                                    <i class="fas fa-sign-in-alt"></i> Clock In
+                                                </span>
+                                            <?php else: ?>
+                                                <span style="background:#ef4444;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;">
+                                                    <i class="fas fa-sign-out-alt"></i> Clock Out
+                                                </span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td style="padding:12px;color:#6b7280;">
+                                            <?php
+                                            // Calculate hours if this is a clock out
+                                            if (!$is_clock_in) {
+                                                $date = date('Y-m-d', strtotime($record['date']));
+                                                if (isset($grouped[$date]) && count($grouped[$date]) >= 2) {
+                                                    $clock_in_time = null;
+                                                    foreach ($grouped[$date] as $r) {
+                                                        if ($r['type'] === 'clock_in' && strtotime($r['date']) < strtotime($record['date'])) {
+                                                            $clock_in_time = strtotime($r['date']);
+                                                        }
+                                                    }
+                                                    if ($clock_in_time) {
+                                                        $hours = round((strtotime($record['date']) - $clock_in_time) / 3600, 2);
+                                                        echo $hours . ' hours';
+                                                    }
+                                                }
+                                            }
+                                            ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Tab Content: Activity -->
+        <div id="tab-activity" class="tab-content" style="display:none;">
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;">Activity Log</h2>
+
+                <?php if (empty($activity)): ?>
+                    <p style="color:#6b7280;text-align:center;padding:40px 0;">No activity recorded yet.</p>
+                <?php else: ?>
+                    <div style="display:flex;flex-direction:column;gap:15px;">
+                        <?php foreach ($activity as $log): ?>
+                            <div style="display:flex;gap:15px;padding:15px;background:#f9fafb;border-radius:8px;border-left:4px solid <?= b2b_activity_color($log['action']) ?>;">
+                                <div style="background:<?= b2b_activity_color($log['action']) ?>;color:#fff;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                    <i class="fas fa-<?= b2b_activity_icon($log['action']) ?>"></i>
+                                </div>
+                                <div style="flex:1;">
+                                    <h4 style="margin:0 0 5px 0;font-size:14px;font-weight:600;color:#111827;"><?= esc_html(ucwords(str_replace('_', ' ', $log['action']))) ?></h4>
+                                    <p style="margin:0 0 5px 0;color:#374151;font-size:14px;"><?= esc_html($log['details']) ?></p>
+                                    <p style="margin:0;font-size:13px;color:#6b7280;"><?= date('M d, Y g:i A', strtotime($log['date'])) ?></p>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function showTab(tabName) {
+        // Hide all tabs
+        document.querySelectorAll('.tab-content').forEach(tab => tab.style.display = 'none');
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.style.borderBottom = '3px solid transparent';
+            btn.style.color = '#6b7280';
+        });
+        
+        // Show selected tab
+        document.getElementById('tab-' + tabName).style.display = 'block';
+        event.target.style.borderBottom = '3px solid #3b82f6';
+        event.target.style.color = '#3b82f6';
+    }
+    </script>
+
+    <?php
+    b2b_personnel_footer();
+}
+
+/* =====================================================
+ * 12. ATTENDANCE DASHBOARD PAGE
+ * ===================================================== */
+function b2b_personnel_attendance_page() {
+    // Get all personnel
+    $args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1,
+        'orderby' => 'title',
+        'order' => 'ASC'
+    ];
+    $personnel = get_posts($args);
+    
+    // Get selected date (default today)
+    $selected_date = isset($_GET['date']) ? sanitize_text_field($_GET['date']) : date('Y-m-d');
+    
+    b2b_personnel_header('Attendance Dashboard');
+    ?>
+    
+    <div class="main-content">
+        <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h1 style="margin:0;font-size:28px;color:#111827;">Attendance Dashboard</h1>
+            <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
+                <i class="fas fa-arrow-left"></i> Back to Personnel
+            </a>
+        </div>
+
+        <!-- Date Selector -->
+        <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+            <form method="GET" style="display:flex;gap:15px;align-items:end;">
+                <div style="flex:1;max-width:300px;">
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#374151;">Select Date</label>
+                    <input type="date" name="date" value="<?= esc_attr($selected_date) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;">
+                </div>
+                <button type="submit" class="add-btn">View Attendance</button>
+                <a href="?date=<?= date('Y-m-d') ?>" class="add-btn" style="background:#6b7280;">Today</a>
+            </form>
+        </div>
+
+        <!-- Attendance Summary -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;">
+            <?php
+            $total = count($personnel);
+            $present = 0;
+            $absent = 0;
+            
+            foreach ($personnel as $person) {
+                $attendance = get_post_meta($person->ID, '_attendance', true) ?: [];
+                $is_present = false;
+                foreach ($attendance as $record) {
+                    if (strpos($record['date'], $selected_date) === 0 && $record['type'] === 'clock_in') {
+                        $is_present = true;
+                        break;
+                    }
+                }
+                if ($is_present) $present++; else $absent++;
+            }
+            ?>
+            
+            <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:12px;padding:20px;color:#fff;">
+                <div style="font-size:32px;font-weight:700;margin-bottom:5px;"><?= $total ?></div>
+                <div style="font-size:14px;opacity:0.9;">Total Personnel</div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);border-radius:12px;padding:20px;color:#fff;">
+                <div style="font-size:32px;font-weight:700;margin-bottom:5px;"><?= $present ?></div>
+                <div style="font-size:14px;opacity:0.9;">Present Today</div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg,#ef4444 0%,#dc2626 100%);border-radius:12px;padding:20px;color:#fff;">
+                <div style="font-size:32px;font-weight:700;margin-bottom:5px;"><?= $absent ?></div>
+                <div style="font-size:14px;opacity:0.9;">Absent Today</div>
+            </div>
+            
+            <div style="background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%);border-radius:12px;padding:20px;color:#fff;">
+                <div style="font-size:32px;font-weight:700;margin-bottom:5px;"><?= $total > 0 ? round(($present / $total) * 100) : 0 ?>%</div>
+                <div style="font-size:14px;opacity:0.9;">Attendance Rate</div>
+            </div>
+        </div>
+
+        <!-- Personnel Attendance List -->
+        <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+            <h2 style="margin:0 0 20px 0;font-size:20px;color:#111827;">Personnel Status</h2>
+            
+            <div class="table-responsive">
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;">
+                            <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Name</th>
+                            <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Department</th>
+                            <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Status</th>
+                            <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Clock In</th>
+                            <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Clock Out</th>
+                            <th style="padding:12px;text-align:left;font-weight:600;color:#374151;">Hours</th>
+                            <th style="padding:12px;text-align:center;font-weight:600;color:#374151;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($personnel as $person): 
+                            $attendance = get_post_meta($person->ID, '_attendance', true) ?: [];
+                            $clock_in_time = '';
+                            $clock_out_time = '';
+                            $hours_worked = 0;
+                            $is_clocked_in = false;
+                            
+                            foreach ($attendance as $record) {
+                                if (strpos($record['date'], $selected_date) === 0) {
+                                    if ($record['type'] === 'clock_in') {
+                                        $clock_in_time = date('g:i A', strtotime($record['date']));
+                                        $is_clocked_in = true;
+                                    } elseif ($record['type'] === 'clock_out') {
+                                        $clock_out_time = date('g:i A', strtotime($record['date']));
+                                        $is_clocked_in = false;
+                                        // Calculate hours
+                                        if ($clock_in_time) {
+                                            $in = strtotime($selected_date . ' ' . $clock_in_time);
+                                            $out = strtotime($selected_date . ' ' . $clock_out_time);
+                                            $hours_worked = round(($out - $in) / 3600, 2);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            $depts = get_the_terms($person->ID, 'b2b_departman');
+                            $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : 'N/A';
+                        ?>
+                            <tr style="border-bottom:1px solid #e5e7eb;">
+                                <td style="padding:12px;">
+                                    <a href="<?= home_url('/personnel-panel/view/' . $person->ID) ?>" style="color:#3b82f6;font-weight:500;">
+                                        <?= esc_html($person->post_title) ?>
+                                    </a>
+                                </td>
+                                <td style="padding:12px;color:#6b7280;"><?= esc_html($dept_name) ?></td>
+                                <td style="padding:12px;">
+                                    <?php if ($clock_in_time && !$clock_out_time): ?>
+                                        <span style="background:#10b981;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;">
+                                            <i class="fas fa-circle" style="font-size:8px;"></i> Present
+                                        </span>
+                                    <?php elseif ($clock_in_time && $clock_out_time): ?>
+                                        <span style="background:#3b82f6;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;">
+                                            <i class="fas fa-check-circle"></i> Completed
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="background:#6b7280;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;">
+                                            <i class="fas fa-times-circle"></i> Absent
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding:12px;color:#111827;"><?= $clock_in_time ?: '-' ?></td>
+                                <td style="padding:12px;color:#111827;"><?= $clock_out_time ?: '-' ?></td>
+                                <td style="padding:12px;color:#111827;font-weight:600;"><?= $hours_worked > 0 ? $hours_worked . ' hrs' : '-' ?></td>
+                                <td style="padding:12px;text-align:center;">
+                                    <?php if (!$clock_in_time): ?>
+                                        <a href="<?= home_url('/personnel-panel/clock-in/' . $person->ID . '?date=' . $selected_date) ?>" class="btn btn-edit" style="background:#10b981;">
+                                            <i class="fas fa-sign-in-alt"></i> Clock In
+                                        </a>
+                                    <?php elseif ($is_clocked_in): ?>
+                                        <a href="<?= home_url('/personnel-panel/clock-out/' . $person->ID . '?date=' . $selected_date) ?>" class="btn btn-delete" style="background:#ef4444;">
+                                            <i class="fas fa-sign-out-alt"></i> Clock Out
+                                        </a>
+                                    <?php else: ?>
+                                        <span style="color:#6b7280;font-size:13px;">Completed</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <?php
+    b2b_personnel_footer();
+}
+
+/* =====================================================
+ * 13. CLOCK IN/OUT ACTIONS
+ * ===================================================== */
+function b2b_personnel_clock_in() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $date = isset($_GET['date']) ? sanitize_text_field($_GET['date']) : date('Y-m-d');
+    
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    $attendance[] = [
+        'type' => 'clock_in',
+        'date' => date('Y-m-d H:i:s'),
+        'user_id' => get_current_user_id()
+    ];
+    update_post_meta($personnel_id, '_attendance', $attendance);
+    
+    // Log activity
+    b2b_log_personnel_activity($personnel_id, 'clock_in', 'Clocked in');
+    
+    wp_redirect(home_url('/personnel-panel/attendance?date=' . $date));
+    exit;
+}
+
+function b2b_personnel_clock_out() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $date = isset($_GET['date']) ? sanitize_text_field($_GET['date']) : date('Y-m-d');
+    
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    $attendance[] = [
+        'type' => 'clock_out',
+        'date' => date('Y-m-d H:i:s'),
+        'user_id' => get_current_user_id()
+    ];
+    update_post_meta($personnel_id, '_attendance', $attendance);
+    
+    // Log activity
+    b2b_log_personnel_activity($personnel_id, 'clock_out', 'Clocked out');
+    
+    wp_redirect(home_url('/personnel-panel/attendance?date=' . $date));
+    exit;
+}
+
+/* =====================================================
+ * 14. ACTIVITY LOG PAGE
+ * ===================================================== */
+function b2b_personnel_activity_page() {
+    // Get filter parameters
+    $filter_action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+    $filter_date = isset($_GET['date']) ? sanitize_text_field($_GET['date']) : '';
+    
+    // Get all activity
+    $all_activity = [];
+    $args = ['post_type' => 'b2b_personel', 'posts_per_page' => -1];
+    $personnel = get_posts($args);
+    
+    foreach ($personnel as $person) {
+        $activity = get_post_meta($person->ID, '_activity_log', true) ?: [];
+        foreach ($activity as $log) {
+            $log['personnel_id'] = $person->ID;
+            $log['personnel_name'] = $person->post_title;
+            $all_activity[] = $log;
+        }
+    }
+    
+    // Sort by date (newest first)
+    usort($all_activity, function($a, $b) {
+        return strtotime($b['date']) - strtotime($a['date']);
+    });
+    
+    // Apply filters
+    if ($filter_action) {
+        $all_activity = array_filter($all_activity, function($log) use ($filter_action) {
+            return $log['action'] === $filter_action;
+        });
+    }
+    if ($filter_date) {
+        $all_activity = array_filter($all_activity, function($log) use ($filter_date) {
+            return strpos($log['date'], $filter_date) === 0;
+        });
+    }
+    
+    // Pagination
+    $per_page = 50;
+    $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+    $total_items = count($all_activity);
+    $total_pages = ceil($total_items / $per_page);
+    $offset = ($page - 1) * $per_page;
+    $activity_page = array_slice($all_activity, $offset, $per_page);
+    
+    b2b_personnel_header('Activity Log');
+    ?>
+    
+    <div class="main-content">
+        <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h1 style="margin:0;font-size:28px;color:#111827;">Activity Log</h1>
+            <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
+                <i class="fas fa-arrow-left"></i> Back to Personnel
+            </a>
+        </div>
+
+        <!-- Filters -->
+        <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+            <form method="GET" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#374151;">Action Type</label>
+                    <select name="action" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;">
+                        <option value="">All Actions</option>
+                        <option value="personnel_added" <?= $filter_action === 'personnel_added' ? 'selected' : '' ?>>Personnel Added</option>
+                        <option value="personnel_edited" <?= $filter_action === 'personnel_edited' ? 'selected' : '' ?>>Personnel Edited</option>
+                        <option value="personnel_deleted" <?= $filter_action === 'personnel_deleted' ? 'selected' : '' ?>>Personnel Deleted</option>
+                        <option value="clock_in" <?= $filter_action === 'clock_in' ? 'selected' : '' ?>>Clock In</option>
+                        <option value="clock_out" <?= $filter_action === 'clock_out' ? 'selected' : '' ?>>Clock Out</option>
+                        <option value="note_added" <?= $filter_action === 'note_added' ? 'selected' : '' ?>>Note Added</option>
+                        <option value="document_uploaded" <?= $filter_action === 'document_uploaded' ? 'selected' : '' ?>>Document Uploaded</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;margin-bottom:5px;font-weight:600;color:#374151;">Date</label>
+                    <input type="date" name="date" value="<?= esc_attr($filter_date) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;">
+                </div>
+                <div style="display:flex;align-items:end;gap:10px;">
+                    <button type="submit" class="add-btn">Filter</button>
+                    <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background:#6b7280;">Reset</a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Summary -->
+        <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin-bottom:20px;">
+            <p style="margin:0;color:#6b7280;">Showing <?= number_format(count($activity_page)) ?> of <?= number_format($total_items) ?> activity records</p>
+        </div>
+
+        <!-- Activity List -->
+        <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+            <?php if (empty($activity_page)): ?>
+                <p style="color:#6b7280;text-align:center;padding:40px 0;">No activity found.</p>
+            <?php else: ?>
+                <div style="display:flex;flex-direction:column;gap:15px;">
+                    <?php foreach ($activity_page as $log): ?>
+                        <div style="display:flex;gap:15px;padding:15px;background:#f9fafb;border-radius:8px;border-left:4px solid <?= b2b_activity_color($log['action']) ?>;">
+                            <div style="background:<?= b2b_activity_color($log['action']) ?>;color:#fff;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                <i class="fas fa-<?= b2b_activity_icon($log['action']) ?>"></i>
+                            </div>
+                            <div style="flex:1;">
+                                <h4 style="margin:0 0 5px 0;font-size:14px;font-weight:600;color:#111827;">
+                                    <a href="<?= home_url('/personnel-panel/view/' . $log['personnel_id']) ?>" style="color:#3b82f6;">
+                                        <?= esc_html($log['personnel_name']) ?>
+                                    </a>
+                                    • <?= esc_html(ucwords(str_replace('_', ' ', $log['action']))) ?>
+                                </h4>
+                                <p style="margin:0 0 5px 0;color:#374151;font-size:14px;"><?= esc_html($log['details']) ?></p>
+                                <p style="margin:0;font-size:13px;color:#6b7280;">
+                                    <?= date('M d, Y g:i A', strtotime($log['date'])) ?>
+                                    <?php if (isset($log['user_id'])): ?>
+                                        • by <?= esc_html(get_userdata($log['user_id'])->display_name ?? 'System') ?>
+                                    <?php endif; ?>
+                                </p>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <!-- Pagination -->
+                <?php if ($total_pages > 1): ?>
+                    <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+                        <span style="color:#6b7280;font-size:14px;">Page:</span>
+                        <select onchange="window.location.href=this.value" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">
+                            <?php for ($i = 1; $i <= $total_pages; $i++): 
+                                $page_url = add_query_arg(['paged' => $i, 'action' => $filter_action, 'date' => $filter_date], home_url('/personnel-panel/activity'));
+                            ?>
+                                <option value="<?= esc_url($page_url) ?>" <?= $i === $page ? 'selected' : '' ?>>
+                                    Page <?= $i ?> of <?= $total_pages ?>
+                                </option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php
+    b2b_personnel_footer();
+}
+
+/* =====================================================
+ * 15. NOTE MANAGEMENT
+ * ===================================================== */
+function b2b_personnel_add_note() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['note_content'])) {
+        $notes = get_post_meta($personnel_id, '_notes', true) ?: [];
+        $current_user = wp_get_current_user();
+        
+        $notes[] = [
+            'content' => sanitize_textarea_field($_POST['note_content']),
+            'author' => $current_user->display_name,
+            'user_id' => get_current_user_id(),
+            'date' => current_time('mysql')
+        ];
+        
+        update_post_meta($personnel_id, '_notes', $notes);
+        
+        // Log activity
+        b2b_log_personnel_activity($personnel_id, 'note_added', 'Note added: ' . substr(sanitize_textarea_field($_POST['note_content']), 0, 50) . '...');
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id));
+    exit;
+}
+
+function b2b_personnel_delete_note() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $note_index = isset($_GET['note_index']) ? intval($_GET['note_index']) : -1;
+    
+    if ($note_index >= 0) {
+        $notes = get_post_meta($personnel_id, '_notes', true) ?: [];
+        if (isset($notes[$note_index])) {
+            unset($notes[$note_index]);
+            $notes = array_values($notes); // Re-index
+            update_post_meta($personnel_id, '_notes', $notes);
+            
+            // Log activity
+            b2b_log_personnel_activity($personnel_id, 'note_deleted', 'Note was deleted');
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id));
+    exit;
+}
+
+/* =====================================================
+ * 16. DOCUMENT MANAGEMENT
+ * ===================================================== */
+function b2b_personnel_upload_document() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['document_file']) && isset($_POST['doc_type'])) {
+        $file = $_FILES['document_file'];
+        
+        // Validate file
+        $allowed_types = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png', 'image/jpg'];
+        $max_size = 5 * 1024 * 1024; // 5MB
+        
+        if ($file['error'] === 0 && in_array($file['type'], $allowed_types) && $file['size'] <= $max_size) {
+            $upload_dir = wp_upload_dir();
+            $personnel_dir = $upload_dir['basedir'] . '/personnel-documents/' . $personnel_id;
+            
+            if (!file_exists($personnel_dir)) {
+                wp_mkdir_p($personnel_dir);
+            }
+            
+            $filename = sanitize_file_name($file['name']);
+            $unique_filename = wp_unique_filename($personnel_dir, $filename);
+            $file_path = $personnel_dir . '/' . $unique_filename;
+            
+            if (move_uploaded_file($file['tmp_name'], $file_path)) {
+                $documents = get_post_meta($personnel_id, '_documents', true) ?: [];
+                
+                $documents[] = [
+                    'filename' => $unique_filename,
+                    'doc_type' => sanitize_text_field($_POST['doc_type']),
+                    'upload_date' => current_time('mysql'),
+                    'user_id' => get_current_user_id(),
+                    'url' => $upload_dir['baseurl'] . '/personnel-documents/' . $personnel_id . '/' . $unique_filename,
+                    'size' => $file['size'],
+                    'type' => pathinfo($unique_filename, PATHINFO_EXTENSION)
+                ];
+                
+                update_post_meta($personnel_id, '_documents', $documents);
+                
+                // Log activity
+                b2b_log_personnel_activity($personnel_id, 'document_uploaded', 'Document uploaded: ' . $unique_filename);
+            }
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id));
+    exit;
+}
+
+function b2b_personnel_delete_document() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $doc_index = isset($_GET['doc_index']) ? intval($_GET['doc_index']) : -1;
+    
+    if ($doc_index >= 0) {
+        $documents = get_post_meta($personnel_id, '_documents', true) ?: [];
+        if (isset($documents[$doc_index])) {
+            // Delete physical file
+            $upload_dir = wp_upload_dir();
+            $file_path = $upload_dir['basedir'] . '/personnel-documents/' . $personnel_id . '/' . $documents[$doc_index]['filename'];
+            if (file_exists($file_path)) {
+                unlink($file_path);
+            }
+            
+            unset($documents[$doc_index]);
+            $documents = array_values($documents); // Re-index
+            update_post_meta($personnel_id, '_documents', $documents);
+            
+            // Log activity
+            b2b_log_personnel_activity($personnel_id, 'document_deleted', 'Document was deleted');
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id));
+    exit;
+}
+
+/* =====================================================
+ * 17. ACTIVITY LOGGING HELPERS
+ * ===================================================== */
+function b2b_log_personnel_activity($personnel_id, $action, $details) {
+    $activity = get_post_meta($personnel_id, '_activity_log', true) ?: [];
+    
+    $activity[] = [
+        'action' => $action,
+        'details' => $details,
+        'user_id' => get_current_user_id(),
+        'date' => current_time('mysql')
+    ];
+    
+    // Keep only last 100 entries
+    if (count($activity) > 100) {
+        $activity = array_slice($activity, -100);
+    }
+    
+    update_post_meta($personnel_id, '_activity_log', $activity);
+}
+
+function b2b_get_personnel_activity($personnel_id, $limit = 10) {
+    $activity = get_post_meta($personnel_id, '_activity_log', true) ?: [];
+    return array_slice(array_reverse($activity), 0, $limit);
+}
+
+function b2b_activity_color($action) {
+    $colors = [
+        'personnel_added' => '#10b981',
+        'personnel_edited' => '#3b82f6',
+        'personnel_deleted' => '#ef4444',
+        'clock_in' => '#10b981',
+        'clock_out' => '#f59e0b',
+        'note_added' => '#8b5cf6',
+        'note_deleted' => '#6b7280',
+        'document_uploaded' => '#06b6d4',
+        'document_deleted' => '#6b7280',
+    ];
+    return $colors[$action] ?? '#6b7280';
+}
+
+function b2b_activity_icon($action) {
+    $icons = [
+        'personnel_added' => 'user-plus',
+        'personnel_edited' => 'user-edit',
+        'personnel_deleted' => 'user-times',
+        'clock_in' => 'sign-in-alt',
+        'clock_out' => 'sign-out-alt',
+        'note_added' => 'sticky-note',
+        'note_deleted' => 'trash',
+        'document_uploaded' => 'file-upload',
+        'document_deleted' => 'file-times',
+    ];
+    return $icons[$action] ?? 'info-circle';
+}
+
+/* =====================================================
+ * 18. FLUSH REWRITE RULES ON ACTIVATION
  * ===================================================== */
 register_activation_hook(__FILE__, 'b2b_personnel_flush_rewrites');
 function b2b_personnel_flush_rewrites() {

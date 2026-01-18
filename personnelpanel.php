@@ -2895,7 +2895,9 @@ function b2b_personnel_view_page() {
                 <?php else:
                     // Sort by date (newest first)
                     usort($payment_records, function($a, $b) {
-                        return strtotime($b['payment_date']) - strtotime($a['payment_date']);
+                        $a_date = isset($a['date']) ? $a['date'] : '';
+                        $b_date = isset($b['date']) ? $b['date'] : '';
+                        return strtotime($b_date) - strtotime($a_date);
                     });
                 ?>
                     <div style="overflow-x:auto;">
@@ -2926,7 +2928,9 @@ function b2b_personnel_view_page() {
                                     $type_color = $type_colors[$payment_type] ?? '#6b7280';
                                 ?>
                                     <tr style="border-bottom:1px solid #e5e7eb;">
-                                        <td style="padding:12px;font-size:14px;color:#374151;"><?= date('M d, Y', strtotime($payment['payment_date'])) ?></td>
+                                        <td style="padding:12px;font-size:14px;color:#374151;">
+                                            <?= isset($payment['date']) && $payment['date'] ? date('M d, Y', strtotime($payment['date'])) : 'N/A' ?>
+                                        </td>
                                         <td style="padding:12px;font-size:14px;">
                                             <span style="background:<?= $type_color ?>;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:600;">
                                                 <?= ucfirst($payment_type) ?>
@@ -6930,7 +6934,10 @@ function b2b_calculate_monthly_payments($personnel_id, $month) {
     
     $total = 0;
     foreach ($payments as $payment) {
-        $payment_month = date('Y-m', strtotime($payment['payment_date']));
+        if (!isset($payment['date']) || !$payment['date']) {
+            continue;
+        }
+        $payment_month = date('Y-m', strtotime($payment['date']));
         if ($payment_month === $month) {
             $total += floatval($payment['amount']);
         }
@@ -7241,7 +7248,9 @@ function b2b_personnel_payment_history($personnel_id) {
     
     // Sort by date descending
     usort($payments, function($a, $b) {
-        return strtotime($b['payment_date']) - strtotime($a['payment_date']);
+        $a_date = isset($a['date']) ? $a['date'] : '';
+        $b_date = isset($b['date']) ? $b['date'] : '';
+        return strtotime($b_date) - strtotime($a_date);
     });
     
     ?>
@@ -7335,7 +7344,7 @@ function b2b_personnel_payment_history($personnel_id) {
                             $type_color = $type_colors[$payment_type] ?? '#6b7280';
                             ?>
                             <tr>
-                                <td><?= date('M d, Y', strtotime($payment['payment_date'])) ?></td>
+                                <td><?= isset($payment['date']) && $payment['date'] ? date('M d, Y', strtotime($payment['date'])) : 'N/A' ?></td>
                                 <td><span style="background:<?= $type_color ?>;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:600;"><?= ucfirst($payment_type) ?></span></td>
                                 <td>$<?= number_format($payment['amount'], 2) ?></td>
                                 <td><?= ucfirst(str_replace('_', ' ', $payment['payment_method'])) ?></td>
@@ -7381,7 +7390,7 @@ function b2b_personnel_payroll_accounting_export() {
                         'Payment ID' => $payment['id'],
                         'Employee' => $person->post_title,
                         'Employee ID' => $person->ID,
-                        'Payment Date' => $payment['payment_date'],
+                        'Payment Date' => isset($payment['date']) ? $payment['date'] : '',
                         'Amount' => $payment['amount'],
                         'Payment Method' => ucfirst(str_replace('_', ' ', $payment['payment_method'])),
                         'Reference Number' => $payment['reference_number'] ?? '',
@@ -7471,7 +7480,7 @@ function b2b_personnel_edit_payment($payment_id) {
                 $old_amount = $payment["amount"];
                 $balance_diff = $amount - $old_amount;
                 
-                $payment_records[$key]["payment_date"] = $payment_date;
+                $payment_records[$key]["date"] = $payment_date;
                 $payment_records[$key]["payment_type"] = $payment_type;
                 $payment_records[$key]["amount"] = $amount;
                 $payment_records[$key]["payment_method"] = $payment_method;
@@ -7529,7 +7538,7 @@ function b2b_personnel_edit_payment($payment_id) {
                 <form method="POST">
                     <div class="form-group">
                         <label>Payment Date *</label>
-                        <input type="date" name="payment_date" value="<?= esc_attr($payment_to_edit["payment_date"]) ?>" required>
+                        <input type="date" name="payment_date" value="<?= esc_attr(isset($payment_to_edit['date']) ? $payment_to_edit['date'] : '') ?>" required>
                     </div>
                     
                     <div class="form-group">

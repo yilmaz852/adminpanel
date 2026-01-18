@@ -88,6 +88,9 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/update-attendance/?$', 'index.php?personnel_panel=update_attendance', 'top');
     add_rewrite_rule('^personnel-panel/delete-attendance/([0-9]+)/([0-9]+)/?$', 'index.php?personnel_panel=delete_attendance&personnel_id=$matches[1]&attendance_index=$matches[2]', 'top');
     add_rewrite_rule('^personnel-panel/reports/?$', 'index.php?personnel_panel=reports', 'top');
+    add_rewrite_rule('^personnel-panel/upload-photo/([0-9]+)/?$', 'index.php?personnel_panel=upload_photo&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/process-photo-upload/?$', 'index.php?personnel_panel=process_photo_upload', 'top');
+    add_rewrite_rule('^personnel-panel/delete-photo/([0-9]+)/?$', 'index.php?personnel_panel=delete_photo&personnel_id=$matches[1]', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -190,6 +193,15 @@ function b2b_personnel_template_redirect() {
             break;
         case 'reports':
             b2b_personnel_reports_page();
+            break;
+        case 'upload_photo':
+            b2b_personnel_upload_photo();
+            break;
+        case 'process_photo_upload':
+            b2b_personnel_process_photo_upload();
+            break;
+        case 'delete_photo':
+            b2b_personnel_delete_photo();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -4430,4 +4442,370 @@ function b2b_personnel_reports_page() {
     </body>
     </html>
     <?php
+}
+
+/* =====================================================
+ * PHOTO UPLOAD FUNCTIONALITY
+ * ===================================================== */
+
+/**
+ * Photo Upload Form
+ */
+function b2b_personnel_upload_photo() {
+    $personnel_id = get_query_var('personnel_id');
+    $post = get_post($personnel_id);
+    
+    if (!$post || $post->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    $name = get_the_title($personnel_id);
+    $current_photo = get_post_meta($personnel_id, '_photo_url', true);
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Upload Photo - <?= esc_html($name) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 2rem;
+            }
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                padding: 2rem;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            }
+            h1 {
+                color: #1f2937;
+                margin-bottom: 1.5rem;
+                font-size: 1.75rem;
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+            .current-photo {
+                text-align: center;
+                margin-bottom: 2rem;
+                padding: 1.5rem;
+                background: #f9fafb;
+                border-radius: 8px;
+            }
+            .current-photo img {
+                width: 150px;
+                height: 150px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 4px solid #667eea;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            .current-photo .no-photo {
+                width: 150px;
+                height: 150px;
+                margin: 0 auto;
+                border-radius: 50%;
+                background: #e5e7eb;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 4rem;
+                color: #9ca3af;
+            }
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                color: #374151;
+                font-weight: 600;
+            }
+            input[type="file"] {
+                width: 100%;
+                padding: 0.75rem;
+                border: 2px dashed #d1d5db;
+                border-radius: 8px;
+                background: #f9fafb;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            input[type="file"]:hover {
+                border-color: #667eea;
+                background: #f3f4f6;
+            }
+            .file-info {
+                margin-top: 0.5rem;
+                font-size: 0.875rem;
+                color: #6b7280;
+            }
+            .buttons {
+                display: flex;
+                gap: 1rem;
+                margin-top: 2rem;
+            }
+            button {
+                flex: 1;
+                padding: 0.875rem 1.5rem;
+                border: none;
+                border-radius: 8px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s;
+            }
+            .btn-primary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .btn-primary:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            }
+            .btn-secondary {
+                background: #f3f4f6;
+                color: #374151;
+            }
+            .btn-secondary:hover {
+                background: #e5e7eb;
+            }
+            .btn-danger {
+                background: #ef4444;
+                color: white;
+            }
+            .btn-danger:hover {
+                background: #dc2626;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>
+                <i class="fas fa-camera"></i>
+                Upload Photo - <?= esc_html($name) ?>
+            </h1>
+            
+            <div class="current-photo">
+                <?php if ($current_photo): ?>
+                    <img src="<?= esc_url($current_photo) ?>" alt="Current photo">
+                    <p style="margin-top:1rem;color:#6b7280;">Current Photo</p>
+                <?php else: ?>
+                    <div class="no-photo">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <p style="margin-top:1rem;color:#6b7280;">No photo uploaded</p>
+                <?php endif; ?>
+            </div>
+            
+            <form action="<?= home_url('/personnel-panel/process-photo-upload') ?>" method="POST" enctype="multipart/form-data">
+                <?php wp_nonce_field('upload_photo_' . $personnel_id, 'photo_nonce'); ?>
+                <input type="hidden" name="personnel_id" value="<?= $personnel_id ?>">
+                
+                <div class="form-group">
+                    <label for="photo_file">
+                        <i class="fas fa-image"></i> Select Photo
+                    </label>
+                    <input type="file" id="photo_file" name="photo_file" accept="image/jpeg,image/jpg,image/png,image/gif" required>
+                    <div class="file-info">
+                        <i class="fas fa-info-circle"></i>
+                        Supported formats: JPG, JPEG, PNG, GIF | Max size: 2MB
+                    </div>
+                </div>
+                
+                <div class="buttons">
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-upload"></i> Upload Photo
+                    </button>
+                    <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="btn-secondary" style="display:flex;align-items:center;justify-content:center;text-decoration:none;">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                </div>
+            </form>
+            
+            <?php if ($current_photo): ?>
+                <form action="<?= home_url('/personnel-panel/delete-photo/' . $personnel_id) ?>" method="POST" style="margin-top:1rem;">
+                    <?php wp_nonce_field('delete_photo_' . $personnel_id, 'delete_photo_nonce'); ?>
+                    <button type="submit" class="btn-danger" onclick="return confirm('Are you sure you want to delete this photo?');" style="width:100%;">
+                        <i class="fas fa-trash"></i> Delete Current Photo
+                    </button>
+                </form>
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+/**
+ * Process Photo Upload
+ */
+function b2b_personnel_process_photo_upload() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    $personnel_id = intval($_POST['personnel_id']);
+    
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['photo_nonce'], 'upload_photo_' . $personnel_id)) {
+        wp_die('Security check failed');
+    }
+    
+    $post = get_post($personnel_id);
+    if (!$post || $post->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    // Check if file was uploaded
+    if (!isset($_FILES['photo_file']) || $_FILES['photo_file']['error'] !== UPLOAD_ERR_OK) {
+        wp_redirect(home_url('/personnel-panel/upload-photo/' . $personnel_id . '?error=upload'));
+        exit;
+    }
+    
+    $file = $_FILES['photo_file'];
+    
+    // Validate file type
+    $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+    $file_type = mime_content_type($file['tmp_name']);
+    
+    if (!in_array($file_type, $allowed_types)) {
+        wp_redirect(home_url('/personnel-panel/upload-photo/' . $personnel_id . '?error=type'));
+        exit;
+    }
+    
+    // Validate file size (2MB max)
+    if ($file['size'] > 2 * 1024 * 1024) {
+        wp_redirect(home_url('/personnel-panel/upload-photo/' . $personnel_id . '?error=size'));
+        exit;
+    }
+    
+    // Create upload directory if it doesn't exist
+    $upload_dir = wp_upload_dir();
+    $personnel_dir = $upload_dir['basedir'] . '/personnel-photos/' . $personnel_id;
+    
+    if (!file_exists($personnel_dir)) {
+        wp_mkdir_p($personnel_dir);
+    }
+    
+    // Delete old photo if exists
+    $old_photo = get_post_meta($personnel_id, '_photo_url', true);
+    if ($old_photo) {
+        $old_photo_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $old_photo);
+        if (file_exists($old_photo_path)) {
+            @unlink($old_photo_path);
+        }
+    }
+    
+    // Generate unique filename
+    $file_ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $new_filename = 'photo-' . time() . '.' . $file_ext;
+    $new_filepath = $personnel_dir . '/' . $new_filename;
+    
+    // Move uploaded file
+    if (move_uploaded_file($file['tmp_name'], $new_filepath)) {
+        // Resize image to 300x300 thumbnail
+        $image = wp_get_image_editor($new_filepath);
+        if (!is_wp_error($image)) {
+            $image->resize(300, 300, true);
+            $image->save($new_filepath);
+        }
+        
+        // Save photo URL to post meta
+        $photo_url = $upload_dir['baseurl'] . '/personnel-photos/' . $personnel_id . '/' . $new_filename;
+        update_post_meta($personnel_id, '_photo_url', $photo_url);
+        update_post_meta($personnel_id, '_photo_upload_date', current_time('mysql'));
+        update_post_meta($personnel_id, '_photo_uploaded_by', get_current_user_id());
+        
+        // Log activity
+        $activity_log = get_post_meta($personnel_id, '_activity_log', true);
+        if (!is_array($activity_log)) {
+            $activity_log = [];
+        }
+        $activity_log[] = [
+            'action' => 'photo_uploaded',
+            'user_id' => get_current_user_id(),
+            'timestamp' => current_time('mysql'),
+            'details' => 'Photo uploaded: ' . $new_filename
+        ];
+        // Keep only last 100 activities
+        $activity_log = array_slice($activity_log, -100);
+        update_post_meta($personnel_id, '_activity_log', $activity_log);
+        
+        wp_redirect(home_url('/personnel-panel/view/' . $personnel_id . '?photo=uploaded'));
+        exit;
+    } else {
+        wp_redirect(home_url('/personnel-panel/upload-photo/' . $personnel_id . '?error=move'));
+        exit;
+    }
+}
+
+/**
+ * Delete Photo
+ */
+function b2b_personnel_delete_photo() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    $personnel_id = get_query_var('personnel_id');
+    
+    // Verify nonce
+    if (!wp_verify_nonce($_POST['delete_photo_nonce'], 'delete_photo_' . $personnel_id)) {
+        wp_die('Security check failed');
+    }
+    
+    $post = get_post($personnel_id);
+    if (!$post || $post->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    // Get photo URL
+    $photo_url = get_post_meta($personnel_id, '_photo_url', true);
+    
+    if ($photo_url) {
+        // Delete physical file
+        $upload_dir = wp_upload_dir();
+        $photo_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $photo_url);
+        
+        if (file_exists($photo_path)) {
+            @unlink($photo_path);
+        }
+        
+        // Delete meta
+        delete_post_meta($personnel_id, '_photo_url');
+        delete_post_meta($personnel_id, '_photo_upload_date');
+        delete_post_meta($personnel_id, '_photo_uploaded_by');
+        
+        // Log activity
+        $activity_log = get_post_meta($personnel_id, '_activity_log', true);
+        if (!is_array($activity_log)) {
+            $activity_log = [];
+        }
+        $activity_log[] = [
+            'action' => 'photo_deleted',
+            'user_id' => get_current_user_id(),
+            'timestamp' => current_time('mysql'),
+            'details' => 'Photo deleted'
+        ];
+        $activity_log = array_slice($activity_log, -100);
+        update_post_meta($personnel_id, '_activity_log', $activity_log);
+    }
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id . '?photo=deleted'));
+    exit;
 }

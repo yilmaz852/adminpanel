@@ -1,517 +1,415 @@
 <?php
 /**
- * Plugin Name: Accounting Panel - Income & Expense Tracking
- * Description: Minimal accounting system with income/expense tracking, tax calculations, and personnel integration
- * Version: 1.0.0
- * Author: Admin Panel
+ * =====================================================
+ * B2B ACCOUNTING MODULE
+ * Admin-only access for income/expense tracking
+ * =====================================================
+ * 
+ * Features:
+ * - Income & Expense tracking
+ * - Tax calculations (Sales Tax, Payroll Tax)
+ * - Financial reports (P&L, Cash Flow)
+ * - Personnel payroll integration
+ * - Category management
+ * 
+ * Architecture: Follows personnelpanel.php pattern
+ * - WordPress Custom Post Type (acc_transaction)
+ * - Post Meta for transaction details
+ * - Template redirect for custom URLs
+ * - Integrates with B2B Admin Panel (not WordPress admin)
  */
 
 // Exit if accessed directly
-if (!defined('ABSPATH')) {
+if (!defined('ABSPATH')) exit;
+
+/* =====================================================
+ * 1. REGISTER CUSTOM POST TYPE
+ * ===================================================== */
+add_action('init', 'b2b_register_accounting_post_type');
+function b2b_register_accounting_post_type() {
+    register_post_type('acc_transaction', [
+        'labels' => [
+            'name'               => 'Transactions',
+            'singular_name'      => 'Transaction',
+            'add_new'            => 'Add New',
+            'add_new_item'       => 'Add New Transaction',
+            'edit_item'          => 'Edit Transaction',
+            'view_item'          => 'View Transaction',
+            'search_items'       => 'Search Transactions',
+            'not_found'          => 'No transactions found',
+            'not_found_in_trash' => 'No transactions in trash'
+        ],
+        'public'              => false,
+        'show_ui'             => false, // We use custom B2B panel
+        'capability_type'     => 'post',
+        'hierarchical'        => false,
+        'supports'            => ['title'],
+        'has_archive'         => false,
+        'rewrite'             => false,
+    ]);
+}
+
+/* =====================================================
+ * 2. REWRITE RULES FOR CLEAN URLS
+ * ===================================================== */
+add_action('init', 'b2b_accounting_rewrite_rules');
+function b2b_accounting_rewrite_rules() {
+    add_rewrite_rule('^accounting-panel/?$', 'index.php?accounting_panel=dashboard', 'top');
+    add_rewrite_rule('^accounting-panel/dashboard/?$', 'index.php?accounting_panel=dashboard', 'top');
+    add_rewrite_rule('^accounting-panel/transactions/?$', 'index.php?accounting_panel=transactions', 'top');
+    add_rewrite_rule('^accounting-panel/add-transaction/?$', 'index.php?accounting_panel=add_transaction', 'top');
+    add_rewrite_rule('^accounting-panel/edit-transaction/([0-9]+)/?$', 'index.php?accounting_panel=edit_transaction&transaction_id=$matches[1]', 'top');
+    add_rewrite_rule('^accounting-panel/delete-transaction/([0-9]+)/?$', 'index.php?accounting_panel=delete_transaction&transaction_id=$matches[1]', 'top');
+    add_rewrite_rule('^accounting-panel/process-transaction/?$', 'index.php?accounting_panel=process_transaction', 'top');
+    add_rewrite_rule('^accounting-panel/reports/?$', 'index.php?accounting_panel=reports', 'top');
+    add_rewrite_rule('^accounting-panel/profit-loss/?$', 'index.php?accounting_panel=profit_loss', 'top');
+    add_rewrite_rule('^accounting-panel/cash-flow/?$', 'index.php?accounting_panel=cash_flow', 'top');
+    add_rewrite_rule('^accounting-panel/tax-summary/?$', 'index.php?accounting_panel=tax_summary', 'top');
+    add_rewrite_rule('^accounting-panel/categories/?$', 'index.php?accounting_panel=categories', 'top');
+    add_rewrite_rule('^accounting-panel/settings/?$', 'index.php?accounting_panel=settings', 'top');
+}
+
+add_filter('query_vars', 'b2b_accounting_query_vars');
+function b2b_accounting_query_vars($vars) {
+    $vars[] = 'accounting_panel';
+    $vars[] = 'transaction_id';
+    return $vars;
+}
+
+/* =====================================================
+ * 3. TEMPLATE REDIRECT - ROUTE HANDLER
+ * ===================================================== */
+add_action('template_redirect', 'b2b_accounting_template_redirect');
+function b2b_accounting_template_redirect() {
+    $panel = get_query_var('accounting_panel');
+    
+    if (!$panel) return;
+
+    // Admin-only access control
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+
+    // Route to appropriate handler
+    switch ($panel) {
+        case 'dashboard':
+            b2b_accounting_dashboard_page();
+            break;
+        case 'transactions':
+            b2b_accounting_transactions_page();
+            break;
+        case 'add_transaction':
+            b2b_accounting_add_transaction_page();
+            break;
+        case 'edit_transaction':
+            b2b_accounting_edit_transaction_page();
+            break;
+        case 'delete_transaction':
+            b2b_accounting_delete_transaction();
+            break;
+        case 'process_transaction':
+            b2b_accounting_process_transaction();
+            break;
+        case 'reports':
+            b2b_accounting_reports_page();
+            break;
+        case 'profit_loss':
+            b2b_accounting_profit_loss_page();
+            break;
+        case 'cash_flow':
+            b2b_accounting_cash_flow_page();
+            break;
+        case 'tax_summary':
+            b2b_accounting_tax_summary_page();
+            break;
+        case 'categories':
+            b2b_accounting_categories_page();
+            break;
+        case 'settings':
+            b2b_accounting_settings_page();
+            break;
+        default:
+            wp_redirect(home_url('/accounting-panel/dashboard'));
+            exit;
+    }
+    
     exit;
 }
 
+/* =====================================================
+ * 4. PAGE HANDLERS
+ * ===================================================== */
+
 /**
- * Accounting Panel Class
- * 
- * Minimal accounting system for small-medium businesses
- * Features: Income/Expense tracking, Tax calculations, Reports, Personnel integration
+ * Dashboard Page
  */
-class AccountingPanel {
+function b2b_accounting_dashboard_page() {
+    // Get current month stats
+    $start_date = date('Y-m-01');
+    $end_date = date('Y-m-t');
+    $stats = b2b_accounting_get_dashboard_stats($start_date, $end_date);
     
-    private $version = '1.0.0';
-    
-    public function __construct() {
-        // Initialize hooks
-        add_action('init', [$this, 'register_post_types']);
-        add_action('admin_menu', [$this, 'add_admin_menu']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
+    get_header();
+    ?>
+    <div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">
+        <h1>📊 Accounting Dashboard</h1>
+        <p style="color: #6b7280; margin-bottom: 30px;">Income & Expense tracking for your B2B business</p>
         
-        // Register rewrite rules
-        add_action('init', [$this, 'register_rewrite_rules']);
-        add_filter('query_vars', [$this, 'add_query_vars']);
-        add_action('template_redirect', [$this, 'handle_routes']);
-    }
-    
-    /**
-     * Register custom post type for transactions
-     */
-    public function register_post_types() {
-        register_post_type('acc_transaction', [
-            'public' => false,
-            'show_ui' => false,
-            'supports' => ['title'],
-            'capability_type' => 'post',
-            'capabilities' => [
-                'create_posts' => 'manage_options',
-            ],
-        ]);
-    }
-    
-    /**
-     * Add admin menu
-     */
-    public function add_admin_menu() {
-        add_menu_page(
-            'Accounting Panel',
-            'Accounting',
-            'manage_options',
-            'accounting-panel',
-            [$this, 'render_dashboard'],
-            'dashicons-chart-line',
-            25
-        );
-        
-        add_submenu_page(
-            'accounting-panel',
-            'Dashboard',
-            'Dashboard',
-            'manage_options',
-            'accounting-panel',
-            [$this, 'render_dashboard']
-        );
-        
-        add_submenu_page(
-            'accounting-panel',
-            'Transactions',
-            'Transactions',
-            'manage_options',
-            'accounting-transactions',
-            [$this, 'render_transactions']
-        );
-        
-        add_submenu_page(
-            'accounting-panel',
-            'Reports',
-            'Reports',
-            'manage_options',
-            'accounting-reports',
-            [$this, 'render_reports']
-        );
-        
-        add_submenu_page(
-            'accounting-panel',
-            'Categories',
-            'Categories',
-            'manage_options',
-            'accounting-categories',
-            [$this, 'render_categories']
-        );
-        
-        add_submenu_page(
-            'accounting-panel',
-            'Settings',
-            'Settings',
-            'manage_options',
-            'accounting-settings',
-            [$this, 'render_settings']
-        );
-    }
-    
-    /**
-     * Enqueue scripts and styles
-     */
-    public function enqueue_scripts($hook) {
-        if (strpos($hook, 'accounting') === false) {
-            return;
-        }
-    }
-    
-    /**
-     * Register rewrite rules
-     */
-    public function register_rewrite_rules() {
-        add_rewrite_rule('^accounting-panel/?$', 'index.php?accounting_page=dashboard', 'top');
-        add_rewrite_rule('^accounting-panel/dashboard/?$', 'index.php?accounting_page=dashboard', 'top');
-        add_rewrite_rule('^accounting-panel/transactions/?$', 'index.php?accounting_page=transactions', 'top');
-        add_rewrite_rule('^accounting-panel/add-transaction/?$', 'index.php?accounting_page=add-transaction', 'top');
-        add_rewrite_rule('^accounting-panel/edit-transaction/([0-9]+)/?$', 'index.php?accounting_page=edit-transaction&transaction_id=$matches[1]', 'top');
-        add_rewrite_rule('^accounting-panel/reports/?$', 'index.php?accounting_page=reports', 'top');
-        add_rewrite_rule('^accounting-panel/profit-loss/?$', 'index.php?accounting_page=profit-loss', 'top');
-        add_rewrite_rule('^accounting-panel/cash-flow/?$', 'index.php?accounting_page=cash-flow', 'top');
-        add_rewrite_rule('^accounting-panel/tax-summary/?$', 'index.php?accounting_page=tax-summary', 'top');
-    }
-    
-    /**
-     * Add query vars
-     */
-    public function add_query_vars($vars) {
-        $vars[] = 'accounting_page';
-        $vars[] = 'transaction_id';
-        return $vars;
-    }
-    
-    /**
-     * Handle routes
-     */
-    public function handle_routes() {
-        $page = get_query_var('accounting_page');
-        
-        if (empty($page)) {
-            return;
-        }
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Access denied');
-        }
-        
-        switch ($page) {
-            case 'dashboard':
-                $this->show_dashboard();
-                break;
-            case 'transactions':
-                $this->show_transactions();
-                break;
-            case 'add-transaction':
-                $this->show_add_transaction();
-                break;
-            case 'edit-transaction':
-                $this->show_edit_transaction();
-                break;
-            case 'reports':
-                $this->show_reports();
-                break;
-            case 'profit-loss':
-                $this->show_profit_loss_report();
-                break;
-            case 'cash-flow':
-                $this->show_cash_flow_report();
-                break;
-            case 'tax-summary':
-                $this->show_tax_summary();
-                break;
-        }
-        
-        exit;
-    }
-    
-    /**
-     * Render dashboard page (Admin menu)
-     */
-    public function render_dashboard() {
-        echo '<div class="wrap">';
-        echo '<h1>Accounting Dashboard</h1>';
-        echo '<p>Use the frontend pages at <a href="' . home_url('/accounting-panel/') . '">' . home_url('/accounting-panel/') . '</a></p>';
-        echo '</div>';
-    }
-    
-    /**
-     * Render transactions page (Admin menu)
-     */
-    public function render_transactions() {
-        echo '<div class="wrap">';
-        echo '<h1>Transactions</h1>';
-        echo '<p>Use the frontend pages at <a href="' . home_url('/accounting-panel/transactions') . '">' . home_url('/accounting-panel/transactions') . '</a></p>';
-        echo '</div>';
-    }
-    
-    /**
-     * Render reports page (Admin menu)
-     */
-    public function render_reports() {
-        echo '<div class="wrap">';
-        echo '<h1>Reports</h1>';
-        echo '<p>Use the frontend pages at <a href="' . home_url('/accounting-panel/reports') . '">' . home_url('/accounting-panel/reports') . '</a></p>';
-        echo '</div>';
-    }
-    
-    /**
-     * Render categories page (Admin menu)
-     */
-    public function render_categories() {
-        $this->show_categories_page();
-    }
-    
-    /**
-     * Render settings page (Admin menu)
-     */
-    public function render_settings() {
-        $this->show_settings_page();
-    }
-    
-    /**
-     * Show dashboard (Frontend)
-     */
-    private function show_dashboard() {
-        // Get current month stats
-        $start_date = date('Y-m-01');
-        $end_date = date('Y-m-t');
-        
-        $stats = $this->get_dashboard_stats($start_date, $end_date);
-        
-        get_header();
-        ?>
-        <div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">
-            <h1>📊 Accounting Dashboard</h1>
-            
-            <!-- Summary Cards -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
-                <!-- Total Income -->
-                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Income (This Month)</div>
-                    <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['total_income'], 2) ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $stats['income_count'] ?> transactions</div>
-                </div>
-                
-                <!-- Total Expenses -->
-                <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Expenses (This Month)</div>
-                    <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['total_expenses'], 2) ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $stats['expense_count'] ?> transactions</div>
-                </div>
-                
-                <!-- Net Income -->
-                <?php $net_income = $stats['total_income'] - $stats['total_expenses']; ?>
-                <div style="background: linear-gradient(135deg, <?= $net_income >= 0 ? '#3b82f6, #2563eb' : '#f59e0b, #d97706' ?>); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Net Income (This Month)</div>
-                    <div style="font-size: 32px; font-weight: bold;">$<?= number_format($net_income, 2) ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $net_income >= 0 ? 'Profit' : 'Loss' ?></div>
-                </div>
-                
-                <!-- Personnel Payroll -->
-                <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Personnel Payroll (Pending)</div>
-                    <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['personnel_balance'], 2) ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">From personnel module</div>
-                </div>
+        <!-- Summary Cards -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
+            <!-- Total Income -->
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Income (This Month)</div>
+                <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['total_income'], 2) ?></div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $stats['income_count'] ?> transactions</div>
             </div>
             
-            <!-- Quick Actions -->
-            <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 30px 0;">
-                <h2 style="margin: 0 0 20px 0; font-size: 20px;">Quick Actions</h2>
-                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                    <a href="<?= home_url('/accounting-panel/add-transaction') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        ➕ Add Transaction
-                    </a>
-                    <a href="<?= home_url('/accounting-panel/transactions') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        📋 View All Transactions
-                    </a>
-                    <a href="<?= home_url('/accounting-panel/profit-loss') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        📊 Profit & Loss Report
-                    </a>
-                    <a href="<?= home_url('/accounting-panel/tax-summary') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                        💰 Tax Summary
-                    </a>
-                </div>
+            <!-- Total Expenses -->
+            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Expenses (This Month)</div>
+                <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['total_expenses'], 2) ?></div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $stats['expense_count'] ?> transactions</div>
             </div>
             
-            <!-- Recent Transactions -->
-            <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <h2 style="margin: 0 0 20px 0; font-size: 20px;">Recent Transactions</h2>
-                <?php
-                $recent_transactions = $this->get_recent_transactions(10);
-                if (!empty($recent_transactions)) {
-                    ?>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="border-bottom: 2px solid #e5e7eb;">
-                                <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Date</th>
-                                <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Type</th>
-                                <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Category</th>
-                                <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Description</th>
-                                <th style="text-align: right; padding: 12px 8px; font-weight: 600; color: #6b7280;">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($recent_transactions as $txn): ?>
-                            <tr style="border-bottom: 1px solid #f3f4f6;">
-                                <td style="padding: 12px 8px;"><?= date('M d, Y', strtotime($txn['date'])) ?></td>
-                                <td style="padding: 12px 8px;">
-                                    <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; background: <?= $txn['type'] === 'income' ? '#d1fae5' : '#fee2e2' ?>; color: <?= $txn['type'] === 'income' ? '#065f46' : '#991b1b' ?>;">
-                                        <?= ucfirst($txn['type']) ?>
-                                    </span>
-                                </td>
-                                <td style="padding: 12px 8px;"><?= esc_html($txn['category']) ?></td>
-                                <td style="padding: 12px 8px;"><?= esc_html($txn['description']) ?></td>
-                                <td style="padding: 12px 8px; text-align: right; font-weight: 600; color: <?= $txn['type'] === 'income' ? '#059669' : '#dc2626' ?>;">
-                                    <?= $txn['type'] === 'income' ? '+' : '-' ?>$<?= number_format($txn['amount'], 2) ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <?php
-                } else {
-                    echo '<p style="color: #6b7280; text-align: center; padding: 40px 0;">No transactions yet. Add your first transaction to get started!</p>';
-                }
-                ?>
+            <!-- Net Income -->
+            <?php $net_income = $stats['total_income'] - $stats['total_expenses']; ?>
+            <div style="background: linear-gradient(135deg, <?= $net_income >= 0 ? '#3b82f6, #2563eb' : '#f59e0b, #d97706' ?>); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Net Income (This Month)</div>
+                <div style="font-size: 32px; font-weight: bold;">$<?= number_format($net_income, 2) ?></div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;"><?= $net_income >= 0 ? 'Profit' : 'Loss' ?></div>
+            </div>
+            
+            <!-- Personnel Payroll -->
+            <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 25px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Personnel Payroll (Pending)</div>
+                <div style="font-size: 32px; font-weight: bold;">$<?= number_format($stats['personnel_balance'], 2) ?></div>
+                <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">From personnel module</div>
             </div>
         </div>
-        <?php
-        get_footer();
-    }
+        
+        <!-- Quick Actions -->
+        <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: 30px 0;">
+            <h2 style="margin: 0 0 20px 0; font-size: 20px;">Quick Actions</h2>
+            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                <a href="<?= home_url('/accounting-panel/add-transaction') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    ➕ Add Transaction
+                </a>
+                <a href="<?= home_url('/accounting-panel/transactions') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    📋 View All Transactions
+                </a>
+                <a href="<?= home_url('/accounting-panel/profit-loss') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    📊 Profit & Loss Report
+                </a>
+                <a href="<?= home_url('/accounting-panel/tax-summary') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    💰 Tax Summary
+                </a>
+            </div>
+        </div>
+        
+        <!-- Recent Transactions -->
+        <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h2 style="margin: 0 0 20px 0; font-size: 20px;">Recent Transactions</h2>
+            <?php
+            $recent_transactions = b2b_accounting_get_recent_transactions(10);
+            if (!empty($recent_transactions)) {
+                ?>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #e5e7eb;">
+                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Date</th>
+                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Type</th>
+                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Category</th>
+                            <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Description</th>
+                            <th style="text-align: right; padding: 12px 8px; font-weight: 600; color: #6b7280;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($recent_transactions as $txn): ?>
+                        <tr style="border-bottom: 1px solid #f3f4f6;">
+                            <td style="padding: 12px 8px;"><?= date('M d, Y', strtotime($txn['date'])) ?></td>
+                            <td style="padding: 12px 8px;">
+                                <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; background: <?= $txn['type'] === 'income' ? '#d1fae5' : '#fee2e2' ?>; color: <?= $txn['type'] === 'income' ? '#065f46' : '#991b1b' ?>;">
+                                    <?= ucfirst($txn['type']) ?>
+                                </span>
+                            </td>
+                            <td style="padding: 12px 8px;"><?= esc_html($txn['category']) ?></td>
+                            <td style="padding: 12px 8px;"><?= esc_html($txn['description']) ?></td>
+                            <td style="padding: 12px 8px; text-align: right; font-weight: 600; color: <?= $txn['type'] === 'income' ? '#059669' : '#dc2626' ?>;">
+                                <?= $txn['type'] === 'income' ? '+' : '-' ?>$<?= number_format($txn['amount'], 2) ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php
+            } else {
+                echo '<p style="color: #6b7280; text-align: center; padding: 40px 0;">No transactions yet. Add your first transaction to get started!</p>';
+            }
+            ?>
+        </div>
+    </div>
+    <?php
+    get_footer();
+}
+
+/**
+ * Placeholder pages (to be implemented)
+ */
+function b2b_accounting_transactions_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>All Transactions</h1>';
+    echo '<p>Transaction list page - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_add_transaction_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 800px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Add Transaction</h1>';
+    echo '<p>Add transaction form - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_edit_transaction_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 800px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Edit Transaction</h1>';
+    echo '<p>Edit transaction form - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_delete_transaction() {
+    wp_redirect(home_url('/accounting-panel/transactions'));
+}
+
+function b2b_accounting_process_transaction() {
+    wp_redirect(home_url('/accounting-panel/transactions'));
+}
+
+function b2b_accounting_reports_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Reports</h1>';
+    echo '<p>Reports overview - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_profit_loss_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Profit & Loss Report</h1>';
+    echo '<p>P&L report - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_cash_flow_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Cash Flow Report</h1>';
+    echo '<p>Cash flow report - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_tax_summary_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Tax Summary</h1>';
+    echo '<p>Tax summary - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_categories_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Categories</h1>';
+    echo '<p>Category management - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+function b2b_accounting_settings_page() {
+    get_header();
+    echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
+    echo '<h1>Settings</h1>';
+    echo '<p>Settings page - Implementation in progress</p>';
+    echo '</div>';
+    get_footer();
+}
+
+/* =====================================================
+ * 5. HELPER FUNCTIONS
+ * ===================================================== */
+
+/**
+ * Get dashboard statistics
+ */
+function b2b_accounting_get_dashboard_stats($start_date, $end_date) {
+    global $wpdb;
     
-    /**
-     * Get dashboard statistics
-     */
-    private function get_dashboard_stats($start_date, $end_date) {
-        global $wpdb;
-        
-        $income = $wpdb->get_row($wpdb->prepare(
-            "SELECT COUNT(*) as count, COALESCE(SUM(CAST(pm1.meta_value AS DECIMAL(10,2))), 0) as total 
-            FROM {$wpdb->postmeta} pm1
-            INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_acc_type' AND pm2.meta_value = 'income'
-            INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_acc_date'
-            WHERE pm1.meta_key = '_acc_amount' AND pm3.meta_value BETWEEN %s AND %s",
-            $start_date, $end_date
-        ));
-        
-        $expenses = $wpdb->get_row($wpdb->prepare(
-            "SELECT COUNT(*) as count, COALESCE(SUM(CAST(pm1.meta_value AS DECIMAL(10,2))), 0) as total 
-            FROM {$wpdb->postmeta} pm1
-            INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_acc_type' AND pm2.meta_value = 'expense'
-            INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_acc_date'
-            WHERE pm1.meta_key = '_acc_amount' AND pm3.meta_value BETWEEN %s AND %s",
-            $start_date, $end_date
-        ));
-        
-        // Get personnel balance (integration with personnel module)
-        $personnel_balance = 0;
-        if (class_exists('PersonnelPanel')) {
-            // TODO: Add personnel integration
-        }
-        
-        return [
-            'total_income' => floatval($income->total ?? 0),
-            'income_count' => intval($income->count ?? 0),
-            'total_expenses' => floatval($expenses->total ?? 0),
-            'expense_count' => intval($expenses->count ?? 0),
-            'personnel_balance' => $personnel_balance,
+    $income = $wpdb->get_row($wpdb->prepare(
+        "SELECT COUNT(*) as count, COALESCE(SUM(CAST(pm1.meta_value AS DECIMAL(10,2))), 0) as total 
+        FROM {$wpdb->postmeta} pm1
+        INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_acc_type' AND pm2.meta_value = 'income'
+        INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_acc_date'
+        WHERE pm1.meta_key = '_acc_amount' AND pm3.meta_value BETWEEN %s AND %s",
+        $start_date, $end_date
+    ));
+    
+    $expenses = $wpdb->get_row($wpdb->prepare(
+        "SELECT COUNT(*) as count, COALESCE(SUM(CAST(pm1.meta_value AS DECIMAL(10,2))), 0) as total 
+        FROM {$wpdb->postmeta} pm1
+        INNER JOIN {$wpdb->postmeta} pm2 ON pm1.post_id = pm2.post_id AND pm2.meta_key = '_acc_type' AND pm2.meta_value = 'expense'
+        INNER JOIN {$wpdb->postmeta} pm3 ON pm1.post_id = pm3.post_id AND pm3.meta_key = '_acc_date'
+        WHERE pm1.meta_key = '_acc_amount' AND pm3.meta_value BETWEEN %s AND %s",
+        $start_date, $end_date
+    ));
+    
+    // Get personnel balance (integration with personnel module)
+    // TODO: Add personnel integration to get total pending payroll
+    $personnel_balance = 0;
+    
+    return [
+        'total_income' => floatval($income->total ?? 0),
+        'income_count' => intval($income->count ?? 0),
+        'total_expenses' => floatval($expenses->total ?? 0),
+        'expense_count' => intval($expenses->count ?? 0),
+        'personnel_balance' => $personnel_balance,
+    ];
+}
+
+/**
+ * Get recent transactions
+ */
+function b2b_accounting_get_recent_transactions($limit = 10) {
+    global $wpdb;
+    
+    $posts = $wpdb->get_results($wpdb->prepare(
+        "SELECT p.ID FROM {$wpdb->posts} p
+        WHERE p.post_type = 'acc_transaction' AND p.post_status = 'publish'
+        ORDER BY p.post_date DESC LIMIT %d",
+        $limit
+    ));
+    
+    $transactions = [];
+    foreach ($posts as $post) {
+        $transactions[] = [
+            'id' => $post->ID,
+            'type' => get_post_meta($post->ID, '_acc_type', true),
+            'category' => get_post_meta($post->ID, '_acc_category', true),
+            'amount' => floatval(get_post_meta($post->ID, '_acc_amount', true)),
+            'date' => get_post_meta($post->ID, '_acc_date', true),
+            'description' => get_post_meta($post->ID, '_acc_description', true),
         ];
     }
     
-    /**
-     * Get recent transactions
-     */
-    private function get_recent_transactions($limit = 10) {
-        global $wpdb;
-        
-        $posts = $wpdb->get_results($wpdb->prepare(
-            "SELECT p.ID FROM {$wpdb->posts} p
-            WHERE p.post_type = 'acc_transaction' AND p.post_status = 'publish'
-            ORDER BY p.post_date DESC LIMIT %d",
-            $limit
-        ));
-        
-        $transactions = [];
-        foreach ($posts as $post) {
-            $transactions[] = [
-                'id' => $post->ID,
-                'type' => get_post_meta($post->ID, '_acc_type', true),
-                'category' => get_post_meta($post->ID, '_acc_category', true),
-                'amount' => floatval(get_post_meta($post->ID, '_acc_amount', true)),
-                'date' => get_post_meta($post->ID, '_acc_date', true),
-                'description' => get_post_meta($post->ID, '_acc_description', true),
-            ];
-        }
-        
-        return $transactions;
-    }
-    
-    /**
-     * Show transactions page
-     */
-    private function show_transactions() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>All Transactions</h1>';
-        echo '<p>Transaction list page - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show add transaction page
-     */
-    private function show_add_transaction() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 800px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>Add Transaction</h1>';
-        echo '<p>Add transaction form - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show edit transaction page
-     */
-    private function show_edit_transaction() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 800px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>Edit Transaction</h1>';
-        echo '<p>Edit transaction form - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show reports page
-     */
-    private function show_reports() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>Reports</h1>';
-        echo '<p>Reports overview - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show profit & loss report
-     */
-    private function show_profit_loss_report() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>Profit & Loss Report</h1>';
-        echo '<p>P&L report - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show cash flow report
-     */
-    private function show_cash_flow_report() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>Cash Flow Report</h1>';
-        echo '<p>Cash flow report - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show tax summary
-     */
-    private function show_tax_summary() {
-        get_header();
-        echo '<div class="accounting-panel-container" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">';
-        echo '<h1>Tax Summary</h1>';
-        echo '<p>Tax summary - Implementation in progress</p>';
-        echo '</div>';
-        get_footer();
-    }
-    
-    /**
-     * Show categories page
-     */
-    private function show_categories_page() {
-        echo '<div class="wrap">';
-        echo '<h1>Accounting Categories</h1>';
-        echo '<p>Category management - Implementation in progress</p>';
-        echo '</div>';
-    }
-    
-    /**
-     * Show settings page
-     */
-    private function show_settings_page() {
-        echo '<div class="wrap">';
-        echo '<h1>Accounting Settings</h1>';
-        echo '<p>Settings page - Implementation in progress</p>';
-        echo '</div>';
-    }
+    return $transactions;
 }
-
-// Initialize the accounting panel
-new AccountingPanel();

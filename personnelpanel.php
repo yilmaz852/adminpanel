@@ -1975,8 +1975,11 @@ function b2b_personnel_activity_page() {
                                 <p style="margin:0 0 5px 0;color:#374151;font-size:14px;"><?= esc_html($log['details']) ?></p>
                                 <p style="margin:0;font-size:13px;color:#6b7280;">
                                     <?= date('M d, Y g:i A', strtotime($log['date'])) ?>
-                                    <?php if (isset($log['user_id'])): ?>
-                                        • by <?= esc_html(get_userdata($log['user_id'])->display_name ?? 'System') ?>
+                                    <?php if (isset($log['user_id'])): 
+                                        $user = get_userdata($log['user_id']);
+                                        $user_name = $user ? $user->display_name : 'System';
+                                    ?>
+                                        • by <?= esc_html($user_name) ?>
                                     <?php endif; ?>
                                 </p>
                             </div>

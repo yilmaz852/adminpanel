@@ -106,6 +106,8 @@ function b2b_personnel_rewrite_rules() {
     // Payroll Payment Routes
     add_rewrite_rule('^personnel-panel/payroll-payments/?$', 'index.php?personnel_panel=payroll_payments', 'top');
     add_rewrite_rule('^personnel-panel/add-payment/([0-9]+)/?$', 'index.php?personnel_panel=add_payment&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/edit-payment/([^/]+)/?$', 'index.php?personnel_panel=edit_payment&payment_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/delete-payment/([^/]+)/?$', 'index.php?personnel_panel=delete_payment&payment_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/process-payment/?$', 'index.php?personnel_panel=process_payment', 'top');
     add_rewrite_rule('^personnel-panel/payment-history/([0-9]+)/?$', 'index.php?personnel_panel=payment_history&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/payroll-accounting-export/?$', 'index.php?personnel_panel=payroll_accounting_export', 'top');
@@ -118,6 +120,7 @@ function b2b_personnel_query_vars($vars) {
     $vars[] = 'department_id';
     $vars[] = 'attendance_index';
     $vars[] = 'leave_id';
+    $vars[] = 'payment_id';
     return $vars;
 }
 
@@ -261,6 +264,14 @@ function b2b_personnel_template_redirect() {
         case 'add_payment':
             $personnel_id = get_query_var('personnel_id');
             b2b_personnel_add_payment($personnel_id);
+            break;
+        case 'edit_payment':
+            $payment_id = get_query_var('payment_id');
+            b2b_personnel_edit_payment($payment_id);
+            break;
+        case 'delete_payment':
+            $payment_id = get_query_var('payment_id');
+            b2b_personnel_delete_payment($payment_id);
             break;
         case 'process_payment':
             b2b_personnel_process_payment();
@@ -2270,6 +2281,9 @@ function b2b_personnel_view_page() {
                 <button class="tab-btn" onclick="showTab('activity')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600;">
                     <i class="fas fa-history"></i> Activity
                 </button>
+                <button class="tab-btn" onclick="showTab('payments')" style="padding:12px 20px;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#6b7280;font-weight:600;">
+                    <i class="fas fa-money-bill-wave"></i> Payments
+                </button>
             </div>
         </div>
 
@@ -2839,6 +2853,89 @@ function b2b_personnel_view_page() {
                 <?php endif; ?>
             </div>
         </div>
+
+        <!-- Tab Content: Payments -->
+        <div id="tab-payments" class="tab-content" style="display:none;">
+            <div style="background:#fff;border-radius:12px;padding:30px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;">
+                    <h2 style="margin:0;font-size:20px;color:#111827;">Payment History</h2>
+                    <a href="<?= home_url('/personnel-panel/add-payment/' . $personnel_id) ?>" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;">
+                        <i class="fas fa-plus"></i> Add Payment
+                    </a>
+                </div>
+
+                <?php
+                $current_month = date('Y-m');
+                $accrual = b2b_calculate_monthly_accrual($personnel_id, $current_month);
+                $payments = b2b_calculate_monthly_payments($personnel_id, $current_month);
+                $balance = b2b_get_payment_balance($personnel_id);
+                ?>
+
+                <!-- Summary Cards -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:30px;">
+                    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:12px;padding:20px;color:#fff;">
+                        <div style="font-size:13px;opacity:0.9;margin-bottom:5px;">Accrued (This Month)</div>
+                        <div style="font-size:28px;font-weight:700;">$<?= number_format($accrual, 2) ?></div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);border-radius:12px;padding:20px;color:#fff;">
+                        <div style="font-size:13px;opacity:0.9;margin-bottom:5px;">Paid (This Month)</div>
+                        <div style="font-size:28px;font-weight:700;">$<?= number_format($payments, 2) ?></div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,<?= $balance > 0 ? '#ef4444,#dc2626' : '#10b981,#059669' ?>);border-radius:12px;padding:20px;color:#fff;">
+                        <div style="font-size:13px;opacity:0.9;margin-bottom:5px;">Balance</div>
+                        <div style="font-size:28px;font-weight:700;">$<?= number_format($balance, 2) ?></div>
+                    </div>
+                </div>
+
+                <!-- Payment History Table -->
+                <?php
+                $payment_records = get_post_meta($personnel_id, '_payment_records', true) ?: [];
+                if (empty($payment_records)): ?>
+                    <p style="color:#6b7280;text-align:center;padding:40px 0;">No payments recorded yet.</p>
+                <?php else:
+                    // Sort by date (newest first)
+                    usort($payment_records, function($a, $b) {
+                        return strtotime($b['payment_date']) - strtotime($a['payment_date']);
+                    });
+                ?>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;">
+                                    <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Date</th>
+                                    <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Amount</th>
+                                    <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Method</th>
+                                    <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Reference</th>
+                                    <th style="padding:12px;text-align:left;font-size:13px;color:#6b7280;font-weight:600;">Balance After</th>
+                                    <th style="padding:12px;text-align:center;font-size:13px;color:#6b7280;font-weight:600;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($payment_records as $payment): ?>
+                                    <tr style="border-bottom:1px solid #e5e7eb;">
+                                        <td style="padding:12px;font-size:14px;color:#374151;"><?= date('M d, Y', strtotime($payment['payment_date'])) ?></td>
+                                        <td style="padding:12px;font-size:14px;color:#374151;font-weight:600;">$<?= number_format($payment['amount'], 2) ?></td>
+                                        <td style="padding:12px;font-size:14px;color:#374151;"><?= esc_html(ucwords(str_replace('_', ' ', $payment['payment_method']))) ?></td>
+                                        <td style="padding:12px;font-size:14px;color:#374151;"><?= esc_html($payment['reference_number']) ?></td>
+                                        <td style="padding:12px;font-size:14px;color:#374151;">$<?= number_format($payment['balance_after'], 2) ?></td>
+                                        <td style="padding:12px;text-align:center;">
+                                            <a href="<?= home_url('/personnel-panel/edit-payment/' . $payment['id']) ?>" style="color:#3b82f6;margin-right:10px;text-decoration:none;" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="<?= home_url('/personnel-panel/delete-payment/' . $payment['id']) ?>" 
+                                               onclick="return confirm('Are you sure you want to delete this payment? The balance will be recalculated.');" 
+                                               style="color:#ef4444;text-decoration:none;" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -3286,7 +3383,9 @@ function b2b_personnel_activity_page() {
     
     // Sort by date (newest first)
     usort($all_activity, function($a, $b) {
-        return strtotime($b['date']) - strtotime($a['date']);
+        $a_date = isset($a['date']) ? $a['date'] : '';
+        $b_date = isset($b['date']) ? $b['date'] : '';
+        return strtotime($b_date) - strtotime($a_date);
     });
     
     // Apply filters
@@ -7198,5 +7297,218 @@ function b2b_personnel_payroll_accounting_export() {
     }
     
     fclose($output);
+    exit;
+}
+
+
+/* =====================================================
+ * EDIT PAYMENT
+ * ===================================================== */
+function b2b_personnel_edit_payment($payment_id) {
+    if (!$payment_id) {
+        wp_redirect(home_url("/personnel-panel"));
+        exit;
+    }
+    
+    // Find the payment across all personnel
+    $args = ["post_type" => "b2b_personel", "posts_per_page" => -1];
+    $personnel_list = get_posts($args);
+    
+    $found_personnel_id = null;
+    $payment_to_edit = null;
+    
+    foreach ($personnel_list as $person) {
+        $payment_records = get_post_meta($person->ID, "_payment_records", true) ?: [];
+        foreach ($payment_records as $payment) {
+            if ($payment["id"] === $payment_id) {
+                $found_personnel_id = $person->ID;
+                $payment_to_edit = $payment;
+                break 2;
+            }
+        }
+    }
+    
+    if (!$payment_to_edit) {
+        wp_redirect(home_url("/personnel-panel"));
+        exit;
+    }
+    
+    $personnel_name = get_the_title($found_personnel_id);
+    
+    // Handle form submission
+    if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_payment"])) {
+        $payment_date = sanitize_text_field($_POST["payment_date"]);
+        $amount = floatval($_POST["amount"]);
+        $payment_method = sanitize_text_field($_POST["payment_method"]);
+        $reference_number = sanitize_text_field($_POST["reference_number"]);
+        $notes = sanitize_textarea_field($_POST["notes"]);
+        
+        // Get all payment records
+        $payment_records = get_post_meta($found_personnel_id, "_payment_records", true) ?: [];
+        
+        // Find and update the payment
+        foreach ($payment_records as $key => $payment) {
+            if ($payment["id"] === $payment_id) {
+                // Recalculate balance
+                $current_balance = b2b_get_payment_balance($found_personnel_id);
+                $old_amount = $payment["amount"];
+                $balance_diff = $amount - $old_amount;
+                
+                $payment_records[$key]["payment_date"] = $payment_date;
+                $payment_records[$key]["amount"] = $amount;
+                $payment_records[$key]["payment_method"] = $payment_method;
+                $payment_records[$key]["reference_number"] = $reference_number;
+                $payment_records[$key]["notes"] = $notes;
+                $payment_records[$key]["balance_after"] = $payment["balance_after"] - $balance_diff;
+                
+                break;
+            }
+        }
+        
+        update_post_meta($found_personnel_id, "_payment_records", $payment_records);
+        
+        // Recalculate and update balance
+        $new_balance = $current_balance + ($payment_to_edit["amount"] - $amount);
+        update_post_meta($found_personnel_id, "_payment_balance", $new_balance);
+        
+        // Log activity
+        b2b_log_personnel_activity($found_personnel_id, "payment_edited", "Payment record edited: $" . number_format($amount, 2));
+        
+        wp_redirect(home_url("/personnel-panel/view/" . $found_personnel_id));
+        exit;
+    }
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Edit Payment - Personnel Panel</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f3f4f6; }
+            .container { max-width: 800px; margin: 40px auto; padding: 0 20px; }
+            .card { background: #fff; border-radius: 12px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            h1 { font-size: 24px; color: #111827; margin-bottom: 10px; }
+            .subtitle { color: #6b7280; margin-bottom: 30px; }
+            .form-group { margin-bottom: 20px; }
+            label { display: block; font-weight: 600; color: #374151; margin-bottom: 8px; font-size: 14px; }
+            input, select, textarea { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+            textarea { resize: vertical; min-height: 80px; }
+            .btn-group { display: flex; gap: 15px; margin-top: 30px; }
+            .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+            .btn-primary { background: #3b82f6; color: #fff; }
+            .btn-secondary { background: #6b7280; color: #fff; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="card">
+                <h1><i class="fas fa-edit"></i> Edit Payment</h1>
+                <p class="subtitle">Personnel: <?= esc_html($personnel_name) ?></p>
+                
+                <form method="POST">
+                    <div class="form-group">
+                        <label>Payment Date *</label>
+                        <input type="date" name="payment_date" value="<?= esc_attr($payment_to_edit["payment_date"]) ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Amount *</label>
+                        <input type="number" name="amount" step="0.01" min="0" value="<?= esc_attr($payment_to_edit["amount"]) ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Payment Method *</label>
+                        <select name="payment_method" required>
+                            <option value="cash" <?= $payment_to_edit["payment_method"] === "cash" ? "selected" : "" ?>>Cash</option>
+                            <option value="check" <?= $payment_to_edit["payment_method"] === "check" ? "selected" : "" ?>>Check</option>
+                            <option value="direct_deposit" <?= $payment_to_edit["payment_method"] === "direct_deposit" ? "selected" : "" ?>>Direct Deposit</option>
+                            <option value="wire_transfer" <?= $payment_to_edit["payment_method"] === "wire_transfer" ? "selected" : "" ?>>Wire Transfer</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Reference Number</label>
+                        <input type="text" name="reference_number" value="<?= esc_attr($payment_to_edit["reference_number"]) ?>">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea name="notes"><?= esc_textarea($payment_to_edit["notes"]) ?></textarea>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" name="update_payment" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Update Payment
+                        </button>
+                        <a href="<?= home_url("/personnel-panel/view/" . $found_personnel_id) ?>" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+/* =====================================================
+ * DELETE PAYMENT
+ * ===================================================== */
+function b2b_personnel_delete_payment($payment_id) {
+    if (!$payment_id) {
+        wp_redirect(home_url("/personnel-panel"));
+        exit;
+    }
+    
+    // Find the payment across all personnel
+    $args = ["post_type" => "b2b_personel", "posts_per_page" => -1];
+    $personnel_list = get_posts($args);
+    
+    $found_personnel_id = null;
+    $payment_to_delete = null;
+    
+    foreach ($personnel_list as $person) {
+        $payment_records = get_post_meta($person->ID, "_payment_records", true) ?: [];
+        foreach ($payment_records as $key => $payment) {
+            if ($payment["id"] === $payment_id) {
+                $found_personnel_id = $person->ID;
+                $payment_to_delete = $payment;
+                break 2;
+            }
+        }
+    }
+    
+    if (!$payment_to_delete) {
+        wp_redirect(home_url("/personnel-panel"));
+        exit;
+    }
+    
+    // Get all payment records
+    $payment_records = get_post_meta($found_personnel_id, "_payment_records", true) ?: [];
+    
+    // Remove the payment
+    $payment_records = array_filter($payment_records, function($payment) use ($payment_id) {
+        return $payment["id"] !== $payment_id;
+    });
+    
+    // Reindex array
+    $payment_records = array_values($payment_records);
+    
+    update_post_meta($found_personnel_id, "_payment_records", $payment_records);
+    
+    // Recalculate balance
+    $current_balance = b2b_get_payment_balance($found_personnel_id);
+    $new_balance = $current_balance + $payment_to_delete["amount"];
+    update_post_meta($found_personnel_id, "_payment_balance", $new_balance);
+    
+    // Log activity
+    b2b_log_personnel_activity($found_personnel_id, "payment_deleted", "Payment record deleted: $" . number_format($payment_to_delete["amount"], 2));
+    
+    wp_redirect(home_url("/personnel-panel/view/" . $found_personnel_id));
     exit;
 }

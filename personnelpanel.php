@@ -502,6 +502,12 @@ function b2b_personnel_list_page() {
                     <a href="<?= home_url('/personnel-panel/attendance') ?>" class="add-btn" style="background: #f59e0b;">
                         <i class="fas fa-clock"></i> Attendance
                     </a>
+                    <a href="<?= home_url('/personnel-panel/leave-calendar') ?>" class="add-btn" style="background: #0ea5e9;">
+                        <i class="fas fa-calendar-alt"></i> Leave Calendar
+                    </a>
+                    <a href="<?= home_url('/personnel-panel/leave-approvals') ?>" class="add-btn" style="background: #14b8a6;">
+                        <i class="fas fa-check-circle"></i> Leave Approvals
+                    </a>
                     <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background: #8b5cf6;">
                         <i class="fas fa-history"></i> Activity Log
                     </a>
@@ -621,6 +627,9 @@ function b2b_personnel_list_page() {
                                             </a>
                                             <a href="<?= home_url('/personnel-panel/clock-out-form/' . $id) ?>" class="btn btn-delete" title="Clock Out">
                                                 <i class="fas fa-sign-out-alt"></i>
+                                            </a>
+                                            <a href="<?= home_url('/personnel-panel/request-leave/' . $id) ?>" class="btn btn-edit" style="background:#0ea5e9;" title="Request Leave">
+                                                <i class="fas fa-calendar-check"></i>
                                             </a>
                                         </div>
                                     </td>
@@ -2840,6 +2849,14 @@ function b2b_personnel_view_page() {
                 <i class="fas fa-sign-in-alt" style="font-size:20px;"></i>
             </a>
         <?php endif; ?>
+        <a href="<?= home_url('/personnel-panel/request-leave/' . $personnel_id) ?>" 
+           class="quick-action-btn" 
+           style="width:56px;height:56px;background:#0ea5e9;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+           title="Request Leave"
+           onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+           onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+            <i class="fas fa-calendar-check" style="font-size:20px;"></i>
+        </a>
         <a href="#" 
            onclick="document.querySelector('.tab-btn:nth-child(2)').click();setTimeout(function(){document.querySelector('#addNoteForm textarea').focus();},100);return false;"
            class="quick-action-btn" 

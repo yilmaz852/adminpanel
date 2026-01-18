@@ -758,8 +758,8 @@ function b2b_personnel_form_page($personnel_id = 0) {
     <body>
         <div class="header">
             <h1><i class="fas fa-user-plus"></i> <?= $is_edit ? 'Edit Personnel' : 'Add New Personnel' ?></h1>
-            <a href="/personnel-panel" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Personel Listesi
+            <a href="<?= home_url('/personnel-panel') ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Personnel List
             </a>
         </div>
         
@@ -768,9 +768,9 @@ function b2b_personnel_form_page($personnel_id = 0) {
                 <?php if ($success): ?>
                     <div class="alert alert-success">
                         <i class="fas fa-check-circle"></i> 
-                        Personel başarıyla <?= $is_edit ? 'güncellendi' : 'eklendi' ?>!
-                        <a href="/personnel-panel" style="margin-left: 1rem; color: #065f46; text-decoration: underline;">
-                            Listeye dön
+                        Personnel successfully <?= $is_edit ? 'updated' : 'added' ?>!
+                        <a href="<?= home_url('/personnel-panel') ?>" style="margin-left: 1rem; color: #065f46; text-decoration: underline;">
+                            Return to list
                         </a>
                     </div>
                 <?php endif; ?>
@@ -1057,8 +1057,8 @@ function b2b_personnel_departments_page() {
     <body>
         <div class="header">
             <h1><i class="fas fa-building"></i> Department Management</h1>
-            <a href="/personnel-panel" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Personel Listesine Dön
+            <a href="<?= home_url('/personnel-panel') ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Personnel List
             </a>
         </div>
         

@@ -91,6 +91,9 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/upload-photo/([0-9]+)/?$', 'index.php?personnel_panel=upload_photo&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/process-photo-upload/?$', 'index.php?personnel_panel=process_photo_upload', 'top');
     add_rewrite_rule('^personnel-panel/delete-photo/([0-9]+)/?$', 'index.php?personnel_panel=delete_photo&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/print-view/([0-9]+)/?$', 'index.php?personnel_panel=print_view&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/enhanced-audit/([0-9]+)/?$', 'index.php?personnel_panel=enhanced_audit&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/metrics/([0-9]+)/?$', 'index.php?personnel_panel=metrics&personnel_id=$matches[1]', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -202,6 +205,15 @@ function b2b_personnel_template_redirect() {
             break;
         case 'delete_photo':
             b2b_personnel_delete_photo();
+            break;
+        case 'print_view':
+            b2b_personnel_print_view();
+            break;
+        case 'enhanced_audit':
+            b2b_personnel_enhanced_audit();
+            break;
+        case 'metrics':
+            b2b_personnel_metrics();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -528,20 +540,33 @@ function b2b_personnel_list_page() {
                                         $clocked_in = ($record['type'] === 'clock_in');
                                     }
                                 }
+                                $photo_url = get_post_meta($id, '_photo_url', true);
                                 ?>
                                 <tr>
                                     <td>
                                         <input type="checkbox" class="personnel-checkbox" value="<?= $id ?>" onchange="updateBulkActions()">
                                     </td>
                                     <td>
-                                        <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" style="color:#3b82f6;font-weight:600;text-decoration:none;">
-                                            <?= get_the_title() ?>
-                                        </a>
-                                        <?php if ($clocked_in): ?>
-                                            <span style="background:#10b981;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:8px;">
-                                                <i class="fas fa-circle" style="font-size:6px;"></i> Active
-                                            </span>
-                                        <?php endif; ?>
+                                        <div style="display:flex;align-items:center;gap:10px;">
+                                            <?php if ($photo_url): ?>
+                                                <img src="<?= esc_url($photo_url) ?>" alt="<?= esc_attr(get_the_title()) ?>" 
+                                                     style="width:40px;height:40px;border-radius:50%;object-fit:cover;">
+                                            <?php else: ?>
+                                                <div style="width:40px;height:40px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;">
+                                                    <i class="fas fa-user" style="font-size:16px;color:#fff;"></i>
+                                                </div>
+                                            <?php endif; ?>
+                                            <div>
+                                                <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" style="color:#3b82f6;font-weight:600;text-decoration:none;">
+                                                    <?= get_the_title() ?>
+                                                </a>
+                                                <?php if ($clocked_in): ?>
+                                                    <span style="background:#10b981;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:8px;">
+                                                        <i class="fas fa-circle" style="font-size:6px;"></i> Active
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td><span class="badge"><?= esc_html($dept_name) ?></span></td>
                                     <td><?= esc_html($gorev ?: '-') ?></td>
@@ -741,6 +766,41 @@ function b2b_personnel_form_page($personnel_id = 0) {
             }
             
             if ($result && !is_wp_error($result)) {
+                // Track field changes for edit
+                $changes = [];
+                if ($is_edit) {
+                    $old_values = [
+                        'position' => get_post_meta($personnel_id, '_gorev', true),
+                        'email' => get_post_meta($personnel_id, '_eposta', true),
+                        'phone' => get_post_meta($personnel_id, '_telefon', true),
+                        'salary' => get_post_meta($personnel_id, '_maas', true),
+                        'start_date' => get_post_meta($personnel_id, '_baslangic_tarihi', true),
+                        'pay_type' => get_post_meta($personnel_id, '_pay_type', true),
+                        'pay_rate' => get_post_meta($personnel_id, '_pay_rate', true),
+                        'employment_status' => get_post_meta($personnel_id, '_employment_status', true),
+                    ];
+                    
+                    $new_values = [
+                        'position' => $gorev,
+                        'email' => $eposta,
+                        'phone' => $telefon,
+                        'salary' => $maas,
+                        'start_date' => $baslangic,
+                        'pay_type' => $pay_type,
+                        'pay_rate' => $pay_rate,
+                        'employment_status' => $employment_status,
+                    ];
+                    
+                    foreach ($old_values as $field => $old_value) {
+                        if ($old_value != $new_values[$field]) {
+                            $changes[$field] = [
+                                'before' => $old_value,
+                                'after' => $new_values[$field]
+                            ];
+                        }
+                    }
+                }
+                
                 // Basic fields
                 update_post_meta($personnel_id, '_gorev', $gorev);
                 update_post_meta($personnel_id, '_eposta', $eposta);
@@ -812,7 +872,11 @@ function b2b_personnel_form_page($personnel_id = 0) {
                 
                 // Log activity
                 if ($is_edit) {
-                    b2b_log_personnel_activity($personnel_id, 'personnel_edited', 'Personnel information updated');
+                    $details = 'Personnel information updated';
+                    if (!empty($changes)) {
+                        $details .= ' (' . count($changes) . ' field' . (count($changes) > 1 ? 's' : '') . ' changed)';
+                    }
+                    b2b_log_personnel_activity($personnel_id, 'personnel_edited', $details, $changes);
                 } else {
                     b2b_log_personnel_activity($personnel_id, 'personnel_added', 'Personnel added to system');
                 }
@@ -2100,7 +2164,13 @@ function b2b_personnel_view_page() {
                     </a>
                 </div>
             </div>
-            <div style="display:flex;gap:10px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <a href="<?= home_url('/personnel-panel/metrics/' . $personnel_id) ?>" class="add-btn" style="background:#10b981;">
+                    <i class="fas fa-chart-line"></i> Metrics
+                </a>
+                <a href="<?= home_url('/personnel-panel/enhanced-audit/' . $personnel_id) ?>" class="add-btn" style="background:#8b5cf6;">
+                    <i class="fas fa-history"></i> Audit Log
+                </a>
                 <a href="<?= home_url('/personnel-panel/edit/' . $personnel_id) ?>" class="add-btn" style="background:#6366f1;">
                     <i class="fas fa-edit"></i> Edit
                 </a>
@@ -2714,6 +2784,72 @@ function b2b_personnel_view_page() {
         event.target.style.color = '#3b82f6';
     }
     </script>
+
+    <!-- Quick Actions Bar -->
+    <div style="position:fixed;right:20px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:12px;z-index:1000;">
+        <?php if ($clocked_in): ?>
+            <a href="<?= home_url('/personnel-panel/clock-out-form/' . $personnel_id) ?>" 
+               class="quick-action-btn" 
+               style="width:56px;height:56px;background:#ef4444;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+               title="Clock Out"
+               onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+               onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+                <i class="fas fa-sign-out-alt" style="font-size:20px;"></i>
+            </a>
+        <?php else: ?>
+            <a href="<?= home_url('/personnel-panel/clock-in-form/' . $personnel_id) ?>" 
+               class="quick-action-btn" 
+               style="width:56px;height:56px;background:#10b981;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+               title="Clock In"
+               onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+               onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+                <i class="fas fa-sign-in-alt" style="font-size:20px;"></i>
+            </a>
+        <?php endif; ?>
+        <a href="#" 
+           onclick="document.querySelector('.tab-btn:nth-child(2)').click();setTimeout(function(){document.querySelector('#noteForm textarea').focus();},100);return false;"
+           class="quick-action-btn" 
+           style="width:56px;height:56px;background:#8b5cf6;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+           title="Add Note"
+           onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+           onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+            <i class="fas fa-sticky-note" style="font-size:20px;"></i>
+        </a>
+        <a href="#" 
+           onclick="document.querySelector('.tab-btn:nth-child(3)').click();setTimeout(function(){document.querySelector('#documentForm input[type=file]').click();},100);return false;"
+           class="quick-action-btn" 
+           style="width:56px;height:56px;background:#06b6d4;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+           title="Upload Document"
+           onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+           onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+            <i class="fas fa-file-upload" style="font-size:20px;"></i>
+        </a>
+        <a href="<?= home_url('/personnel-panel/print-view/' . $personnel_id) ?>" 
+           target="_blank"
+           class="quick-action-btn" 
+           style="width:56px;height:56px;background:#f59e0b;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
+           title="Print View"
+           onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 12px rgba(0,0,0,0.3)';"
+           onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 6px rgba(0,0,0,0.2)';">
+            <i class="fas fa-print" style="font-size:20px;"></i>
+        </a>
+    </div>
+
+    <style>
+    @media (max-width: 768px) {
+        .quick-action-btn {
+            width: 48px !important;
+            height: 48px !important;
+        }
+        .quick-action-btn i {
+            font-size: 16px !important;
+        }
+        div[style*="position:fixed;right:20px"] {
+            right: 10px !important;
+            gap: 8px !important;
+        }
+    }
+    </style>
 
     </div>
     </body>
@@ -3414,15 +3550,22 @@ function b2b_personnel_delete_document() {
 /* =====================================================
  * 17. ACTIVITY LOGGING HELPERS
  * ===================================================== */
-function b2b_log_personnel_activity($personnel_id, $action, $details) {
+function b2b_log_personnel_activity($personnel_id, $action, $details, $changes = null) {
     $activity = get_post_meta($personnel_id, '_activity_log', true) ?: [];
     
-    $activity[] = [
+    $log_entry = [
         'action' => $action,
         'details' => $details,
         'user_id' => get_current_user_id(),
         'date' => current_time('mysql')
     ];
+    
+    // Add field-level changes if provided
+    if ($changes && is_array($changes)) {
+        $log_entry['changes'] = $changes;
+    }
+    
+    $activity[] = $log_entry;
     
     // Keep only last 100 entries
     if (count($activity) > 100) {
@@ -4823,4 +4966,823 @@ function b2b_personnel_delete_photo() {
     
     wp_redirect(home_url('/personnel-panel/view/' . $personnel_id . '?photo=deleted'));
     exit;
+}
+
+/* =====================================================
+ * PRINT-FRIENDLY VIEW
+ * ===================================================== */
+function b2b_personnel_print_view() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    // Get all personnel data
+    $gorev = get_post_meta($personnel_id, '_gorev', true);
+    $eposta = get_post_meta($personnel_id, '_eposta', true);
+    $telefon = get_post_meta($personnel_id, '_telefon', true);
+    $maas = get_post_meta($personnel_id, '_maas', true);
+    $baslangic = get_post_meta($personnel_id, '_baslangic_tarihi', true);
+    $depts = get_the_terms($personnel_id, 'b2b_departman');
+    $dept_name = $depts && !is_wp_error($depts) ? $depts[0]->name : 'N/A';
+    $employee_id = get_post_meta($personnel_id, '_employee_id', true);
+    $employment_status = get_post_meta($personnel_id, '_employment_status', true);
+    $emergency_name = get_post_meta($personnel_id, '_emergency_contact_name', true);
+    $emergency_relationship = get_post_meta($personnel_id, '_emergency_contact_relationship', true);
+    $emergency_phone = get_post_meta($personnel_id, '_emergency_contact_phone', true);
+    $pay_type = get_post_meta($personnel_id, '_pay_type', true);
+    $pay_rate = get_post_meta($personnel_id, '_pay_rate', true);
+    $flsa_status = get_post_meta($personnel_id, '_flsa_status', true);
+    $reports_to = get_post_meta($personnel_id, '_reports_to', true);
+    $termination_date = get_post_meta($personnel_id, '_termination_date', true);
+    $rehire_date = get_post_meta($personnel_id, '_rehire_date', true);
+    $photo_url = get_post_meta($personnel_id, '_photo_url', true);
+    
+    $manager_name = 'N/A';
+    if ($reports_to) {
+        $manager = get_post($reports_to);
+        if ($manager) {
+            $manager_name = $manager->post_title;
+        }
+    }
+    
+    $notes = get_post_meta($personnel_id, '_notes', true) ?: [];
+    $documents = get_post_meta($personnel_id, '_documents', true) ?: [];
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Personnel Report - <?= esc_html($person->post_title) ?></title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: Arial, sans-serif;
+                background: #fff;
+                color: #000;
+                padding: 20px;
+            }
+            .print-header {
+                text-align: center;
+                margin-bottom: 30px;
+                border-bottom: 3px solid #000;
+                padding-bottom: 20px;
+            }
+            .print-header h1 {
+                font-size: 24px;
+                margin-bottom: 5px;
+            }
+            .print-header p {
+                color: #666;
+                font-size: 14px;
+            }
+            .personnel-photo {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            .personnel-photo img {
+                width: 120px;
+                height: 120px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 3px solid #000;
+            }
+            .section {
+                margin-bottom: 30px;
+                page-break-inside: avoid;
+            }
+            .section h2 {
+                font-size: 18px;
+                border-bottom: 2px solid #000;
+                padding-bottom: 8px;
+                margin-bottom: 15px;
+            }
+            .info-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 15px;
+                margin-bottom: 10px;
+            }
+            .info-item {
+                padding: 10px;
+                background: #f9f9f9;
+                border: 1px solid #ddd;
+            }
+            .info-item label {
+                display: block;
+                font-weight: bold;
+                font-size: 12px;
+                color: #666;
+                margin-bottom: 5px;
+            }
+            .info-item p {
+                font-size: 14px;
+            }
+            .notes-list, .docs-list, .attendance-list {
+                list-style: none;
+            }
+            .notes-list li, .docs-list li, .attendance-list li {
+                padding: 10px;
+                background: #f9f9f9;
+                border: 1px solid #ddd;
+                margin-bottom: 10px;
+            }
+            .no-print {
+                margin-top: 30px;
+                text-align: center;
+            }
+            .no-print button {
+                padding: 12px 30px;
+                background: #3b82f6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                cursor: pointer;
+            }
+            .no-print button:hover {
+                background: #2563eb;
+            }
+            @media print {
+                body {
+                    padding: 0;
+                }
+                .no-print {
+                    display: none !important;
+                }
+                .section {
+                    page-break-inside: avoid;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="print-header">
+            <h1>PERSONNEL INFORMATION REPORT</h1>
+            <p>Generated on <?= date('F d, Y g:i A') ?></p>
+        </div>
+
+        <?php if ($photo_url): ?>
+        <div class="personnel-photo">
+            <img src="<?= esc_url($photo_url) ?>" alt="<?= esc_attr($person->post_title) ?>">
+        </div>
+        <?php endif; ?>
+
+        <div class="section">
+            <h2>Basic Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>Full Name</label>
+                    <p><?= esc_html($person->post_title) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Employee ID</label>
+                    <p><?= esc_html($employee_id ?: 'N/A') ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Email</label>
+                    <p><?= esc_html($eposta) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Phone</label>
+                    <p><?= esc_html($telefon) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Department</label>
+                    <p><?= esc_html($dept_name) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Position</label>
+                    <p><?= esc_html($gorev) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Employment Status</label>
+                    <p><?= esc_html(ucfirst($employment_status ?: 'N/A')) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Hire Date</label>
+                    <p><?= esc_html($baslangic ?: 'N/A') ?></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Employment Details</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>Reports To</label>
+                    <p><?= esc_html($manager_name) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Pay Type</label>
+                    <p><?= esc_html(ucfirst($pay_type ?: 'N/A')) ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Pay Rate</label>
+                    <p><?= $pay_rate ? '$' . number_format((float)$pay_rate, 2) : 'N/A' ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Base Salary</label>
+                    <p><?= $maas ? '$' . number_format((float)$maas, 2) : 'N/A' ?></p>
+                </div>
+                <div class="info-item">
+                    <label>FLSA Status</label>
+                    <p><?= esc_html(ucfirst($flsa_status ?: 'N/A')) ?></p>
+                </div>
+                <?php if ($termination_date): ?>
+                <div class="info-item">
+                    <label>Termination Date</label>
+                    <p><?= esc_html($termination_date) ?></p>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Emergency Contact</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>Contact Name</label>
+                    <p><?= esc_html($emergency_name ?: 'N/A') ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Relationship</label>
+                    <p><?= esc_html($emergency_relationship ?: 'N/A') ?></p>
+                </div>
+                <div class="info-item">
+                    <label>Phone</label>
+                    <p><?= esc_html($emergency_phone ?: 'N/A') ?></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Notes (<?= count($notes) ?>)</h2>
+            <?php if (!empty($notes)): ?>
+                <ul class="notes-list">
+                    <?php foreach (array_slice(array_reverse($notes), 0, 10) as $note): ?>
+                        <li>
+                            <strong><?= date('M d, Y g:i A', strtotime($note['date'])) ?></strong><br>
+                            <?= esc_html($note['note']) ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php else: ?>
+                <p>No notes recorded.</p>
+            <?php endif; ?>
+        </div>
+
+        <div class="section">
+            <h2>Documents (<?= count($documents) ?>)</h2>
+            <?php if (!empty($documents)): ?>
+                <ul class="docs-list">
+                    <?php foreach ($documents as $doc): ?>
+                        <li>
+                            <strong><?= esc_html($doc['name']) ?></strong><br>
+                            Uploaded: <?= date('M d, Y', strtotime($doc['date'])) ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php else: ?>
+                <p>No documents uploaded.</p>
+            <?php endif; ?>
+        </div>
+
+        <div class="section">
+            <h2>Recent Attendance (Last 10 Records)</h2>
+            <?php if (!empty($attendance)): ?>
+                <ul class="attendance-list">
+                    <?php foreach (array_slice(array_reverse($attendance), 0, 10) as $record): ?>
+                        <li>
+                            <strong><?= esc_html(ucwords(str_replace('_', ' ', $record['type']))) ?></strong> - 
+                            <?= date('M d, Y g:i A', strtotime($record['date'])) ?>
+                            <?php if (!empty($record['notes'])): ?>
+                                <br>Note: <?= esc_html($record['notes']) ?>
+                            <?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php else: ?>
+                <p>No attendance records.</p>
+            <?php endif; ?>
+        </div>
+
+        <div class="no-print">
+            <button onclick="window.print()">Print This Page</button>
+            <button onclick="window.close()" style="background:#6b7280;">Close</button>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+/* =====================================================
+ * ENHANCED AUDIT LOG WITH FIELD-LEVEL CHANGES
+ * ===================================================== */
+function b2b_personnel_enhanced_audit() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    // Get filters
+    $filter_action = isset($_GET['action_filter']) ? sanitize_text_field($_GET['action_filter']) : '';
+    $filter_date = isset($_GET['date_filter']) ? sanitize_text_field($_GET['date_filter']) : '';
+    
+    // Get activity log
+    $all_activity = get_post_meta($personnel_id, '_activity_log', true) ?: [];
+    $activity = array_reverse($all_activity);
+    
+    // Apply filters
+    if ($filter_action) {
+        $activity = array_filter($activity, function($log) use ($filter_action) {
+            return $log['action'] === $filter_action;
+        });
+    }
+    
+    if ($filter_date) {
+        $activity = array_filter($activity, function($log) use ($filter_date) {
+            return strpos($log['date'], $filter_date) === 0;
+        });
+    }
+    
+    // Get unique actions for filter
+    $unique_actions = array_unique(array_column($all_activity, 'action'));
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Enhanced Audit Log - <?= esc_html($person->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }
+            .header {
+                background: white;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+                color: #111827;
+            }
+            .back-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: #6b7280;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .back-btn:hover { background: #4b5563; }
+            .container {
+                max-width: 1200px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            .filter-bar {
+                background: white;
+                padding: 1.5rem;
+                border-radius: 8px;
+                margin-bottom: 1.5rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .filter-bar form {
+                display: flex;
+                gap: 1rem;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .filter-bar select,
+            .filter-bar input {
+                padding: 0.5rem 1rem;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .filter-bar button {
+                padding: 0.5rem 1.5rem;
+                background: #3b82f6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+                cursor: pointer;
+            }
+            .filter-bar button:hover { background: #2563eb; }
+            .audit-log {
+                background: white;
+                border-radius: 8px;
+                padding: 1.5rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .log-entry {
+                padding: 1rem;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+                border-left: 4px solid #3b82f6;
+            }
+            .log-entry h3 {
+                font-size: 1rem;
+                margin-bottom: 0.5rem;
+                color: #111827;
+            }
+            .log-entry p {
+                font-size: 0.875rem;
+                color: #6b7280;
+                margin-bottom: 0.5rem;
+            }
+            .log-entry .changes {
+                background: #f9fafb;
+                padding: 0.75rem;
+                border-radius: 4px;
+                margin-top: 0.5rem;
+                font-family: monospace;
+                font-size: 0.875rem;
+            }
+            .log-entry .changes .before {
+                color: #ef4444;
+            }
+            .log-entry .changes .after {
+                color: #10b981;
+            }
+            .empty-state {
+                text-align: center;
+                padding: 3rem;
+                color: #6b7280;
+            }
+            @media (max-width: 768px) {
+                .header { flex-direction: column; gap: 1rem; }
+                .filter-bar form { flex-direction: column; }
+                .filter-bar select,
+                .filter-bar input { width: 100%; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><i class="fas fa-history"></i> Enhanced Audit Log - <?= esc_html($person->post_title) ?></h1>
+            <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Personnel
+            </a>
+        </div>
+
+        <div class="container">
+            <div class="filter-bar">
+                <form method="GET">
+                    <label style="font-weight:600;font-size:0.875rem;">Filter by Action:</label>
+                    <select name="action_filter">
+                        <option value="">All Actions</option>
+                        <?php foreach ($unique_actions as $action): ?>
+                            <option value="<?= esc_attr($action) ?>" <?= selected($filter_action, $action, false) ?>>
+                                <?= esc_html(ucwords(str_replace('_', ' ', $action))) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <label style="font-weight:600;font-size:0.875rem;">Filter by Date:</label>
+                    <input type="date" name="date_filter" value="<?= esc_attr($filter_date) ?>">
+                    <button type="submit"><i class="fas fa-filter"></i> Apply Filters</button>
+                    <a href="<?= home_url('/personnel-panel/enhanced-audit/' . $personnel_id) ?>" style="padding:0.5rem 1rem;background:#6b7280;color:white;text-decoration:none;border-radius:6px;font-size:0.875rem;">
+                        <i class="fas fa-times"></i> Clear
+                    </a>
+                </form>
+            </div>
+
+            <div class="audit-log">
+                <h2 style="margin-bottom:1.5rem;font-size:1.25rem;color:#111827;">
+                    Activity Log (<?= count($activity) ?> entries)
+                </h2>
+
+                <?php if (empty($activity)): ?>
+                    <div class="empty-state">
+                        <i class="fas fa-history" style="font-size:3rem;margin-bottom:1rem;opacity:0.5;"></i>
+                        <p>No activity found matching your filters.</p>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($activity as $log): ?>
+                        <div class="log-entry">
+                            <h3>
+                                <i class="fas fa-<?= b2b_activity_icon($log['action']) ?>"></i>
+                                <?= esc_html(ucwords(str_replace('_', ' ', $log['action']))) ?>
+                            </h3>
+                            <p><strong>Date:</strong> <?= date('F d, Y g:i A', strtotime($log['date'])) ?></p>
+                            <p><strong>User:</strong> 
+                                <?php
+                                $user = get_userdata($log['user_id']);
+                                echo $user ? esc_html($user->display_name) : 'Unknown';
+                                ?>
+                            </p>
+                            <p><strong>Details:</strong> <?= esc_html($log['details']) ?></p>
+                            
+                            <?php if (isset($log['changes']) && is_array($log['changes'])): ?>
+                                <div class="changes">
+                                    <strong>Field Changes:</strong><br>
+                                    <?php foreach ($log['changes'] as $field => $change): ?>
+                                        <div style="margin-top:0.5rem;">
+                                            <strong><?= esc_html(ucwords(str_replace('_', ' ', $field))) ?>:</strong><br>
+                                            <span class="before">- Before: <?= esc_html($change['before'] ?: 'N/A') ?></span><br>
+                                            <span class="after">+ After: <?= esc_html($change['after'] ?: 'N/A') ?></span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+/* =====================================================
+ * PERFORMANCE METRICS DASHBOARD
+ * ===================================================== */
+function b2b_personnel_metrics() {
+    $personnel_id = intval(get_query_var('personnel_id'));
+    $person = get_post($personnel_id);
+    
+    if (!$person || $person->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    // Get attendance data
+    $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
+    $vacation_balance = floatval(get_post_meta($personnel_id, '_vacation_balance', true));
+    $sick_leave_balance = floatval(get_post_meta($personnel_id, '_sick_leave_balance', true));
+    $pto_accrual_rate = floatval(get_post_meta($personnel_id, '_pto_accrual_rate', true));
+    
+    // Calculate metrics
+    $total_days = 0;
+    $present_days = 0;
+    $overtime_hours = 0;
+    $pto_used = 0;
+    
+    $daily_records = [];
+    foreach ($attendance as $record) {
+        $date = substr($record['date'], 0, 10);
+        if (!isset($daily_records[$date])) {
+            $daily_records[$date] = [];
+        }
+        $daily_records[$date][] = $record;
+    }
+    
+    foreach ($daily_records as $date => $records) {
+        $total_days++;
+        $clock_in = null;
+        $clock_out = null;
+        
+        foreach ($records as $record) {
+            if ($record['type'] === 'clock_in') {
+                $clock_in = strtotime($record['date']);
+            } elseif ($record['type'] === 'clock_out' && $clock_in) {
+                $clock_out = strtotime($record['date']);
+            }
+        }
+        
+        if ($clock_in && $clock_out) {
+            $present_days++;
+            $hours_worked = ($clock_out - $clock_in) / 3600;
+            if ($hours_worked > 8) {
+                $overtime_hours += ($hours_worked - 8);
+            }
+        }
+    }
+    
+    // Calculate PTO used (simplified - based on sick leave decrease)
+    $pto_used = max(0, 80 - $vacation_balance - $sick_leave_balance);
+    
+    // Calculate attendance rate
+    $attendance_rate = $total_days > 0 ? ($present_days / $total_days) * 100 : 0;
+    
+    // Calculate PTO usage percentage (assuming 80 hours annual total)
+    $total_pto = 80;
+    $pto_usage_percent = ($pto_used / $total_pto) * 100;
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Performance Metrics - <?= esc_html($person->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background: #f3f4f6;
+                color: #1f2937;
+            }
+            .header {
+                background: white;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+                color: #111827;
+            }
+            .back-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1rem;
+                background: #6b7280;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 0.875rem;
+            }
+            .back-btn:hover { background: #4b5563; }
+            .container {
+                max-width: 1200px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            .metrics-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 1.5rem;
+                margin-bottom: 2rem;
+            }
+            .metric-card {
+                background: white;
+                padding: 1.5rem;
+                border-radius: 12px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .metric-card h3 {
+                font-size: 0.875rem;
+                color: #6b7280;
+                margin-bottom: 0.5rem;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+            .metric-value {
+                font-size: 2rem;
+                font-weight: bold;
+                margin-bottom: 1rem;
+            }
+            .progress-bar {
+                width: 100%;
+                height: 12px;
+                background: #e5e7eb;
+                border-radius: 6px;
+                overflow: hidden;
+                margin-bottom: 0.5rem;
+            }
+            .progress-fill {
+                height: 100%;
+                border-radius: 6px;
+                transition: width 0.3s ease;
+            }
+            .metric-label {
+                font-size: 0.875rem;
+                color: #6b7280;
+            }
+            .summary-card {
+                background: white;
+                padding: 2rem;
+                border-radius: 12px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .summary-card h2 {
+                font-size: 1.25rem;
+                margin-bottom: 1.5rem;
+                color: #111827;
+            }
+            .summary-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 1rem;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            .summary-row:last-child {
+                border-bottom: none;
+            }
+            @media (max-width: 768px) {
+                .header { flex-direction: column; gap: 1rem; }
+                .metrics-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1><i class="fas fa-chart-line"></i> Performance Metrics - <?= esc_html($person->post_title) ?></h1>
+            <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Back to Personnel
+            </a>
+        </div>
+
+        <div class="container">
+            <div class="metrics-grid">
+                <!-- Attendance Rate -->
+                <div class="metric-card">
+                    <h3><i class="fas fa-calendar-check"></i> Attendance Rate</h3>
+                    <div class="metric-value" style="color:<?= $attendance_rate >= 90 ? '#10b981' : ($attendance_rate >= 75 ? '#f59e0b' : '#ef4444') ?>;">
+                        <?= number_format($attendance_rate, 1) ?>%
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width:<?= min(100, $attendance_rate) ?>%;background:<?= $attendance_rate >= 90 ? '#10b981' : ($attendance_rate >= 75 ? '#f59e0b' : '#ef4444') ?>;"></div>
+                    </div>
+                    <div class="metric-label">
+                        <?= $present_days ?> of <?= $total_days ?> days present
+                    </div>
+                </div>
+
+                <!-- Overtime Hours -->
+                <div class="metric-card">
+                    <h3><i class="fas fa-clock"></i> Overtime Hours</h3>
+                    <div class="metric-value" style="color:<?= $overtime_hours > 40 ? '#ef4444' : ($overtime_hours > 20 ? '#f59e0b' : '#10b981') ?>;">
+                        <?= number_format($overtime_hours, 1) ?>h
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width:<?= min(100, ($overtime_hours / 80) * 100) ?>%;background:<?= $overtime_hours > 40 ? '#ef4444' : ($overtime_hours > 20 ? '#f59e0b' : '#10b981') ?>;"></div>
+                    </div>
+                    <div class="metric-label">
+                        Total overtime this period
+                    </div>
+                </div>
+
+                <!-- PTO Usage -->
+                <div class="metric-card">
+                    <h3><i class="fas fa-umbrella-beach"></i> PTO Usage</h3>
+                    <div class="metric-value" style="color:<?= $pto_usage_percent > 80 ? '#ef4444' : ($pto_usage_percent > 50 ? '#f59e0b' : '#10b981') ?>;">
+                        <?= number_format($pto_usage_percent, 1) ?>%
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width:<?= min(100, $pto_usage_percent) ?>%;background:<?= $pto_usage_percent > 80 ? '#ef4444' : ($pto_usage_percent > 50 ? '#f59e0b' : '#10b981') ?>;"></div>
+                    </div>
+                    <div class="metric-label">
+                        <?= number_format($pto_used, 1) ?> of <?= $total_pto ?> hours used
+                    </div>
+                </div>
+            </div>
+
+            <div class="summary-card">
+                <h2><i class="fas fa-list-ul"></i> Detailed Summary</h2>
+                <div class="summary-row">
+                    <span style="font-weight:600;">Total Days Tracked:</span>
+                    <span><?= $total_days ?> days</span>
+                </div>
+                <div class="summary-row">
+                    <span style="font-weight:600;">Present Days:</span>
+                    <span style="color:#10b981;font-weight:600;"><?= $present_days ?> days</span>
+                </div>
+                <div class="summary-row">
+                    <span style="font-weight:600;">Absent Days:</span>
+                    <span style="color:#ef4444;font-weight:600;"><?= $total_days - $present_days ?> days</span>
+                </div>
+                <div class="summary-row">
+                    <span style="font-weight:600;">Overtime Hours:</span>
+                    <span style="color:#f59e0b;font-weight:600;"><?= number_format($overtime_hours, 1) ?> hours</span>
+                </div>
+                <div class="summary-row">
+                    <span style="font-weight:600;">Vacation Balance:</span>
+                    <span><?= number_format($vacation_balance, 1) ?> hours</span>
+                </div>
+                <div class="summary-row">
+                    <span style="font-weight:600;">Sick Leave Balance:</span>
+                    <span><?= number_format($sick_leave_balance, 1) ?> hours</span>
+                </div>
+                <div class="summary-row">
+                    <span style="font-weight:600;">PTO Accrual Rate:</span>
+                    <span><?= number_format($pto_accrual_rate, 2) ?> hours/pay period</span>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
 }

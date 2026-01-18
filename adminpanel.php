@@ -2016,6 +2016,15 @@ function b2b_adm_header($title) {
                     </a>
                 </div>
                 
+                <!-- Personnel (Admin Only) -->
+                <?php if(current_user_can('manage_options')): ?>
+                <div class="nav-item">
+                    <a href="<?= home_url('/personnel-panel') ?>" class="nav-link" data-title="Personel">
+                        <i class="fa-solid fa-user-group"></i> <span class="nav-label">Personel</span>
+                    </a>
+                </div>
+                <?php endif; ?>
+                
                 <!-- B2B Module Dropdown -->
                 <div class="nav-item dropdown-container <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'open':'' ?>">
                     <div class="nav-link dropdown-toggle" onclick="toggleDropdown(this)" data-title="B2B Module" style="cursor:pointer">

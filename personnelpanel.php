@@ -792,7 +792,7 @@ function b2b_personnel_form_page($personnel_id = 0) {
                     ];
                     
                     foreach ($old_values as $field => $old_value) {
-                        if ($old_value != $new_values[$field]) {
+                        if ($old_value !== $new_values[$field]) {
                             $changes[$field] = [
                                 'before' => $old_value,
                                 'after' => $new_values[$field]
@@ -2807,7 +2807,7 @@ function b2b_personnel_view_page() {
             </a>
         <?php endif; ?>
         <a href="#" 
-           onclick="document.querySelector('.tab-btn:nth-child(2)').click();setTimeout(function(){document.querySelector('#noteForm textarea').focus();},100);return false;"
+           onclick="document.querySelector('.tab-btn:nth-child(2)').click();setTimeout(function(){document.querySelector('#addNoteForm textarea').focus();},100);return false;"
            class="quick-action-btn" 
            style="width:56px;height:56px;background:#8b5cf6;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
            title="Add Note"
@@ -2816,7 +2816,7 @@ function b2b_personnel_view_page() {
             <i class="fas fa-sticky-note" style="font-size:20px;"></i>
         </a>
         <a href="#" 
-           onclick="document.querySelector('.tab-btn:nth-child(3)').click();setTimeout(function(){document.querySelector('#documentForm input[type=file]').click();},100);return false;"
+           onclick="document.querySelector('.tab-btn:nth-child(3)').click();setTimeout(function(){document.querySelector('#uploadDocForm input[type=file]').click();},100);return false;"
            class="quick-action-btn" 
            style="width:56px;height:56px;background:#06b6d4;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;box-shadow:0 4px 6px rgba(0,0,0,0.2);transition:all 0.3s;"
            title="Upload Document"
@@ -5125,7 +5125,7 @@ function b2b_personnel_print_view() {
     <body>
         <div class="print-header">
             <h1>PERSONNEL INFORMATION REPORT</h1>
-            <p>Generated on <?= date('F d, Y g:i A') ?></p>
+            <p>Generated on <?= esc_html(date('F d, Y g:i A')) ?></p>
         </div>
 
         <?php if ($photo_url): ?>
@@ -5185,11 +5185,11 @@ function b2b_personnel_print_view() {
                 </div>
                 <div class="info-item">
                     <label>Pay Rate</label>
-                    <p><?= $pay_rate ? '$' . number_format((float)$pay_rate, 2) : 'N/A' ?></p>
+                    <p><?= $pay_rate ? esc_html('$' . number_format((float)$pay_rate, 2)) : 'N/A' ?></p>
                 </div>
                 <div class="info-item">
                     <label>Base Salary</label>
-                    <p><?= $maas ? '$' . number_format((float)$maas, 2) : 'N/A' ?></p>
+                    <p><?= $maas ? esc_html('$' . number_format((float)$maas, 2)) : 'N/A' ?></p>
                 </div>
                 <div class="info-item">
                     <label>FLSA Status</label>
@@ -5766,19 +5766,19 @@ function b2b_personnel_metrics() {
                 </div>
                 <div class="summary-row">
                     <span style="font-weight:600;">Overtime Hours:</span>
-                    <span style="color:#f59e0b;font-weight:600;"><?= number_format($overtime_hours, 1) ?> hours</span>
+                    <span style="color:#f59e0b;font-weight:600;"><?= esc_html(number_format($overtime_hours, 1)) ?> hours</span>
                 </div>
                 <div class="summary-row">
                     <span style="font-weight:600;">Vacation Balance:</span>
-                    <span><?= number_format($vacation_balance, 1) ?> hours</span>
+                    <span><?= esc_html(number_format($vacation_balance, 1)) ?> hours</span>
                 </div>
                 <div class="summary-row">
                     <span style="font-weight:600;">Sick Leave Balance:</span>
-                    <span><?= number_format($sick_leave_balance, 1) ?> hours</span>
+                    <span><?= esc_html(number_format($sick_leave_balance, 1)) ?> hours</span>
                 </div>
                 <div class="summary-row">
                     <span style="font-weight:600;">PTO Accrual Rate:</span>
-                    <span><?= number_format($pto_accrual_rate, 2) ?> hours/pay period</span>
+                    <span><?= esc_html(number_format($pto_accrual_rate, 2)) ?> hours/pay period</span>
                 </div>
             </div>
         </div>

@@ -111,6 +111,8 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/process-payment/?$', 'index.php?personnel_panel=process_payment', 'top');
     add_rewrite_rule('^personnel-panel/payment-history/([0-9]+)/?$', 'index.php?personnel_panel=payment_history&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/payroll-accounting-export/?$', 'index.php?personnel_panel=payroll_accounting_export', 'top');
+    add_rewrite_rule('^personnel-panel/bulk-salary-accrual/?$', 'index.php?personnel_panel=bulk_salary_accrual', 'top');
+    add_rewrite_rule('^personnel-panel/process-bulk-accrual/?$', 'index.php?personnel_panel=process_bulk_accrual', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -282,6 +284,12 @@ function b2b_personnel_template_redirect() {
             break;
         case 'payroll_accounting_export':
             b2b_personnel_payroll_accounting_export();
+            break;
+        case 'bulk_salary_accrual':
+            b2b_personnel_bulk_salary_accrual();
+            break;
+        case 'process_bulk_accrual':
+            b2b_personnel_process_bulk_accrual();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -6818,6 +6826,9 @@ function b2b_personnel_payroll_payments() {
                     <a href="<?= home_url('/personnel-panel') ?>" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Back to Personnel
                     </a>
+                    <a href="<?= home_url('/personnel-panel/bulk-salary-accrual') ?>" class="btn btn-primary" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);">
+                        <i class="fas fa-clipboard-list"></i> Bulk Salary Accrual
+                    </a>
                     <a href="<?= home_url('/personnel-panel/payroll-accounting-export') ?>" class="btn btn-primary">
                         <i class="fas fa-file-export"></i> Export for Accounting
                     </a>
@@ -7422,6 +7433,344 @@ function b2b_personnel_payroll_accounting_export() {
     }
     
     fclose($output);
+    exit;
+}
+
+
+/* =====================================================
+ * BULK SALARY ACCRUAL
+ * ===================================================== */
+function b2b_personnel_bulk_salary_accrual() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    $selected_month = isset($_POST['accrual_month']) ? sanitize_text_field($_POST['accrual_month']) : date('Y-m');
+    $calculate = isset($_POST['calculate']);
+    
+    $personnel_preview = [];
+    
+    if ($calculate) {
+        // Get all active personnel
+        $personnel_args = [
+            'post_type' => 'b2b_personel',
+            'posts_per_page' => -1,
+            'meta_key' => '_employee_status',
+            'meta_value' => 'active'
+        ];
+        
+        $all_personnel = get_posts($personnel_args);
+        
+        foreach ($all_personnel as $person) {
+            $pay_type = get_post_meta($person->ID, '_pay_type', true);
+            $accrual = b2b_calculate_monthly_accrual($person->ID, $selected_month);
+            
+            if ($accrual > 0) {
+                $personnel_preview[] = [
+                    'id' => $person->ID,
+                    'name' => $person->post_title,
+                    'pay_type' => $pay_type,
+                    'accrual' => $accrual
+                ];
+            }
+        }
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bulk Salary Accrual</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 15px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                padding: 30px;
+            }
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 30px;
+                padding-bottom: 20px;
+                border-bottom: 2px solid #e5e7eb;
+            }
+            h1 { color: #1f2937; font-size: 28px; }
+            .btn {
+                padding: 12px 24px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                transition: all 0.3s;
+            }
+            .btn-secondary {
+                background: #6b7280;
+                color: white;
+            }
+            .btn-secondary:hover { background: #4b5563; }
+            .btn-primary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .btn-primary:hover { transform: translateY(-2px); }
+            .btn-success {
+                background: #10b981;
+                color: white;
+            }
+            .btn-success:hover { background: #059669; }
+            .form-section {
+                background: #f9fafb;
+                padding: 25px;
+                border-radius: 12px;
+                margin-bottom: 30px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 8px;
+                color: #374151;
+                font-weight: 600;
+            }
+            input[type="month"] {
+                width: 100%;
+                max-width: 300px;
+                padding: 12px;
+                border: 2px solid #e5e7eb;
+                border-radius: 8px;
+                font-size: 14px;
+            }
+            .preview-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            .preview-table th {
+                background: #f3f4f6;
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+                color: #374151;
+                border-bottom: 2px solid #e5e7eb;
+            }
+            .preview-table td {
+                padding: 12px;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            .preview-table tr:hover {
+                background: #f9fafb;
+            }
+            .total-row {
+                background: #8b5cf6 !important;
+                color: white;
+                font-weight: bold;
+            }
+            .total-row td {
+                border: none;
+            }
+            .alert {
+                padding: 15px 20px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+            .alert-info {
+                background: #dbeafe;
+                color: #1e40af;
+                border-left: 4px solid #3b82f6;
+            }
+            .alert-success {
+                background: #d1fae5;
+                color: #065f46;
+                border-left: 4px solid #10b981;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1><i class="fas fa-clipboard-list"></i> Bulk Salary Accrual</h1>
+                <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Payroll
+                </a>
+            </div>
+            
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Process salary accruals for all active personnel at once.</strong>
+                Select a month, calculate accruals based on attendance records, review the preview, and process.
+            </div>
+            
+            <div class="form-section">
+                <form method="POST">
+                    <div class="form-group">
+                        <label for="accrual_month">
+                            <i class="fas fa-calendar-alt"></i> Select Month for Accrual
+                        </label>
+                        <input type="month" id="accrual_month" name="accrual_month" value="<?= esc_attr($selected_month) ?>" required>
+                    </div>
+                    <button type="submit" name="calculate" class="btn btn-primary">
+                        <i class="fas fa-calculator"></i> Calculate Accruals
+                    </button>
+                </form>
+            </div>
+            
+            <?php if (!empty($personnel_preview)): ?>
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <strong>Found <?= count($personnel_preview) ?> personnel with accruals for <?= date('F Y', strtotime($selected_month . '-01')) ?></strong>
+                </div>
+                
+                <form method="POST" action="<?= home_url('/personnel-panel/process-bulk-accrual') ?>">
+                    <input type="hidden" name="accrual_month" value="<?= esc_attr($selected_month) ?>">
+                    <input type="hidden" name="nonce" value="<?= wp_create_nonce('bulk_accrual_process') ?>">
+                    
+                    <table class="preview-table">
+                        <thead>
+                            <tr>
+                                <th>Personnel Name</th>
+                                <th>Pay Type</th>
+                                <th>Accrual Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $total_accrual = 0;
+                            foreach ($personnel_preview as $preview): 
+                                $total_accrual += $preview['accrual'];
+                            ?>
+                                <tr>
+                                    <td><?= esc_html($preview['name']) ?></td>
+                                    <td><?= ucfirst($preview['pay_type']) ?></td>
+                                    <td>$<?= number_format($preview['accrual'], 2) ?></td>
+                                </tr>
+                                <input type="hidden" name="personnel_ids[]" value="<?= $preview['id'] ?>">
+                            <?php endforeach; ?>
+                            <tr class="total-row">
+                                <td colspan="2"><strong>TOTAL ACCRUAL</strong></td>
+                                <td><strong>$<?= number_format($total_accrual, 2) ?></strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div style="margin-top: 30px; text-align: right;">
+                        <button type="submit" class="btn btn-success" onclick="return confirm('Process accruals for <?= count($personnel_preview) ?> personnel?');">
+                            <i class="fas fa-check-double"></i> Process All Accruals
+                        </button>
+                    </div>
+                </form>
+            <?php elseif ($calculate): ?>
+                <div class="alert alert-info">
+                    <i class="fas fa-exclamation-circle"></i>
+                    No active personnel with accruals found for the selected month.
+                </div>
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+function b2b_personnel_process_bulk_accrual() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized access');
+    }
+    
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'bulk_accrual_process')) {
+        wp_die('Security check failed');
+    }
+    
+    $accrual_month = isset($_POST['accrual_month']) ? sanitize_text_field($_POST['accrual_month']) : '';
+    $personnel_ids = isset($_POST['personnel_ids']) ? array_map('intval', $_POST['personnel_ids']) : [];
+    
+    if (empty($personnel_ids) || empty($accrual_month)) {
+        wp_redirect(home_url('/personnel-panel/bulk-salary-accrual?error=invalid_data'));
+        exit;
+    }
+    
+    $processed_count = 0;
+    $current_user_id = get_current_user_id();
+    $accrual_date = date('Y-m-t', strtotime($accrual_month . '-01')); // Last day of month
+    
+    foreach ($personnel_ids as $personnel_id) {
+        $accrual_amount = b2b_calculate_monthly_accrual($personnel_id, $accrual_month);
+        
+        if ($accrual_amount <= 0) {
+            continue;
+        }
+        
+        // Get existing payment records
+        $payments = get_post_meta($personnel_id, '_payment_records', true);
+        if (!is_array($payments)) {
+            $payments = [];
+        }
+        
+        // Calculate current balance
+        $current_balance = 0;
+        foreach ($payments as $payment) {
+            $current_balance += floatval($payment['amount_signed'] ?? 0);
+        }
+        
+        // Create new income transaction
+        $transaction_id = 'txn_' . uniqid();
+        $amount_signed = $accrual_amount; // Positive for income
+        $new_balance = $current_balance + $amount_signed;
+        
+        $new_transaction = [
+            'id' => $transaction_id,
+            'transaction_type' => 'income',
+            'category' => 'accrued_salary',
+            'amount' => $accrual_amount,
+            'amount_signed' => $amount_signed,
+            'date' => $accrual_date,
+            'payment_method' => '',
+            'reference_number' => 'BULK-' . $accrual_month,
+            'description' => 'Bulk Salary Accrual - ' . date('F Y', strtotime($accrual_month . '-01')),
+            'balance_before' => $current_balance,
+            'balance_after' => $new_balance,
+            'month' => $accrual_month,
+            'recorded_by' => $current_user_id,
+            'recorded_date' => current_time('mysql'),
+            'posted_to_accounting' => false,
+            'debit_credit' => 'debit',
+            'expense_category' => 'Payroll Expense',
+            'gl_code' => null
+        ];
+        
+        $payments[] = $new_transaction;
+        update_post_meta($personnel_id, '_payment_records', $payments);
+        
+        // Log activity
+        b2b_log_personnel_activity($personnel_id, 'bulk_accrual_added', [
+            'month' => $accrual_month,
+            'amount' => $accrual_amount,
+            'transaction_id' => $transaction_id
+        ]);
+        
+        $processed_count++;
+    }
+    
+    wp_redirect(home_url('/personnel-panel/payroll-payments?msg=bulk_accrual_success&count=' . $processed_count));
     exit;
 }
 

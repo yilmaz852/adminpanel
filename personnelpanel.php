@@ -94,6 +94,15 @@ function b2b_personnel_rewrite_rules() {
     add_rewrite_rule('^personnel-panel/print-view/([0-9]+)/?$', 'index.php?personnel_panel=print_view&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/enhanced-audit/([0-9]+)/?$', 'index.php?personnel_panel=enhanced_audit&personnel_id=$matches[1]', 'top');
     add_rewrite_rule('^personnel-panel/metrics/([0-9]+)/?$', 'index.php?personnel_panel=metrics&personnel_id=$matches[1]', 'top');
+    // PTO Management Routes
+    add_rewrite_rule('^personnel-panel/request-leave/([0-9]+)/?$', 'index.php?personnel_panel=request_leave&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/process-leave-request/?$', 'index.php?personnel_panel=process_leave_request', 'top');
+    add_rewrite_rule('^personnel-panel/leave-approvals/?$', 'index.php?personnel_panel=leave_approvals', 'top');
+    add_rewrite_rule('^personnel-panel/approve-leave/([a-z0-9_]+)/?$', 'index.php?personnel_panel=approve_leave&leave_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/deny-leave/([a-z0-9_]+)/?$', 'index.php?personnel_panel=deny_leave&leave_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/leave-calendar/?$', 'index.php?personnel_panel=leave_calendar', 'top');
+    add_rewrite_rule('^personnel-panel/leave-history/([0-9]+)/?$', 'index.php?personnel_panel=leave_history&personnel_id=$matches[1]', 'top');
+    add_rewrite_rule('^personnel-panel/leave-accounting-export/?$', 'index.php?personnel_panel=leave_accounting_export', 'top');
 }
 
 add_filter('query_vars', 'b2b_personnel_query_vars');
@@ -102,6 +111,7 @@ function b2b_personnel_query_vars($vars) {
     $vars[] = 'personnel_id';
     $vars[] = 'department_id';
     $vars[] = 'attendance_index';
+    $vars[] = 'leave_id';
     return $vars;
 }
 
@@ -214,6 +224,30 @@ function b2b_personnel_template_redirect() {
             break;
         case 'metrics':
             b2b_personnel_metrics();
+            break;
+        case 'request_leave':
+            b2b_personnel_request_leave();
+            break;
+        case 'process_leave_request':
+            b2b_personnel_process_leave_request();
+            break;
+        case 'leave_approvals':
+            b2b_personnel_leave_approvals();
+            break;
+        case 'approve_leave':
+            b2b_personnel_approve_leave();
+            break;
+        case 'deny_leave':
+            b2b_personnel_deny_leave();
+            break;
+        case 'leave_calendar':
+            b2b_personnel_leave_calendar();
+            break;
+        case 'leave_history':
+            b2b_personnel_leave_history();
+            break;
+        case 'leave_accounting_export':
+            b2b_personnel_leave_accounting_export();
             break;
         default:
             wp_redirect(home_url('/personnel-panel'));
@@ -5785,4 +5819,691 @@ function b2b_personnel_metrics() {
     </body>
     </html>
     <?php
+}
+
+/* =====================================================
+ * PTO MANAGEMENT SYSTEM FUNCTIONS
+ * ===================================================== */
+
+// Leave Request Form
+function b2b_personnel_request_leave() {
+    $personnel_id = get_query_var('personnel_id');
+    $personnel = get_post($personnel_id);
+    
+    if (!$personnel || $personnel->post_type !== 'b2b_personel') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    $vacation_balance = floatval(get_post_meta($personnel_id, '_vacation_balance', true));
+    $sick_leave_balance = floatval(get_post_meta($personnel_id, '_sick_leave_balance', true));
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Request Leave - <?= esc_html($personnel->post_title) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+            .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+            .header h1 { font-size: 28px; color: #1f2937; }
+            .btn { padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.3s; }
+            .btn-back { background: #6b7280; color: white; }
+            .btn-back:hover { background: #4b5563; }
+            .form-section { background: #f9fafb; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+            .form-section h2 { font-size: 18px; color: #374151; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+            .form-group { margin-bottom: 20px; }
+            .form-group label { display: block; font-weight: 600; color: #374151; margin-bottom: 8px; }
+            .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 15px; }
+            .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #8b5cf6; }
+            .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+            .balance-info { background: #eff6ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+            .balance-info h3 { font-size: 16px; color: #1e40af; margin-bottom: 10px; }
+            .balance-item { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .balance-item strong { color: #1f2937; }
+            .balance-item span { color: #059669; font-weight: 600; }
+            .btn-submit { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; border-radius: 10px; }
+            .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3); }
+            .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+            .alert-info { background: #dbeafe; color: #1e40af; border-left: 4px solid #3b82f6; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1><i class="fas fa-umbrella-beach"></i> Request Time Off</h1>
+                <a href="<?= esc_url(home_url('/personnel-panel/view/' . $personnel_id)) ?>" class="btn btn-back">
+                    <i class="fas fa-arrow-left"></i> Back
+                </a>
+            </div>
+            
+            <div class="alert alert-info">
+                <strong><i class="fas fa-info-circle"></i> Note:</strong> Your request will be sent to your manager for approval. Balance will be deducted upon approval.
+            </div>
+            
+            <div class="balance-info">
+                <h3><i class="fas fa-wallet"></i> Current Balances</h3>
+                <div class="balance-item">
+                    <strong>Vacation Hours:</strong>
+                    <span><?= esc_html(number_format($vacation_balance, 1)) ?> hours</span>
+                </div>
+                <div class="balance-item">
+                    <strong>Sick Leave Hours:</strong>
+                    <span><?= esc_html(number_format($sick_leave_balance, 1)) ?> hours</span>
+                </div>
+            </div>
+            
+            <form method="POST" action="<?= esc_url(home_url('/personnel-panel/process-leave-request')) ?>">
+                <?php wp_nonce_field('request_leave_' . $personnel_id); ?>
+                <input type="hidden" name="personnel_id" value="<?= esc_attr($personnel_id) ?>">
+                
+                <div class="form-section">
+                    <h2><i class="fas fa-clipboard-list"></i> Leave Details</h2>
+                    
+                    <div class="form-group">
+                        <label for="leave_type">Leave Type *</label>
+                        <select name="leave_type" id="leave_type" required>
+                            <option value="">Select leave type...</option>
+                            <option value="vacation">Vacation</option>
+                            <option value="sick">Sick Leave</option>
+                            <option value="personal">Personal</option>
+                            <option value="unpaid">Unpaid</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="start_date">Start Date *</label>
+                            <input type="date" name="start_date" id="start_date" required min="<?= date('Y-m-d') ?>">
+                        </div>
+                        <div class="form-group">
+                            <label for="end_date">End Date *</label>
+                            <input type="date" name="end_date" id="end_date" required min="<?= date('Y-m-d') ?>">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="reason">Reason / Notes</label>
+                        <textarea name="reason" id="reason" rows="4" placeholder="Please provide details about your leave request..."></textarea>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-submit">
+                    <i class="fas fa-paper-plane"></i> Submit Leave Request
+                </button>
+            </form>
+        </div>
+        
+        <script>
+        document.getElementById('start_date').addEventListener('change', function() {
+            document.getElementById('end_date').min = this.value;
+        });
+        </script>
+    </body>
+    </html>
+    <?php
+}
+
+// Process Leave Request
+function b2b_personnel_process_leave_request() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        wp_redirect(home_url('/personnel-panel'));
+        exit;
+    }
+    
+    $personnel_id = isset($_POST['personnel_id']) ? intval($_POST['personnel_id']) : 0;
+    
+    if (!wp_verify_nonce($_POST['_wpnonce'], 'request_leave_' . $personnel_id)) {
+        wp_die('Security check failed');
+    }
+    
+    $leave_type = sanitize_text_field($_POST['leave_type']);
+    $start_date = sanitize_text_field($_POST['start_date']);
+    $end_date = sanitize_text_field($_POST['end_date']);
+    $reason = sanitize_textarea_field($_POST['reason']);
+    
+    // Calculate total days
+    $start = new DateTime($start_date);
+    $end = new DateTime($end_date);
+    $interval = $start->diff($end);
+    $total_days = $interval->days + 1;
+    
+    // Get current balances
+    $vacation_balance = floatval(get_post_meta($personnel_id, '_vacation_balance', true));
+    $sick_leave_balance = floatval(get_post_meta($personnel_id, '_sick_leave_balance', true));
+    
+    // Create leave request object
+    $leave_request = [
+        'id' => uniqid('leave_'),
+        'employee_id' => $personnel_id,
+        'leave_type' => $leave_type,
+        'start_date' => $start_date,
+        'end_date' => $end_date,
+        'total_days' => $total_days,
+        'reason' => $reason,
+        'status' => 'pending',
+        'requested_date' => current_time('mysql'),
+        'requested_by' => get_current_user_id(),
+        'approved_by' => null,
+        'approval_date' => null,
+        'manager_notes' => '',
+        'balance_before' => $leave_type === 'vacation' ? $vacation_balance : ($leave_type === 'sick' ? $sick_leave_balance : 0),
+        'balance_after' => null,
+        'pay_impact' => $leave_type === 'unpaid' ? ($total_days * 8) : 0,
+        'gl_code' => null,
+        'posted_to_accounting' => false,
+        'accounting_entry_id' => null
+    ];
+    
+    // Get existing leave requests
+    $leave_requests = get_post_meta($personnel_id, '_leave_requests', true);
+    if (!is_array($leave_requests)) {
+        $leave_requests = [];
+    }
+    
+    // Add new request
+    $leave_requests[] = $leave_request;
+    update_post_meta($personnel_id, '_leave_requests', $leave_requests);
+    
+    // Log activity
+    b2b_log_personnel_activity($personnel_id, 'leave_requested', "Requested $leave_type leave from $start_date to $end_date ($total_days days)");
+    
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id . '?msg=leave_requested'));
+    exit;
+}
+
+// Leave Approvals Dashboard
+function b2b_personnel_leave_approvals() {
+    // Get all personnel with pending leave requests
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1,
+        'orderby' => 'title',
+        'order' => 'ASC'
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    $pending_requests = [];
+    
+    foreach ($all_personnel as $person) {
+        $leave_requests = get_post_meta($person->ID, '_leave_requests', true);
+        if (is_array($leave_requests)) {
+            foreach ($leave_requests as $request) {
+                if ($request['status'] === 'pending') {
+                    $request['employee_name'] = $person->post_title;
+                    $request['employee_id'] = $person->ID;
+                    $pending_requests[] = $request;
+                }
+            }
+        }
+    }
+    
+    // Sort by requested date (newest first)
+    usort($pending_requests, function($a, $b) {
+        return strtotime($b['requested_date']) - strtotime($a['requested_date']);
+    });
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Leave Approvals</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+            .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+            .header h1 { font-size: 28px; color: #1f2937; }
+            .btn { padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.3s; }
+            .btn-back { background: #6b7280; color: white; }
+            .btn-back:hover { background: #4b5563; }
+            .request-card { background: #f9fafb; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 4px solid #f59e0b; }
+            .request-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; }
+            .request-header h3 { font-size: 18px; color: #1f2937; }
+            .request-header .badge { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+            .badge-pending { background: #fef3c7; color: #92400e; }
+            .request-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+            .detail-item { display: flex; flex-direction: column; gap: 4px; }
+            .detail-item label { font-size: 12px; color: #6b7280; font-weight: 600; text-transform: uppercase; }
+            .detail-item span { font-size: 15px; color: #1f2937; }
+            .request-reason { background: white; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-style: italic; color: #4b5563; }
+            .action-buttons { display: flex; gap: 10px; }
+            .btn-approve { background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+            .btn-approve:hover { background: #059669; }
+            .btn-deny { background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+            .btn-deny:hover { background: #dc2626; }
+            .empty-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+            .empty-state i { font-size: 64px; margin-bottom: 20px; color: #d1d5db; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1><i class="fas fa-tasks"></i> Leave Approvals</h1>
+                <a href="<?= esc_url(home_url('/personnel-panel')) ?>" class="btn btn-back">
+                    <i class="fas fa-arrow-left"></i> Back to Personnel
+                </a>
+            </div>
+            
+            <?php if (empty($pending_requests)): ?>
+                <div class="empty-state">
+                    <i class="fas fa-check-circle"></i>
+                    <h2>No Pending Requests</h2>
+                    <p>All leave requests have been processed.</p>
+                </div>
+            <?php else: ?>
+                <?php foreach ($pending_requests as $request): ?>
+                    <div class="request-card">
+                        <div class="request-header">
+                            <h3><i class="fas fa-user"></i> <?= esc_html($request['employee_name']) ?></h3>
+                            <span class="badge badge-pending">Pending</span>
+                        </div>
+                        
+                        <div class="request-details">
+                            <div class="detail-item">
+                                <label>Leave Type</label>
+                                <span><?= esc_html(ucfirst($request['leave_type'])) ?></span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Start Date</label>
+                                <span><?= esc_html(date('M d, Y', strtotime($request['start_date']))) ?></span>
+                            </div>
+                            <div class="detail-item">
+                                <label>End Date</label>
+                                <span><?= esc_html(date('M d, Y', strtotime($request['end_date']))) ?></span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Total Days</label>
+                                <span><?= esc_html($request['total_days']) ?> days</span>
+                            </div>
+                            <div class="detail-item">
+                                <label>Requested On</label>
+                                <span><?= esc_html(date('M d, Y', strtotime($request['requested_date']))) ?></span>
+                            </div>
+                        </div>
+                        
+                        <?php if (!empty($request['reason'])): ?>
+                            <div class="request-reason">
+                                <strong>Reason:</strong> <?= esc_html($request['reason']) ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="action-buttons">
+                            <form method="POST" action="<?= esc_url(home_url('/personnel-panel/approve-leave/' . $request['id'])) ?>" style="display:inline;">
+                                <?php wp_nonce_field('approve_leave_' . $request['id']); ?>
+                                <button type="submit" class="btn-approve">
+                                    <i class="fas fa-check"></i> Approve
+                                </button>
+                            </form>
+                            <form method="POST" action="<?= esc_url(home_url('/personnel-panel/deny-leave/' . $request['id'])) ?>" style="display:inline;">
+                                <?php wp_nonce_field('deny_leave_' . $request['id']); ?>
+                                <button type="submit" class="btn-deny">
+                                    <i class="fas fa-times"></i> Deny
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// Approve Leave
+function b2b_personnel_approve_leave() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        wp_redirect(home_url('/personnel-panel/leave-approvals'));
+        exit;
+    }
+    
+    $leave_id = get_query_var('leave_id');
+    
+    if (!wp_verify_nonce($_POST['_wpnonce'], 'approve_leave_' . $leave_id)) {
+        wp_die('Security check failed');
+    }
+    
+    // Find and update the leave request
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    
+    foreach ($all_personnel as $person) {
+        $leave_requests = get_post_meta($person->ID, '_leave_requests', true);
+        if (is_array($leave_requests)) {
+            foreach ($leave_requests as $key => $request) {
+                if ($request['id'] === $leave_id) {
+                    // Update request status
+                    $leave_requests[$key]['status'] = 'approved';
+                    $leave_requests[$key]['approved_by'] = get_current_user_id();
+                    $leave_requests[$key]['approval_date'] = current_time('mysql');
+                    
+                    // Deduct balance
+                    if ($request['leave_type'] === 'vacation') {
+                        $current_balance = floatval(get_post_meta($person->ID, '_vacation_balance', true));
+                        $new_balance = $current_balance - ($request['total_days'] * 8);
+                        update_post_meta($person->ID, '_vacation_balance', $new_balance);
+                        $leave_requests[$key]['balance_after'] = $new_balance;
+                    } elseif ($request['leave_type'] === 'sick') {
+                        $current_balance = floatval(get_post_meta($person->ID, '_sick_leave_balance', true));
+                        $new_balance = $current_balance - ($request['total_days'] * 8);
+                        update_post_meta($person->ID, '_sick_leave_balance', $new_balance);
+                        $leave_requests[$key]['balance_after'] = $new_balance;
+                    }
+                    
+                    update_post_meta($person->ID, '_leave_requests', $leave_requests);
+                    
+                    // Log activity
+                    b2b_log_personnel_activity($person->ID, 'leave_approved', "Leave request approved: {$request['leave_type']} from {$request['start_date']} to {$request['end_date']}");
+                    
+                    wp_redirect(home_url('/personnel-panel/leave-approvals?msg=approved'));
+                    exit;
+                }
+            }
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel/leave-approvals'));
+    exit;
+}
+
+// Deny Leave
+function b2b_personnel_deny_leave() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        wp_redirect(home_url('/personnel-panel/leave-approvals'));
+        exit;
+    }
+    
+    $leave_id = get_query_var('leave_id');
+    
+    if (!wp_verify_nonce($_POST['_wpnonce'], 'deny_leave_' . $leave_id)) {
+        wp_die('Security check failed');
+    }
+    
+    // Find and update the leave request
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    
+    foreach ($all_personnel as $person) {
+        $leave_requests = get_post_meta($person->ID, '_leave_requests', true);
+        if (is_array($leave_requests)) {
+            foreach ($leave_requests as $key => $request) {
+                if ($request['id'] === $leave_id) {
+                    // Update request status
+                    $leave_requests[$key]['status'] = 'denied';
+                    $leave_requests[$key]['approved_by'] = get_current_user_id();
+                    $leave_requests[$key]['approval_date'] = current_time('mysql');
+                    
+                    update_post_meta($person->ID, '_leave_requests', $leave_requests);
+                    
+                    // Log activity
+                    b2b_log_personnel_activity($person->ID, 'leave_denied', "Leave request denied: {$request['leave_type']} from {$request['start_date']} to {$request['end_date']}");
+                    
+                    wp_redirect(home_url('/personnel-panel/leave-approvals?msg=denied'));
+                    exit;
+                }
+            }
+        }
+    }
+    
+    wp_redirect(home_url('/personnel-panel/leave-approvals'));
+    exit;
+}
+
+// Leave Calendar View
+function b2b_personnel_leave_calendar() {
+    $month = isset($_GET['month']) ? intval($_GET['month']) : date('n');
+    $year = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
+    
+    // Get all approved leave requests for the month
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    $calendar_data = [];
+    
+    foreach ($all_personnel as $person) {
+        $leave_requests = get_post_meta($person->ID, '_leave_requests', true);
+        if (is_array($leave_requests)) {
+            foreach ($leave_requests as $request) {
+                if ($request['status'] === 'approved') {
+                    $start = new DateTime($request['start_date']);
+                    $end = new DateTime($request['end_date']);
+                    $end->modify('+1 day');
+                    
+                    $period = new DatePeriod($start, new DateInterval('P1D'), $end);
+                    
+                    foreach ($period as $date) {
+                        if ($date->format('n') == $month && $date->format('Y') == $year) {
+                            $day_key = $date->format('Y-m-d');
+                            if (!isset($calendar_data[$day_key])) {
+                                $calendar_data[$day_key] = [];
+                            }
+                            $calendar_data[$day_key][] = [
+                                'name' => $person->post_title,
+                                'type' => $request['leave_type']
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    $first_day = new DateTime("$year-$month-01");
+    $last_day = new DateTime($first_day->format('Y-m-t'));
+    $days_in_month = $last_day->format('j');
+    $start_day_of_week = $first_day->format('w');
+    
+    $prev_month = $month - 1;
+    $prev_year = $year;
+    if ($prev_month < 1) {
+        $prev_month = 12;
+        $prev_year--;
+    }
+    
+    $next_month = $month + 1;
+    $next_year = $year;
+    if ($next_month > 12) {
+        $next_month = 1;
+        $next_year++;
+    }
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Leave Calendar - <?= date('F Y', mktime(0, 0, 0, $month, 1, $year)) ?></title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+            .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+            .header h1 { font-size: 28px; color: #1f2937; }
+            .btn { padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.3s; }
+            .btn-back { background: #6b7280; color: white; }
+            .btn-back:hover { background: #4b5563; }
+            .calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+            .calendar-nav h2 { font-size: 24px; color: #1f2937; }
+            .nav-buttons { display: flex; gap: 10px; }
+            .nav-buttons a { padding: 8px 16px; background: #8b5cf6; color: white; border-radius: 6px; text-decoration: none; }
+            .nav-buttons a:hover { background: #7c3aed; }
+            .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+            .calendar-header { background: #8b5cf6; color: white; padding: 15px; text-align: center; font-weight: 600; border-radius: 8px; }
+            .calendar-day { background: #f9fafb; padding: 10px; border-radius: 8px; min-height: 120px; position: relative; }
+            .calendar-day.empty { background: #e5e7eb; }
+            .calendar-day .day-number { font-weight: 600; color: #1f2937; margin-bottom: 8px; }
+            .leave-tag { padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .leave-vacation { background: #dbeafe; color: #1e40af; }
+            .leave-sick { background: #fee2e2; color: #991b1b; }
+            .leave-personal { background: #fed7aa; color: #9a3412; }
+            .leave-unpaid { background: #e5e7eb; color: #374151; }
+            .legend { display: flex; gap: 20px; justify-content: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e5e7eb; }
+            .legend-item { display: flex; align-items: center; gap: 8px; }
+            .legend-color { width: 20px; height: 20px; border-radius: 4px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1><i class="fas fa-calendar-alt"></i> Leave Calendar</h1>
+                <a href="<?= esc_url(home_url('/personnel-panel')) ?>" class="btn btn-back">
+                    <i class="fas fa-arrow-left"></i> Back to Personnel
+                </a>
+            </div>
+            
+            <div class="calendar-nav">
+                <div class="nav-buttons">
+                    <a href="?month=<?= $prev_month ?>&year=<?= $prev_year ?>">
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </a>
+                </div>
+                <h2><?= date('F Y', mktime(0, 0, 0, $month, 1, $year)) ?></h2>
+                <div class="nav-buttons">
+                    <a href="?month=<?= $next_month ?>&year=<?= $next_year ?>">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </a>
+                </div>
+            </div>
+            
+            <div class="calendar-grid">
+                <div class="calendar-header">Sunday</div>
+                <div class="calendar-header">Monday</div>
+                <div class="calendar-header">Tuesday</div>
+                <div class="calendar-header">Wednesday</div>
+                <div class="calendar-header">Thursday</div>
+                <div class="calendar-header">Friday</div>
+                <div class="calendar-header">Saturday</div>
+                
+                <?php
+                // Empty cells for days before month starts
+                for ($i = 0; $i < $start_day_of_week; $i++) {
+                    echo '<div class="calendar-day empty"></div>';
+                }
+                
+                // Days of the month
+                for ($day = 1; $day <= $days_in_month; $day++) {
+                    $date_key = sprintf('%04d-%02d-%02d', $year, $month, $day);
+                    $has_leave = isset($calendar_data[$date_key]);
+                    
+                    echo '<div class="calendar-day">';
+                    echo '<div class="day-number">' . $day . '</div>';
+                    
+                    if ($has_leave) {
+                        foreach ($calendar_data[$date_key] as $leave) {
+                            $class = 'leave-' . esc_attr($leave['type']);
+                            echo '<div class="leave-tag ' . $class . '">' . esc_html($leave['name']) . '</div>';
+                        }
+                    }
+                    
+                    echo '</div>';
+                }
+                ?>
+            </div>
+            
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#dbeafe;"></div>
+                    <span>Vacation</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#fee2e2;"></div>
+                    <span>Sick Leave</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#fed7aa;"></div>
+                    <span>Personal</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:#e5e7eb;"></div>
+                    <span>Unpaid</span>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
+}
+
+// Leave History (placeholder - can be added to detail view tabs)
+function b2b_personnel_leave_history() {
+    $personnel_id = get_query_var('personnel_id');
+    wp_redirect(home_url('/personnel-panel/view/' . $personnel_id . '#leave-history'));
+    exit;
+}
+
+// Leave Accounting Export (placeholder for future accounting integration)
+function b2b_personnel_leave_accounting_export() {
+    // Get all approved but not posted leave requests
+    $personnel_args = [
+        'post_type' => 'b2b_personel',
+        'posts_per_page' => -1
+    ];
+    
+    $all_personnel = get_posts($personnel_args);
+    $export_data = [];
+    
+    foreach ($all_personnel as $person) {
+        $leave_requests = get_post_meta($person->ID, '_leave_requests', true);
+        if (is_array($leave_requests)) {
+            foreach ($leave_requests as $request) {
+                if ($request['status'] === 'approved' && !$request['posted_to_accounting']) {
+                    $export_data[] = [
+                        'Leave ID' => $request['id'],
+                        'Employee' => $person->post_title,
+                        'Employee ID' => $person->ID,
+                        'Leave Type' => ucfirst($request['leave_type']),
+                        'Start Date' => $request['start_date'],
+                        'End Date' => $request['end_date'],
+                        'Total Days' => $request['total_days'],
+                        'Pay Impact' => $request['pay_impact'],
+                        'Approved Date' => $request['approval_date']
+                    ];
+                }
+            }
+        }
+    }
+    
+    if (empty($export_data)) {
+        wp_redirect(home_url('/personnel-panel?msg=no_leaves_to_export'));
+        exit;
+    }
+    
+    // Export as CSV
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=leave-accounting-export-' . date('Y-m-d') . '.csv');
+    
+    $output = fopen('php://output', 'w');
+    
+    // CSV headers
+    fputcsv($output, array_keys($export_data[0]));
+    
+    // CSV data
+    foreach ($export_data as $row) {
+        fputcsv($output, $row);
+    }
+    
+    fclose($output);
+    exit;
 }

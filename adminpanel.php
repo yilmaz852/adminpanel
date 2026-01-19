@@ -1877,6 +1877,162 @@ function b2b_adm_header($title) {
             .messaging-container{grid-template-columns:1fr !important;gap:12px !important}
             .messaging-groups,.messaging-chat{height:auto !important;min-height:400px}
         }
+        
+        /* Personnel Panel Button Styles - Global */
+        .add-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.875rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .add-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .add-btn i,
+        .btn i {
+            margin-right: 0.375rem;
+        }
+        
+        .add-btn.btn-success,
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .add-btn.btn-success:hover,
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .add-btn.btn-purple,
+        .btn-purple {
+            background: #8b5cf6;
+            color: white;
+        }
+        
+        .add-btn.btn-purple:hover,
+        .btn-purple:hover {
+            background: #7c3aed;
+        }
+        
+        .add-btn.btn-indigo,
+        .btn-indigo {
+            background: #6366f1;
+            color: white;
+        }
+        
+        .add-btn.btn-indigo:hover,
+        .btn-indigo:hover {
+            background: #4f46e5;
+        }
+        
+        .add-btn.btn-amber,
+        .btn-amber {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .add-btn.btn-amber:hover,
+        .btn-amber:hover {
+            background: #d97706;
+        }
+        
+        .add-btn.btn-cyan,
+        .btn-cyan {
+            background: #0ea5e9;
+            color: white;
+        }
+        
+        .add-btn.btn-cyan:hover,
+        .btn-cyan:hover {
+            background: #0284c7;
+        }
+        
+        .add-btn.btn-teal,
+        .btn-teal {
+            background: #14b8a6;
+            color: white;
+        }
+        
+        .add-btn.btn-teal:hover,
+        .btn-teal:hover {
+            background: #0d9488;
+        }
+        
+        .add-btn.btn-gray,
+        .btn-gray {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .add-btn.btn-gray:hover,
+        .btn-gray:hover {
+            background: #4b5563;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: white;
+        }
+        
+        .btn-edit {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-edit:hover {
+            background: #2563eb;
+        }
+        
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+        
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #059669;
+        }
+        
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
     </style>
     </head>
     <body>

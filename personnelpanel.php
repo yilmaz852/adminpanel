@@ -359,25 +359,25 @@ function b2b_personnel_list_page() {
                     <button type="submit" class="btn btn-edit"><i class="fas fa-search"></i> Search</button>
                 </form>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <a href="<?= home_url('/personnel-panel/attendance') ?>" class="add-btn" style="background: #f59e0b;">
+                    <a href="<?= home_url('/personnel-panel/attendance') ?>" class="add-btn" style="background: #f59e0b; color: white;">
                         <i class="fas fa-clock"></i> Attendance
                     </a>
-                    <a href="<?= home_url('/personnel-panel/leave-calendar') ?>" class="add-btn" style="background: #0ea5e9;">
+                    <a href="<?= home_url('/personnel-panel/leave-calendar') ?>" class="add-btn" style="background: #0ea5e9; color: white;">
                         <i class="fas fa-calendar-alt"></i> Leave Calendar
                     </a>
-                    <a href="<?= home_url('/personnel-panel/leave-approvals') ?>" class="add-btn" style="background: #14b8a6;">
+                    <a href="<?= home_url('/personnel-panel/leave-approvals') ?>" class="add-btn" style="background: #14b8a6; color: white;">
                         <i class="fas fa-check-circle"></i> Leave Approvals
                     </a>
-                    <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="add-btn" style="background: #10b981;">
+                    <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="add-btn" style="background: #10b981; color: white;">
                         <i class="fas fa-money-check-alt"></i> Payroll Payments
                     </a>
-                    <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background: #8b5cf6;">
+                    <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background: #8b5cf6; color: white;">
                         <i class="fas fa-history"></i> Activity Log
                     </a>
-                    <a href="<?= home_url('/personnel-panel/export') ?>" class="add-btn" style="background: #10b981;">
+                    <a href="<?= home_url('/personnel-panel/export') ?>" class="add-btn" style="background: #10b981; color: white;">
                         <i class="fas fa-file-csv"></i> Export CSV
                     </a>
-                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn" style="background: #6366f1;">
+                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn" style="background: #6366f1; color: white;">
                         <i class="fas fa-building"></i> Departments
                     </a>
                     <a href="<?= home_url('/personnel-panel/add') ?>" class="add-btn">
@@ -479,22 +479,22 @@ function b2b_personnel_list_page() {
                                     <td><?= $baslangic ? date('m/d/Y', strtotime($baslangic)) : '-' ?></td>
                                     <td>
                                         <div class="actions" style="display:flex;gap:5px;flex-wrap:wrap;">
-                                            <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" class="btn btn-edit" style="background:#6366f1;" title="View Details">
+                                            <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" class="btn btn-edit" style="background:#6366f1; color:white;" title="View Details">
                                                 <i class="fas fa-eye"></i>
                                             </a>
                                             <a href="<?= home_url('/personnel-panel/edit/' . $id) ?>" class="btn btn-edit" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/clock-in-form/' . $id) ?>" class="btn btn-edit" style="background:#10b981;" title="Clock In">
+                                            <a href="<?= home_url('/personnel-panel/clock-in-form/' . $id) ?>" class="btn btn-edit" style="background:#10b981; color:white;" title="Clock In">
                                                 <i class="fas fa-sign-in-alt"></i>
                                             </a>
                                             <a href="<?= home_url('/personnel-panel/clock-out-form/' . $id) ?>" class="btn btn-delete" title="Clock Out">
                                                 <i class="fas fa-sign-out-alt"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/request-leave/' . $id) ?>" class="btn btn-edit" style="background:#0ea5e9;" title="Request Leave">
+                                            <a href="<?= home_url('/personnel-panel/request-leave/' . $id) ?>" class="btn btn-edit" style="background:#0ea5e9; color:white;" title="Request Leave">
                                                 <i class="fas fa-calendar-check"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/add-payment/' . $id) ?>" class="btn btn-edit" style="background:#10b981;" title="Add Payment">
+                                            <a href="<?= home_url('/personnel-panel/add-payment/' . $id) ?>" class="btn btn-edit" style="background:#10b981; color:white;" title="Add Payment">
                                                 <i class="fas fa-dollar-sign"></i>
                                             </a>
                                         </div>
@@ -2684,7 +2684,7 @@ function b2b_personnel_attendance_page() {
                                 <td style="padding:12px;color:#111827;font-weight:600;"><?= $hours_worked > 0 ? $hours_worked . ' hrs' : '-' ?></td>
                                 <td style="padding:12px;text-align:center;">
                                     <?php if (!$clock_in_time): ?>
-                                        <a href="<?= home_url('/personnel-panel/clock-in-form/' . $person->ID) ?>" class="btn btn-edit" style="background:#10b981;padding:0.375rem 0.75rem;font-size:0.75rem;">
+                                        <a href="<?= home_url('/personnel-panel/clock-in-form/' . $person->ID) ?>" class="btn btn-edit" style="background:#10b981; color:white; padding:0.375rem 0.75rem;font-size:0.75rem; color:white;">
                                             <i class="fas fa-sign-in-alt"></i> Clock In
                                         </a>
                                     <?php elseif ($is_clocked_in): ?>

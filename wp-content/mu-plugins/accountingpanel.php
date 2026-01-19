@@ -351,10 +351,10 @@ function b2b_accounting_transactions_page() {
                     </td>
                     <td style="padding: 12px 8px; text-align: center;">
                         <div style="display: flex; gap: 0.5rem; justify-content: center;">
-                            <a href="<?= home_url('/accounting-panel/edit-transaction/' . $txn['id']) ?>" style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem;">
+                            <a href="<?= home_url('/accounting-panel/edit-transaction/' . absint($txn['id'])) ?>" style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem;">
                                 <i class="fas fa-edit"></i>
                             </a>
-                            <a href="<?= home_url('/accounting-panel/delete-transaction/' . $txn['id']) ?>" onclick="return confirm('Are you sure you want to delete this transaction?')" style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #ef4444; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem;">
+                            <a href="<?= home_url('/accounting-panel/delete-transaction/' . absint($txn['id'])) ?>" onclick="return confirm('Are you sure you want to delete this transaction?')" style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #ef4444; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem;">
                                 <i class="fas fa-trash"></i>
                             </a>
                         </div>
@@ -484,7 +484,7 @@ function b2b_accounting_edit_transaction_page() {
     <div class="card">
         <form method="POST" action="<?= home_url('/accounting-panel/process-transaction') ?>">
             <input type="hidden" name="action" value="edit">
-            <input type="hidden" name="transaction_id" value="<?= $transaction_id ?>">
+            <input type="hidden" name="transaction_id" value="<?= absint($transaction_id) ?>">
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
                 <div>
@@ -562,7 +562,11 @@ function b2b_accounting_delete_transaction() {
     $transaction_id = intval(get_query_var('transaction_id'));
     
     if ($transaction_id) {
-        wp_delete_post($transaction_id, true);
+        // Verify it's a transaction before deleting
+        $post = get_post($transaction_id);
+        if ($post && $post->post_type === 'acc_transaction') {
+            wp_delete_post($transaction_id, true);
+        }
     }
     
     wp_redirect(add_query_arg('success', 'transaction_deleted', home_url('/accounting-panel/transactions')));

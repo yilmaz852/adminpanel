@@ -1095,6 +1095,9 @@ function b2b_personnel_form_page($personnel_id = 0) {
     
     <div class="page-header">
         <h1 class="page-title"><i class="fas fa-user-plus"></i> <?= $is_edit ? 'Edit Personnel' : 'Add New Personnel' ?></h1>
+        <a href="<?= home_url('/personnel-panel') ?>" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 0.875rem;">
+            <i class="fas fa-arrow-left"></i> Back to List
+        </a>
     </div>
     
     <div class="card">

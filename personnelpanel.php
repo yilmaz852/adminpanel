@@ -1432,180 +1432,8 @@ function b2b_personnel_departments_page() {
         'hide_empty' => false,
     ]);
     
+    b2b_adm_header('Department Management');
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Department Management - Admin Panel</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            
-            .container {
-                max-width: 1000px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            
-            .alert {
-                padding: 1rem;
-                border-radius: 6px;
-                margin-bottom: 1.5rem;
-            }
-            .alert-success {
-                background: #d1fae5;
-                color: #065f46;
-                border: 1px solid #6ee7b7;
-            }
-            .alert-error {
-                background: #fee2e2;
-                color: #991b1b;
-                border: 1px solid #fca5a5;
-            }
-            
-            .card {
-                background: white;
-                border-radius: 8px;
-                padding: 1.5rem;
-                margin-bottom: 1.5rem;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            .card h2 {
-                font-size: 1.25rem;
-                margin-bottom: 1rem;
-                color: #111827;
-            }
-            
-            .form-row {
-                display: flex;
-                gap: 1rem;
-                align-items: flex-end;
-            }
-            .form-group {
-                flex: 1;
-            }
-            .form-group label {
-                display: block;
-                margin-bottom: 0.5rem;
-                font-weight: 500;
-                font-size: 0.875rem;
-                color: #374151;
-            }
-            .form-group input {
-                width: 100%;
-                padding: 0.625rem;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            
-            .btn {
-                padding: 0.625rem 1.25rem;
-                border: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-                font-weight: 500;
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                text-decoration: none;
-            }
-            .btn-primary {
-                background: #3b82f6;
-                color: white;
-            }
-            .btn-primary:hover {
-                background: #2563eb;
-            }
-            .btn-danger {
-                background: #ef4444;
-                color: white;
-            }
-            .btn-danger:hover {
-                background: #dc2626;
-            }
-            
-            .table-container {
-                overflow-x: auto;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            th {
-                background: #f9fafb;
-                padding: 0.75rem 1rem;
-                text-align: left;
-                font-weight: 600;
-                font-size: 0.875rem;
-                color: #374151;
-                border-bottom: 1px solid #e5e7eb;
-            }
-            td {
-                padding: 1rem;
-                border-bottom: 1px solid #e5e7eb;
-                font-size: 0.875rem;
-            }
-            tr:last-child td { border-bottom: none; }
-            tr:hover { background: #f9fafb; }
-            
-            .empty-state {
-                text-align: center;
-                padding: 3rem;
-                color: #6b7280;
-            }
-            .empty-state i {
-                font-size: 3rem;
-                margin-bottom: 1rem;
-                opacity: 0.5;
-            }
-            
-            @media (max-width: 768px) {
-                .header { flex-direction: column; gap: 1rem; }
-                .form-row { flex-direction: column; align-items: stretch; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1><i class="fas fa-building"></i> Department Management</h1>
-            <a href="<?= home_url('/personnel-panel') ?>" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Back to Personnel List
-            </a>
-        </div>
         
         <div class="container">
             <?php if ($success): ?>
@@ -1676,9 +1504,10 @@ function b2b_personnel_departments_page() {
                 </div>
             </div>
         </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -1855,75 +1684,8 @@ function b2b_personnel_view_page() {
         }
     }
     
+    b2b_adm_header('View Personnel - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>View Personnel - <?= esc_html($person->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .add-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.625rem 1.25rem;
-                background: #3b82f6;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 500;
-                font-size: 0.875rem;
-                border: none;
-                cursor: pointer;
-            }
-            .add-btn:hover { background: #2563eb; }
-            .container {
-                max-width: 1400px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1><i class="fas fa-user"></i> View Personnel</h1>
-            <a href="<?= home_url('/b2b-panel') ?>" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Back to Admin Panel
-            </a>
-        </div>
-        <div class="container">
     
     <div class="main-content">
         <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
@@ -2758,9 +2520,10 @@ function b2b_personnel_view_page() {
     </style>
 
     </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -2779,101 +2542,8 @@ function b2b_personnel_attendance_page() {
     // Get selected date (default today)
     $selected_date = isset($_GET['date']) ? sanitize_text_field($_GET['date']) : date('Y-m-d');
     
+    b2b_adm_header('Attendance Dashboard');
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Attendance Dashboard</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .add-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.625rem 1.25rem;
-                background: #3b82f6;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 500;
-                font-size: 0.875rem;
-                border: none;
-                cursor: pointer;
-            }
-            .add-btn:hover { background: #2563eb; }
-            .container {
-                max-width: 1400px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            th {
-                background: #f9fafb;
-                padding: 0.75rem 1rem;
-                text-align: left;
-                font-weight: 600;
-                font-size: 0.875rem;
-                color: #374151;
-                border-bottom: 1px solid #e5e7eb;
-            }
-            td {
-                padding: 1rem;
-                border-bottom: 1px solid #e5e7eb;
-                font-size: 0.875rem;
-            }
-            tr:hover { background: #f9fafb; }
-            .badge {
-                display: inline-block;
-                padding: 0.25rem 0.75rem;
-                border-radius: 9999px;
-                font-size: 0.75rem;
-                font-weight: 500;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1><i class="fas fa-clock"></i> Attendance Dashboard</h1>
-            <a href="<?= home_url('/b2b-panel') ?>" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Back to Admin Panel
-            </a>
-        </div>
-        <div class="container">
     
     <div class="main-content">
         <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
@@ -3034,9 +2704,10 @@ function b2b_personnel_attendance_page() {
     </div>
 
     </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -3129,104 +2800,9 @@ function b2b_personnel_activity_page() {
     $offset = ($page - 1) * $per_page;
     $activity_page = array_slice($all_activity, $offset, $per_page);
     
+    b2b_adm_header('Activity Log');
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Activity Log</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .add-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.625rem 1.25rem;
-                background: #3b82f6;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: 500;
-                font-size: 0.875rem;
-                border: none;
-                cursor: pointer;
-            }
-            .add-btn:hover { background: #2563eb; }
-            .container {
-                max-width: 1400px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            th {
-                background: #f9fafb;
-                padding: 0.75rem 1rem;
-                text-align: left;
-                font-weight: 600;
-                font-size: 0.875rem;
-                color: #374151;
-                border-bottom: 1px solid #e5e7eb;
-            }
-            td {
-                padding: 1rem;
-                border-bottom: 1px solid #e5e7eb;
-                font-size: 0.875rem;
-            }
-            tr:hover { background: #f9fafb; }
-            .badge {
-                display: inline-block;
-                padding: 0.25rem 0.75rem;
-                border-radius: 9999px;
-                font-size: 0.75rem;
-                font-weight: 500;
-            }
-            select, input {
-                padding: 0.5rem 1rem;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1><i class="fas fa-history"></i> Activity Log</h1>
-            <a href="<?= home_url('/b2b-panel') ?>" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Back to Admin Panel
+    <div class="container">
             </a>
         </div>
         <div class="container">
@@ -3326,9 +2902,10 @@ function b2b_personnel_activity_page() {
     </div>
 
     </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -3540,121 +3117,8 @@ function b2b_personnel_clock_in_form() {
         exit;
     }
     
+    b2b_adm_header('Clock In - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Clock In - <?= esc_html($person->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .container {
-                max-width: 600px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            .form-card {
-                background: white;
-                border-radius: 8px;
-                padding: 2rem;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            .form-group {
-                margin-bottom: 1.5rem;
-            }
-            label {
-                display: block;
-                margin-bottom: 0.5rem;
-                font-weight: 500;
-                font-size: 0.875rem;
-                color: #374151;
-            }
-            input[type="date"],
-            input[type="number"],
-            select {
-                width: 100%;
-                padding: 0.625rem;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            input:focus, select:focus {
-                outline: none;
-                border-color: #3b82f6;
-                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-            }
-            .time-inputs {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 1rem;
-            }
-            .btn {
-                padding: 0.625rem 1.5rem;
-                border: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-                font-weight: 500;
-                cursor: pointer;
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-            }
-            .btn-primary {
-                background: #10b981;
-                color: white;
-            }
-            .btn-primary:hover { background: #059669; }
-            .btn-secondary {
-                background: #e5e7eb;
-                color: #374151;
-            }
-            .btn-secondary:hover { background: #d1d5db; }
-            .form-actions {
-                display: flex;
-                gap: 1rem;
-                margin-top: 2rem;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1><i class="fas fa-sign-in-alt"></i> Clock In</h1>
-            <a href="<?= home_url('/personnel-panel/attendance') ?>" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Back to Attendance
-            </a>
-        </div>
         
         <div class="container">
             <div class="form-card">
@@ -3694,9 +3158,10 @@ function b2b_personnel_clock_in_form() {
                 </form>
             </div>
         </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_personnel_clock_out_form() {
@@ -3708,111 +3173,10 @@ function b2b_personnel_clock_out_form() {
         exit;
     }
     
+    b2b_adm_header('Clock Out - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Clock Out - <?= esc_html($person->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .container {
-                max-width: 600px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            .form-card {
-                background: white;
-                border-radius: 8px;
-                padding: 2rem;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            .form-group {
-                margin-bottom: 1.5rem;
-            }
-            label {
-                display: block;
-                margin-bottom: 0.5rem;
-                font-weight: 500;
-                font-size: 0.875rem;
-                color: #374151;
-            }
-            input[type="date"],
-            input[type="number"] {
-                width: 100%;
-                padding: 0.625rem;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            input:focus {
-                outline: none;
-                border-color: #3b82f6;
-                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-            }
-            .time-inputs {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 1rem;
-            }
-            .btn {
-                padding: 0.625rem 1.5rem;
-                border: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-                font-weight: 500;
-                cursor: pointer;
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-            }
-            .btn-primary {
-                background: #ef4444;
-                color: white;
-            }
-            .btn-primary:hover { background: #dc2626; }
-            .btn-secondary {
-                background: #e5e7eb;
-                color: #374151;
-            }
-            .btn-secondary:hover { background: #d1d5db; }
-            .form-actions {
-                display: flex;
-                gap: 1rem;
-                margin-top: 2rem;
-            }
+        
+        <div class="container">
         </style>
     </head>
     <body>
@@ -3861,9 +3225,10 @@ function b2b_personnel_clock_out_form() {
                 </form>
             </div>
         </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_personnel_process_clock_in() {
@@ -3936,121 +3301,8 @@ function b2b_personnel_edit_attendance_form() {
     $record = $attendance[$attendance_index];
     $datetime = strtotime($record['date']);
     
+    b2b_adm_header('Edit Attendance - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Edit Attendance - <?= esc_html($person->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .container {
-                max-width: 600px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            .form-card {
-                background: white;
-                border-radius: 8px;
-                padding: 2rem;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            .form-group {
-                margin-bottom: 1.5rem;
-            }
-            label {
-                display: block;
-                margin-bottom: 0.5rem;
-                font-weight: 500;
-                font-size: 0.875rem;
-                color: #374151;
-            }
-            input[type="date"],
-            input[type="number"],
-            select {
-                width: 100%;
-                padding: 0.625rem;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            input:focus, select:focus {
-                outline: none;
-                border-color: #3b82f6;
-                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-            }
-            .time-inputs {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 1rem;
-            }
-            .btn {
-                padding: 0.625rem 1.5rem;
-                border: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-                font-weight: 500;
-                cursor: pointer;
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-            }
-            .btn-primary {
-                background: #3b82f6;
-                color: white;
-            }
-            .btn-primary:hover { background: #2563eb; }
-            .btn-secondary {
-                background: #e5e7eb;
-                color: #374151;
-            }
-            .btn-secondary:hover { background: #d1d5db; }
-            .form-actions {
-                display: flex;
-                gap: 1rem;
-                margin-top: 2rem;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1><i class="fas fa-edit"></i> Edit Attendance Record</h1>
-            <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="back-btn">
-                <i class="fas fa-arrow-left"></i> Back to Personnel
-            </a>
-        </div>
         
         <div class="container">
             <div class="form-card">
@@ -4098,9 +3350,10 @@ function b2b_personnel_edit_attendance_form() {
                 </form>
             </div>
         </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_personnel_update_attendance() {
@@ -4176,107 +3429,9 @@ function b2b_personnel_reports_page() {
         }
     }
     
+    b2b_adm_header('Attendance Reports');
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Attendance Reports</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
-            .header {
-                background: white;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 1rem 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-                color: #111827;
-            }
-            .back-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                background: #6b7280;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .back-btn:hover { background: #4b5563; }
-            .container {
-                max-width: 1400px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            .card {
-                background: white;
-                border-radius: 8px;
-                padding: 1.5rem;
-                margin-bottom: 1.5rem;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            th {
-                background: #f9fafb;
-                padding: 0.75rem 1rem;
-                text-align: left;
-                font-weight: 600;
-                font-size: 0.875rem;
-                color: #374151;
-                border-bottom: 1px solid #e5e7eb;
-            }
-            td {
-                padding: 1rem;
-                border-bottom: 1px solid #e5e7eb;
-                font-size: 0.875rem;
-            }
-            tr:hover { background: #f9fafb; }
-            select {
-                padding: 0.5rem 1rem;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 0.875rem;
-            }
-            .btn {
-                padding: 0.625rem 1.25rem;
-                border: none;
-                border-radius: 6px;
-                font-size: 0.875rem;
-                font-weight: 500;
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                text-decoration: none;
-                background: #3b82f6;
-                color: white;
-            }
-            .btn:hover { background: #2563eb; }
-            .badge {
-                display: inline-block;
-                padding: 0.25rem 0.75rem;
-                border-radius: 9999px;
-                font-size: 0.75rem;
-                font-weight: 500;
-            }
-            .badge-success { background: #d1fae5; color: #065f46; }
-            .badge-warning { background: #fef3c7; color: #92400e; }
-            .badge-danger { background: #fee2e2; color: #991b1b; }
+    <div class="container">
         </style>
     </head>
     <body>
@@ -4505,9 +3660,10 @@ function b2b_personnel_reports_page() {
                 </div>
             </div>
         </div>
-    </body>
-    </html>
+    
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================

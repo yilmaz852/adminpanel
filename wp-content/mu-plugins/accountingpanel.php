@@ -306,6 +306,14 @@ function b2b_accounting_transactions_page() {
     <div style="background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 20px;">
         <i class="fas fa-check-circle"></i> Transaction successfully added!
     </div>
+    <?php elseif ($success === 'transaction_updated'): ?>
+    <div style="background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 20px;">
+        <i class="fas fa-check-circle"></i> Transaction successfully updated!
+    </div>
+    <?php elseif ($success === 'transaction_deleted'): ?>
+    <div style="background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 20px;">
+        <i class="fas fa-check-circle"></i> Transaction successfully deleted!
+    </div>
     <?php endif; ?>
     
     <?php if ($error): ?>
@@ -324,6 +332,7 @@ function b2b_accounting_transactions_page() {
                     <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Category</th>
                     <th style="text-align: left; padding: 12px 8px; font-weight: 600; color: #6b7280;">Description</th>
                     <th style="text-align: right; padding: 12px 8px; font-weight: 600; color: #6b7280;">Amount</th>
+                    <th style="text-align: center; padding: 12px 8px; font-weight: 600; color: #6b7280;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -339,6 +348,16 @@ function b2b_accounting_transactions_page() {
                     <td style="padding: 12px 8px;"><?= esc_html($txn['description']) ?></td>
                     <td style="padding: 12px 8px; text-align: right; font-weight: 600; color: <?= $txn['type'] === 'income' ? '#059669' : '#dc2626' ?>;">
                         <?= $txn['type'] === 'income' ? '+' : '-' ?>$<?= number_format($txn['amount'], 2) ?>
+                    </td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                            <a href="<?= home_url('/accounting-panel/edit-transaction/' . $txn['id']) ?>" style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem;">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <a href="<?= home_url('/accounting-panel/delete-transaction/' . $txn['id']) ?>" onclick="return confirm('Are you sure you want to delete this transaction?')" style="display: inline-flex; align-items: center; padding: 0.375rem 0.75rem; background: #ef4444; color: white; text-decoration: none; border-radius: 4px; font-size: 0.75rem;">
+                                <i class="fas fa-trash"></i>
+                            </a>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -436,15 +455,118 @@ function b2b_accounting_add_transaction_page() {
 }
 
 function b2b_accounting_edit_transaction_page() {
+    $transaction_id = intval(get_query_var('transaction_id'));
+    $transaction = get_post($transaction_id);
+    
+    if (!$transaction || $transaction->post_type !== 'acc_transaction') {
+        wp_redirect(home_url('/accounting-panel/transactions'));
+        exit;
+    }
+    
+    // Get transaction data
+    $type = get_post_meta($transaction_id, '_acc_type', true);
+    $category = get_post_meta($transaction_id, '_acc_category', true);
+    $amount = get_post_meta($transaction_id, '_acc_amount', true);
+    $date = get_post_meta($transaction_id, '_acc_date', true);
+    $description = get_post_meta($transaction_id, '_acc_description', true);
+    $reference = get_post_meta($transaction_id, '_acc_reference', true);
+    
     b2b_adm_header('Edit Transaction');
-    echo '<div class="page-header"><h1 class="page-title">Edit Transaction</h1></div>';
-    echo '<div class="card"><p>Edit transaction form - Implementation in progress</p></div>';
+    ?>
+    
+    <div class="page-header">
+        <h1 class="page-title">✏️ Edit Transaction</h1>
+        <a href="<?= home_url('/accounting-panel/transactions') ?>" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 0.875rem;">
+            <i class="fas fa-arrow-left"></i> Back to Transactions
+        </a>
+    </div>
+    
+    <div class="card">
+        <form method="POST" action="<?= home_url('/accounting-panel/process-transaction') ?>">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="transaction_id" value="<?= $transaction_id ?>">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        <i class="fas fa-exchange-alt"></i> Transaction Type *
+                    </label>
+                    <select name="type" required style="width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem;">
+                        <option value="">Select Type...</option>
+                        <option value="income" <?= selected($type, 'income', false) ?>>Income</option>
+                        <option value="expense" <?= selected($type, 'expense', false) ?>>Expense</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        <i class="fas fa-tag"></i> Category *
+                    </label>
+                    <input type="text" name="category" required placeholder="e.g., Sales Revenue, Office Supplies" value="<?= esc_attr($category) ?>" style="width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        <i class="fas fa-dollar-sign"></i> Amount *
+                    </label>
+                    <input type="number" name="amount" required step="0.01" min="0" placeholder="0.00" value="<?= esc_attr($amount) ?>" style="width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        <i class="fas fa-calendar"></i> Date *
+                    </label>
+                    <input type="date" name="date" required value="<?= esc_attr($date) ?>" style="width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                    <i class="fas fa-align-left"></i> Description
+                </label>
+                <textarea name="description" rows="3" placeholder="Enter transaction details..." style="width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem; resize: vertical;"><?= esc_textarea($description) ?></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                    <i class="fas fa-hashtag"></i> Reference Number
+                </label>
+                <input type="text" name="reference" placeholder="e.g., INV-001, REF-123" value="<?= esc_attr($reference) ?>" style="width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem;">
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <a href="<?= home_url('/accounting-panel/transactions') ?>" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: #f3f4f6; color: #374151; text-decoration: none; border-radius: 6px; font-weight: 500; border: 1px solid #e5e7eb;">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+                <button type="submit" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">
+                    <i class="fas fa-save"></i> Update Transaction
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <?php
     b2b_adm_footer();
     exit;
 }
 
 function b2b_accounting_delete_transaction() {
-    wp_redirect(home_url('/accounting-panel/transactions'));
+    // Check permission
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    $transaction_id = intval(get_query_var('transaction_id'));
+    
+    if ($transaction_id) {
+        wp_delete_post($transaction_id, true);
+    }
+    
+    wp_redirect(add_query_arg('success', 'transaction_deleted', home_url('/accounting-panel/transactions')));
+    exit;
 }
 
 function b2b_accounting_process_transaction() {
@@ -493,6 +615,43 @@ function b2b_accounting_process_transaction() {
                 wp_redirect(add_query_arg('error', 'create_failed', home_url('/accounting-panel/add-transaction')));
                 exit;
             }
+        } elseif ($action === 'edit') {
+            // Handle edit transaction
+            $transaction_id = intval($_POST['transaction_id'] ?? 0);
+            $type = sanitize_text_field($_POST['type'] ?? '');
+            $category = sanitize_text_field($_POST['category'] ?? '');
+            $amount = floatval($_POST['amount'] ?? 0);
+            $date = sanitize_text_field($_POST['date'] ?? date('Y-m-d'));
+            $description = sanitize_textarea_field($_POST['description'] ?? '');
+            $reference = sanitize_text_field($_POST['reference'] ?? '');
+            
+            // Validate required fields
+            if (!$transaction_id || empty($type) || empty($category) || $amount <= 0) {
+                wp_redirect(add_query_arg('error', 'missing_fields', home_url('/accounting-panel/edit-transaction/' . $transaction_id)));
+                exit;
+            }
+            
+            // Update transaction meta
+            update_post_meta($transaction_id, '_acc_type', $type);
+            update_post_meta($transaction_id, '_acc_category', $category);
+            update_post_meta($transaction_id, '_acc_amount', $amount);
+            update_post_meta($transaction_id, '_acc_date', $date);
+            update_post_meta($transaction_id, '_acc_description', $description);
+            update_post_meta($transaction_id, '_acc_reference', $reference);
+            
+            // Update post title
+            wp_update_post([
+                'ID' => $transaction_id,
+                'post_title' => sprintf(
+                    '%s - %s - $%s',
+                    ucfirst($type),
+                    $category,
+                    number_format($amount, 2)
+                ),
+            ]);
+            
+            wp_redirect(add_query_arg('success', 'transaction_updated', home_url('/accounting-panel/transactions')));
+            exit;
         }
     }
     
@@ -836,37 +995,6 @@ function b2b_accounting_sync_payroll_expense($payment_id, $payment_data) {
     }
     
     return false;
-}
-            $personnel_name,
-            $acc_category,
-            $payment_data['description'] ?? ''
-        ),
-        'reference' => 'PAYROLL-' . $payment_id,
-        'source' => 'payroll',
-        'source_id' => $payment_id,
-    ];
-    
-    $txn_id = b2b_accounting_create_transaction($transaction_data);
-    
-    if ($txn_id) {
-        // Mark payment as synced (using direct SQL for personnel_data table)
-        $wpdb->insert(
-            $wpdb->prefix . $meta_table,
-            [
-                'id' => $payment_id,
-                'meta_key' => '_acc_synced',
-                'meta_value' => true
-            ]
-        );
-        $wpdb->insert(
-            $wpdb->prefix . $meta_table,
-            [
-                'id' => $payment_id,
-                'meta_key' => '_acc_transaction_id',
-                'meta_value' => $txn_id
-            ]
-        );
-    }
 }
 
 /**

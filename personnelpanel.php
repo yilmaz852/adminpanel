@@ -345,8 +345,8 @@ function b2b_personnel_list_page() {
     </div>
     
     <div class="card">
-            <div class="toolbar">
-                <form method="GET" class="search-filters">
+        <div class="toolbar">
+            <form method="GET" class="search-filters">
                     <input type="text" name="s" class="search-box" placeholder="Search personnel..." value="<?= esc_attr($search) ?>">
                     <select name="department" class="filter-select" onchange="this.form.submit()">
                         <option value="">All Departments</option>
@@ -956,8 +956,8 @@ function b2b_personnel_form_page($personnel_id = 0) {
     </div>
     
     <div class="card">
-                <?php if ($success): ?>
-                    <div class="alert alert-success">
+        <?php if ($success): ?>
+            <div class="alert alert-success">
                         <i class="fas fa-check-circle"></i> 
                         Personnel successfully <?= $is_edit ? 'updated' : 'added' ?>!
                         <a href="<?= home_url('/personnel-panel') ?>" style="margin-left: 1rem; color: #065f46; text-decoration: underline;">

@@ -22,6 +22,9 @@
 // Exit if accessed directly
 if (!defined('ABSPATH')) exit;
 
+// Configuration constants
+define('B2B_ACCOUNTING_SYNC_BATCH_SIZE', 100);
+
 /* =====================================================
  * 1. REGISTER CUSTOM POST TYPE
  * ===================================================== */
@@ -163,7 +166,7 @@ function b2b_accounting_dashboard_page() {
     
     <?php if ($synced_count > 0): ?>
     <div style="background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 20px;">
-        <i class="fas fa-check-circle"></i> Successfully synced <?= $synced_count ?> order(s) to accounting records.
+        <i class="fas fa-check-circle"></i> Successfully synced <?= esc_html($synced_count) ?> order(s) to accounting records.
     </div>
     <?php endif; ?>
     
@@ -724,7 +727,7 @@ function b2b_accounting_sync_orders_handler() {
     }
     
     // Sync orders in batches
-    $synced = b2b_accounting_sync_existing_orders(100);
+    $synced = b2b_accounting_sync_existing_orders(B2B_ACCOUNTING_SYNC_BATCH_SIZE);
     
     // Redirect back to dashboard with success message
     wp_redirect(add_query_arg('synced', $synced, home_url('/accounting-panel/dashboard')));

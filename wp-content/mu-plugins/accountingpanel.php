@@ -67,6 +67,7 @@ function b2b_accounting_rewrite_rules() {
     add_rewrite_rule('^accounting-panel/tax-summary/?$', 'index.php?accounting_panel=tax_summary', 'top');
     add_rewrite_rule('^accounting-panel/categories/?$', 'index.php?accounting_panel=categories', 'top');
     add_rewrite_rule('^accounting-panel/settings/?$', 'index.php?accounting_panel=settings', 'top');
+    add_rewrite_rule('^accounting-panel/sync-orders/?$', 'index.php?accounting_panel=sync_orders', 'top');
 }
 
 add_filter('query_vars', 'b2b_accounting_query_vars');
@@ -129,6 +130,9 @@ function b2b_accounting_template_redirect() {
         case 'settings':
             b2b_accounting_settings_page();
             break;
+        case 'sync_orders':
+            b2b_accounting_sync_orders_handler();
+            break;
         default:
             wp_redirect(home_url('/accounting-panel/dashboard'));
             exit;
@@ -152,7 +156,16 @@ function b2b_accounting_dashboard_page() {
     
     // Use B2B admin panel header
     b2b_adm_header('Accounting Dashboard');
+    
+    // Check if orders were synced
+    $synced_count = isset($_GET['synced']) ? intval($_GET['synced']) : 0;
     ?>
+    
+    <?php if ($synced_count > 0): ?>
+    <div style="background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 20px;">
+        <i class="fas fa-check-circle"></i> Successfully synced <?= $synced_count ?> order(s) to accounting records.
+    </div>
+    <?php endif; ?>
     
     <div class="page-header">
         <h1 class="page-title">📊 Accounting Dashboard</h1>
@@ -206,6 +219,9 @@ function b2b_accounting_dashboard_page() {
             </a>
             <a href="<?= home_url('/accounting-panel/tax-summary') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 💰 Tax Summary
+            </a>
+            <a href="<?= home_url('/accounting-panel/sync-orders') ?>" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" onclick="return confirm('This will import all completed WooCommerce orders that are not yet synced. Continue?');">
+                🔄 Sync Old Orders
             </a>
         </div>
     </div>
@@ -695,4 +711,22 @@ function b2b_accounting_sync_existing_payroll($limit = 100) {
     }
     
     return $synced_count;
+}
+
+/**
+ * Handler for sync orders action (called from dashboard button)
+ */
+function b2b_accounting_sync_orders_handler() {
+    // Admin check
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    // Sync orders in batches
+    $synced = b2b_accounting_sync_existing_orders(100);
+    
+    // Redirect back to dashboard with success message
+    wp_redirect(add_query_arg('synced', $synced, home_url('/accounting-panel/dashboard')));
+    exit;
 }

@@ -3684,29 +3684,17 @@ function b2b_personnel_upload_photo() {
     
     $name = get_the_title($personnel_id);
     $current_photo = get_post_meta($personnel_id, '_photo_url', true);
+    
+    b2b_adm_header('Upload Photo - ' . esc_html($name));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Upload Photo - <?= esc_html($name) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 2rem;
-            }
             .container {
                 max-width: 600px;
-                margin: 0 auto;
+                margin: 2rem auto;
                 background: white;
                 border-radius: 12px;
                 padding: 2rem;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             }
             h1 {
                 color: #1f2937;
@@ -3810,8 +3798,7 @@ function b2b_personnel_upload_photo() {
                 box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
             }
         </style>
-    </head>
-    <body>
+
         <div class="container">
             <h1>
                 <i class="fas fa-camera"></i>
@@ -3864,9 +3851,9 @@ function b2b_personnel_upload_photo() {
                 </form>
             <?php endif; ?>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /**
@@ -4077,21 +4064,10 @@ function b2b_personnel_print_view() {
     $documents = get_post_meta($personnel_id, '_documents', true) ?: [];
     $attendance = get_post_meta($personnel_id, '_attendance', true) ?: [];
     
+    b2b_adm_header('Personnel Report - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Personnel Report - <?= esc_html($person->post_title) ?></title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: Arial, sans-serif;
-                background: #fff;
-                color: #000;
-                padding: 20px;
-            }
             .print-header {
                 text-align: center;
                 margin-bottom: 30px;
@@ -4185,8 +4161,7 @@ function b2b_personnel_print_view() {
                 }
             }
         </style>
-    </head>
-    <body>
+
         <div class="print-header">
             <h1>PERSONNEL INFORMATION REPORT</h1>
             <p>Generated on <?= esc_html(date('F d, Y g:i A')) ?></p>
@@ -4341,9 +4316,9 @@ function b2b_personnel_print_view() {
             <button onclick="window.print()">Print This Page</button>
             <button onclick="window.close()" style="background:#6b7280;">Close</button>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -4382,21 +4357,10 @@ function b2b_personnel_enhanced_audit() {
     // Get unique actions for filter
     $unique_actions = array_unique(array_column($all_activity, 'action'));
     
+    b2b_adm_header('Enhanced Audit Log - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Enhanced Audit Log - <?= esc_html($person->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
             .header {
                 background: white;
                 border-bottom: 1px solid #e5e7eb;
@@ -4505,8 +4469,7 @@ function b2b_personnel_enhanced_audit() {
                 .filter-bar input { width: 100%; }
             }
         </style>
-    </head>
-    <body>
+
         <div class="header">
             <h1><i class="fas fa-history"></i> Enhanced Audit Log - <?= esc_html($person->post_title) ?></h1>
             <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="back-btn">
@@ -4578,9 +4541,9 @@ function b2b_personnel_enhanced_audit() {
                 <?php endif; ?>
             </div>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -4648,21 +4611,10 @@ function b2b_personnel_metrics() {
     $total_pto = 80;
     $pto_usage_percent = ($pto_used / $total_pto) * 100;
     
+    b2b_adm_header('Performance Metrics - ' . esc_html($person->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Performance Metrics - <?= esc_html($person->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Inter', -apple-system, sans-serif;
-                background: #f3f4f6;
-                color: #1f2937;
-            }
             .header {
                 background: white;
                 border-bottom: 1px solid #e5e7eb;
@@ -4760,8 +4712,7 @@ function b2b_personnel_metrics() {
                 }
             }
         </style>
-    </head>
-    <body>
+
         <div class="header">
             <h1><i class="fas fa-chart-line"></i> Performance Metrics - <?= esc_html($person->post_title) ?></h1>
             <a href="<?= home_url('/personnel-panel/view/' . $personnel_id) ?>" class="back-btn">
@@ -4846,9 +4797,9 @@ function b2b_personnel_metrics() {
                 </div>
             </div>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 /* =====================================================
@@ -4868,18 +4819,11 @@ function b2b_personnel_request_leave() {
     $vacation_balance = floatval(get_post_meta($personnel_id, '_vacation_balance', true));
     $sick_leave_balance = floatval(get_post_meta($personnel_id, '_sick_leave_balance', true));
     
+    b2b_adm_header('Request Leave - ' . esc_html($personnel->post_title));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Request Leave - <?= esc_html($personnel->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-            .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+            .container { max-width: 800px; margin: 2rem auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
             .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
             .header h1 { font-size: 28px; color: #1f2937; }
             .btn { padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.3s; }
@@ -4902,8 +4846,7 @@ function b2b_personnel_request_leave() {
             .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
             .alert-info { background: #dbeafe; color: #1e40af; border-left: 4px solid #3b82f6; }
         </style>
-    </head>
-    <body>
+
         <div class="container">
             <div class="header">
                 <h1><i class="fas fa-umbrella-beach"></i> Request Time Off</h1>
@@ -4974,9 +4917,9 @@ function b2b_personnel_request_leave() {
             document.getElementById('end_date').min = this.value;
         });
         </script>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 // Process Leave Request
@@ -5078,18 +5021,11 @@ function b2b_personnel_leave_approvals() {
         return strtotime($b['requested_date']) - strtotime($a['requested_date']);
     });
     
+    b2b_adm_header('Leave Approvals');
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Leave Approvals</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-            .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+            .container { max-width: 1200px; margin: 2rem auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
             .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
             .header h1 { font-size: 28px; color: #1f2937; }
             .btn { padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.3s; }
@@ -5113,8 +5049,7 @@ function b2b_personnel_leave_approvals() {
             .empty-state { text-align: center; padding: 60px 20px; color: #6b7280; }
             .empty-state i { font-size: 64px; margin-bottom: 20px; color: #d1d5db; }
         </style>
-    </head>
-    <body>
+
         <div class="container">
             <div class="header">
                 <h1><i class="fas fa-tasks"></i> Leave Approvals</h1>
@@ -5184,9 +5119,9 @@ function b2b_personnel_leave_approvals() {
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 // Approve Leave
@@ -5357,18 +5292,11 @@ function b2b_personnel_leave_calendar() {
         $next_year++;
     }
     
+    b2b_adm_header('Leave Calendar - ' . date('F Y', mktime(0, 0, 0, $month, 1, $year)));
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Leave Calendar - <?= date('F Y', mktime(0, 0, 0, $month, 1, $year)) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-            .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+            .container { max-width: 1400px; margin: 2rem auto; background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
             .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
             .header h1 { font-size: 28px; color: #1f2937; }
             .btn { padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.3s; }
@@ -5393,8 +5321,7 @@ function b2b_personnel_leave_calendar() {
             .legend-item { display: flex; align-items: center; gap: 8px; }
             .legend-color { width: 20px; height: 20px; border-radius: 4px; }
         </style>
-    </head>
-    <body>
+
         <div class="container">
             <div class="header">
                 <h1><i class="fas fa-calendar-alt"></i> Leave Calendar</h1>
@@ -5471,9 +5398,9 @@ function b2b_personnel_leave_calendar() {
                 </div>
             </div>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 // Leave History (placeholder - can be added to detail view tabs)
@@ -5584,28 +5511,16 @@ function b2b_personnel_payroll_payments() {
         $total_balance += $balance;
     }
     
+    b2b_adm_header('Payroll Payments Dashboard');
     ?>
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payroll Payments Dashboard</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }
             .container {
                 max-width: 1400px;
-                margin: 0 auto;
+                margin: 2rem auto;
                 background: white;
                 border-radius: 15px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                 padding: 30px;
             }
             .header {
@@ -5729,9 +5644,8 @@ function b2b_personnel_payroll_payments() {
                 </tbody>
             </table>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
     exit;
 }
 
@@ -5824,28 +5738,16 @@ function b2b_personnel_add_payment($personnel_id) {
     $current_balance = b2b_get_payment_balance($personnel_id);
     $current_accrual = b2b_calculate_monthly_accrual($personnel_id, date('Y-m'));
     
+    b2b_adm_header('Add Payment - ' . esc_html($personnel->post_title));
     ?>
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Add Payment - <?= esc_html($personnel->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }
             .container {
                 max-width: 800px;
-                margin: 0 auto;
+                margin: 2rem auto;
                 background: white;
                 border-radius: 15px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                 padding: 30px;
             }
             h1 { color: #1f2937; margin-bottom: 20px; }
@@ -6011,9 +5913,8 @@ function b2b_personnel_add_payment($personnel_id) {
                 </div>
             </form>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
     exit;
 }
 
@@ -6111,28 +6012,16 @@ function b2b_personnel_payment_history($personnel_id) {
         return strtotime($b_date) - strtotime($a_date);
     });
     
+    b2b_adm_header('Payment History - ' . esc_html($personnel->post_title));
     ?>
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment History - <?= esc_html($personnel->post_title) ?></title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }
             .container {
                 max-width: 1200px;
-                margin: 0 auto;
+                margin: 2rem auto;
                 background: white;
                 border-radius: 15px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                 padding: 30px;
             }
             h1 { color: #1f2937; margin-bottom: 20px; }
@@ -6163,8 +6052,7 @@ function b2b_personnel_payment_history($personnel_id) {
             }
             tr:hover { background: #f9fafb; }
         </style>
-    </head>
-    <body>
+
         <div class="container">
             <h1><i class="fas fa-history"></i> Payment History - <?= esc_html($personnel->post_title) ?></h1>
             <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="btn">
@@ -6218,9 +6106,8 @@ function b2b_personnel_payment_history($personnel_id) {
                 </table>
             <?php endif; ?>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
     exit;
 }
 
@@ -6323,28 +6210,16 @@ function b2b_personnel_bulk_salary_accrual() {
         }
     }
     
+    b2b_adm_header('Bulk Salary Accrual');
     ?>
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Bulk Salary Accrual</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }
             .container {
                 max-width: 1200px;
-                margin: 0 auto;
+                margin: 2rem auto;
                 background: white;
                 border-radius: 15px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                 padding: 30px;
             }
             .header {
@@ -6532,9 +6407,9 @@ function b2b_personnel_bulk_salary_accrual() {
                 </div>
             <?php endif; ?>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
+    exit;
 }
 
 function b2b_personnel_process_bulk_accrual() {
@@ -6700,18 +6575,12 @@ function b2b_personnel_edit_payment($payment_id) {
         wp_redirect(home_url("/personnel-panel/view/" . $found_personnel_id));
         exit;
     }
+    
+    b2b_adm_header('Edit Payment - Personnel Panel');
     ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Edit Payment - Personnel Panel</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f3f4f6; }
-            .container { max-width: 800px; margin: 40px auto; padding: 0 20px; }
+            .container { max-width: 800px; margin: 2rem auto; padding: 0 20px; }
             .card { background: #fff; border-radius: 12px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
             h1 { font-size: 24px; color: #111827; margin-bottom: 10px; }
             .subtitle { color: #6b7280; margin-bottom: 30px; }
@@ -6724,8 +6593,7 @@ function b2b_personnel_edit_payment($payment_id) {
             .btn-primary { background: #3b82f6; color: #fff; }
             .btn-secondary { background: #6b7280; color: #fff; }
         </style>
-    </head>
-    <body>
+
         <div class="container">
             <div class="card">
                 <h1><i class="fas fa-edit"></i> Edit Payment</h1>
@@ -6795,9 +6663,8 @@ function b2b_personnel_edit_payment($payment_id) {
                 </form>
             </div>
         </div>
-    </body>
-    </html>
     <?php
+    b2b_adm_footer();
     exit;
 }
 

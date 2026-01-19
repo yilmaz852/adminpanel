@@ -3750,56 +3750,109 @@ add_action('template_redirect', function () {
             $start_date = date('Y-m-d 00:00:00', strtotime('-30 days'));
     }
     
-    // Sales Reports Query
-    $sales_query = $wpdb->prepare("
-        SELECT 
-            COUNT(DISTINCT p.ID) as order_count,
-            SUM(pm.meta_value) as total_sales,
-            AVG(pm.meta_value) as avg_order_value
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-        WHERE p.post_type = 'shop_order'
-        AND p.post_status = 'wc-completed'
-        AND pm.meta_key = '_order_total'
-        AND p.post_date BETWEEN %s AND %s
-    ", $start_date, $end_date);
+    // Check if WooCommerce is using HPOS
+    $hpos_enabled = class_exists('Automattic\WooCommerce\Utilities\OrderUtil') && 
+                     method_exists('Automattic\WooCommerce\Utilities\OrderUtil', 'custom_orders_table_usage_is_enabled') &&
+                     \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+    
+    // Sales Reports Query - Support both HPOS and legacy
+    if ($hpos_enabled) {
+        // Use HPOS tables
+        $sales_query = $wpdb->prepare("
+            SELECT 
+                COUNT(DISTINCT o.id) as order_count,
+                SUM(o.total_amount) as total_sales,
+                AVG(o.total_amount) as avg_order_value
+            FROM {$wpdb->prefix}wc_orders o
+            WHERE o.type = 'shop_order'
+            AND o.status = 'wc-completed'
+            AND o.date_created_gmt BETWEEN %s AND %s
+        ", $start_date, $end_date);
+    } else {
+        // Use legacy post tables
+        $sales_query = $wpdb->prepare("
+            SELECT 
+                COUNT(DISTINCT p.ID) as order_count,
+                SUM(pm.meta_value) as total_sales,
+                AVG(pm.meta_value) as avg_order_value
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status = 'wc-completed'
+            AND pm.meta_key = '_order_total'
+            AND p.post_date BETWEEN %s AND %s
+        ", $start_date, $end_date);
+    }
     
     $sales_data = $wpdb->get_row($sales_query);
     
     // Daily sales breakdown
-    $daily_sales = $wpdb->get_results($wpdb->prepare("
-        SELECT 
-            DATE(p.post_date) as date,
-            COUNT(DISTINCT p.ID) as orders,
-            SUM(pm.meta_value) as revenue
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-        WHERE p.post_type = 'shop_order'
-        AND p.post_status = 'wc-completed'
-        AND pm.meta_key = '_order_total'
-        AND p.post_date BETWEEN %s AND %s
-        GROUP BY DATE(p.post_date)
-        ORDER BY date DESC
-        LIMIT 30
-    ", $start_date, $end_date));
+    if ($hpos_enabled) {
+        $daily_sales = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                DATE(o.date_created_gmt) as date,
+                COUNT(DISTINCT o.id) as orders,
+                SUM(o.total_amount) as revenue
+            FROM {$wpdb->prefix}wc_orders o
+            WHERE o.type = 'shop_order'
+            AND o.status = 'wc-completed'
+            AND o.date_created_gmt BETWEEN %s AND %s
+            GROUP BY DATE(o.date_created_gmt)
+            ORDER BY date DESC
+            LIMIT 30
+        ", $start_date, $end_date));
+    } else {
+        $daily_sales = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                DATE(p.post_date) as date,
+                COUNT(DISTINCT p.ID) as orders,
+                SUM(pm.meta_value) as revenue
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status = 'wc-completed'
+            AND pm.meta_key = '_order_total'
+            AND p.post_date BETWEEN %s AND %s
+            GROUP BY DATE(p.post_date)
+            ORDER BY date DESC
+            LIMIT 30
+        ", $start_date, $end_date));
+    }
     
     // Top Customers Query
-    $top_customers = $wpdb->get_results($wpdb->prepare("
-        SELECT 
-            pm_customer.meta_value as customer_id,
-            COUNT(DISTINCT p.ID) as order_count,
-            SUM(pm_total.meta_value) as total_spent
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
-        INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
-        WHERE p.post_type = 'shop_order'
-        AND p.post_status = 'wc-completed'
-        AND p.post_date BETWEEN %s AND %s
-        AND pm_customer.meta_value > 0
-        GROUP BY pm_customer.meta_value
-        ORDER BY total_spent DESC
-        LIMIT 10
-    ", $start_date, $end_date));
+    if ($hpos_enabled) {
+        $top_customers = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                o.customer_id,
+                COUNT(DISTINCT o.id) as order_count,
+                SUM(o.total_amount) as total_spent
+            FROM {$wpdb->prefix}wc_orders o
+            WHERE o.type = 'shop_order'
+            AND o.status = 'wc-completed'
+            AND o.date_created_gmt BETWEEN %s AND %s
+            AND o.customer_id > 0
+            GROUP BY o.customer_id
+            ORDER BY total_spent DESC
+            LIMIT 10
+        ", $start_date, $end_date));
+    } else {
+        $top_customers = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                pm_customer.meta_value as customer_id,
+                COUNT(DISTINCT p.ID) as order_count,
+                SUM(pm_total.meta_value) as total_spent
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+            INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status = 'wc-completed'
+            AND p.post_date BETWEEN %s AND %s
+            AND pm_customer.meta_value > 0
+            GROUP BY pm_customer.meta_value
+            ORDER BY total_spent DESC
+            LIMIT 10
+        ", $start_date, $end_date));
+    }
     
     // B2B Group Analysis
     $b2b_groups = b2b_get_groups();
@@ -3814,18 +3867,32 @@ add_action('template_redirect', function () {
         
         if(!empty($users_in_group)) {
             $user_ids = implode(',', $users_in_group);
-            $group_data = $wpdb->get_row($wpdb->prepare("
-                SELECT 
-                    COUNT(DISTINCT p.ID) as order_count,
-                    SUM(pm_total.meta_value) as total_sales
-                FROM {$wpdb->posts} p
-                INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
-                INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
-                WHERE p.post_type = 'shop_order'
-                AND p.post_status = 'wc-completed'
-                AND p.post_date BETWEEN %s AND %s
-                AND pm_customer.meta_value IN ($user_ids)
-            ", $start_date, $end_date));
+            
+            if ($hpos_enabled) {
+                $group_data = $wpdb->get_row($wpdb->prepare("
+                    SELECT 
+                        COUNT(DISTINCT o.id) as order_count,
+                        SUM(o.total_amount) as total_sales
+                    FROM {$wpdb->prefix}wc_orders o
+                    WHERE o.type = 'shop_order'
+                    AND o.status = 'wc-completed'
+                    AND o.date_created_gmt BETWEEN %s AND %s
+                    AND o.customer_id IN ($user_ids)
+                ", $start_date, $end_date));
+            } else {
+                $group_data = $wpdb->get_row($wpdb->prepare("
+                    SELECT 
+                        COUNT(DISTINCT p.ID) as order_count,
+                        SUM(pm_total.meta_value) as total_sales
+                    FROM {$wpdb->posts} p
+                    INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+                    INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+                    WHERE p.post_type = 'shop_order'
+                    AND p.post_status = 'wc-completed'
+                    AND p.post_date BETWEEN %s AND %s
+                    AND pm_customer.meta_value IN ($user_ids)
+                ", $start_date, $end_date));
+            }
             
             $group_sales[] = [
                 'name' => $group['name'],
@@ -7784,7 +7851,7 @@ add_action('template_redirect', function () {
                         <tr style="<?= $edit_slug == $slug ? 'background:#fef3c7;' : '' ?>">
                             <td><strong><?= esc_html($data['name']) ?></strong></td>
                             <td><span style="background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;">%<?= $data['discount'] ?></span></td>
-                            <td><?= wc_price($data['min_order']) ?></td>
+                            <td><?= wc_price($data['min_order'] ?? 0) ?></td>
                             <td><?= $count ?></td>
                             <td style="text-align:right;">
                                 <a href="?b2b_adm_page=b2b_groups&edit=<?= urlencode($slug) ?>">

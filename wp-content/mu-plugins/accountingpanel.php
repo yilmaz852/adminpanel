@@ -967,7 +967,7 @@ function b2b_accounting_tax_summary_page() {
         <!-- Sales Tax Collected -->
         <div class="card" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
             <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.5rem;">Sales Tax Collected</div>
-            <div style="font-size: 1.875rem; font-weight: 700;">${{ number_format($sales_tax_collected, 2) }}</div>
+            <div style="font-size: 1.875rem; font-weight: 700;">$<?= number_format($sales_tax_collected, 2) ?></div>
             <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
                 <i class="fas fa-receipt"></i> From sales transactions
             </div>
@@ -976,7 +976,7 @@ function b2b_accounting_tax_summary_page() {
         <!-- Payroll Tax -->
         <div class="card" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white;">
             <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.5rem;">Payroll Tax</div>
-            <div style="font-size: 1.875rem; font-weight: 700;">${{ number_format($payroll_tax, 2) }}</div>
+            <div style="font-size: 1.875rem; font-weight: 700;">$<?= number_format($payroll_tax, 2) ?></div>
             <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
                 <i class="fas fa-users"></i> Employee withholdings
             </div>
@@ -985,7 +985,7 @@ function b2b_accounting_tax_summary_page() {
         <!-- Other Taxes -->
         <div class="card" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
             <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.5rem;">Other Taxes</div>
-            <div style="font-size: 1.875rem; font-weight: 700;">${{ number_format($other_taxes, 2) }}</div>
+            <div style="font-size: 1.875rem; font-weight: 700;">$<?= number_format($other_taxes, 2) ?></div>
             <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
                 <i class="fas fa-file-invoice-dollar"></i> Miscellaneous
             </div>
@@ -994,7 +994,7 @@ function b2b_accounting_tax_summary_page() {
         <!-- Total Taxes Paid -->
         <div class="card" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white;">
             <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.5rem;">Total Taxes Paid</div>
-            <div style="font-size: 1.875rem; font-weight: 700;">${{ number_format($total_taxes_paid, 2) }}</div>
+            <div style="font-size: 1.875rem; font-weight: 700;">$<?= number_format($total_taxes_paid, 2) ?></div>
             <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
                 <i class="fas fa-hand-holding-usd"></i> YTD payments
             </div>

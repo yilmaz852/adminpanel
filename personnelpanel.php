@@ -4567,8 +4567,12 @@ function b2b_personnel_print_view() {
         </div>
 
         <div class="no-print">
-            <button onclick="window.print()">Print This Page</button>
-            <button onclick="window.close()" style="background:#6b7280;">Close</button>
+            <button onclick="window.print()" class="add-btn btn-success">
+                <i class="fas fa-print"></i> Print This Page
+            </button>
+            <button onclick="window.close()" class="add-btn btn-gray">
+                <i class="fas fa-times"></i> Close
+            </button>
         </div>
     <?php
     b2b_adm_footer();

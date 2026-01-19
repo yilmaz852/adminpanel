@@ -1462,7 +1462,7 @@ function b2b_adm_header($title) {
         
         .sidebar-nav .nav-list{list-style:none;display:flex;gap:4px;padding:0 15px;flex-direction:column;transform:translateY(0px);transition:0.4s ease}
         
-        .sidebar .sidebar-nav .primary-nav{overflow-y:auto;scrollbar-width:thin;padding-bottom:20px;height:calc(100vh - 227px);scrollbar-color:transparent transparent}
+        .sidebar .sidebar-nav .primary-nav{overflow-y:auto;scrollbar-width:thin;padding-bottom:20px;padding-top:10px;height:calc(100vh - 185px);scrollbar-color:transparent transparent}
         
         .sidebar .sidebar-nav .primary-nav:hover{scrollbar-color:#EEF2FF transparent}
         
@@ -1528,6 +1528,44 @@ function b2b_adm_header($title) {
         /* Main Content Area */
         .main{margin-left:270px;flex:1;padding:40px;width:calc(100% - 270px);transition:all 0.4s ease;box-sizing:border-box}
         body.sidebar-collapsed .main{margin-left:85px;width:calc(100% - 85px)}
+        
+        /* Desktop Header Actions */
+        .desktop-header-actions{
+            position:fixed;
+            top:20px;
+            right:40px;
+            z-index:999;
+            display:flex;
+            gap:10px;
+            align-items:center;
+        }
+        .header-action-icon{
+            position:relative;
+            width:44px;
+            height:44px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            color:var(--text);
+            background:var(--white);
+            border:1px solid var(--border);
+            border-radius:10px;
+            text-decoration:none;
+            transition:all 0.2s ease;
+            box-shadow:0 2px 8px rgba(0,0,0,0.06);
+        }
+        .header-action-icon:hover{
+            background:var(--primary);
+            color:white;
+            border-color:var(--primary);
+            transform:translateY(-2px);
+            box-shadow:0 4px 12px rgba(138,95,232,0.3);
+        }
+        .header-action-icon .notification-badge{
+            position:absolute;
+            top:-4px;
+            right:-4px;
+        }
         
         .card{background:var(--white);border-radius:16px;box-shadow:var(--shadow);padding:28px;border:1px solid var(--border-light);margin-bottom:25px;transition:all 0.3s ease}
         .card:hover{box-shadow:var(--shadow-lg);border-color:var(--border)}
@@ -1691,8 +1729,66 @@ function b2b_adm_header($title) {
         .mobile-menu-toggle:active{background:#1e293b;transform:scale(0.95)}
         
         /* Mobile Header Bar */
-        .mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--border);z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
-        .mobile-header .page-title{margin:0;padding:0 70px;line-height:56px;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+        .mobile-header{
+            display:none;
+            position:fixed;
+            top:0;left:0;right:0;
+            height:56px;
+            background:var(--white);
+            border-bottom:1px solid var(--border);
+            z-index:1000;
+            box-shadow:0 2px 8px rgba(0,0,0,0.05);
+            align-items:center;
+            justify-content:space-between;
+            padding:0 16px;
+        }
+        .mobile-header .page-title{
+            margin:0;
+            padding:0 16px;
+            line-height:56px;
+            font-size:16px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            flex:1;
+            text-align:left;
+        }
+        .mobile-header-actions{display:flex;gap:8px;align-items:center}
+        .mobile-header-icon{
+            position:relative;
+            width:40px;height:40px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            color:var(--text);
+            background:var(--bg);
+            border-radius:8px;
+            text-decoration:none;
+            transition:all 0.2s ease;
+        }
+        .mobile-header-icon:hover,
+        .mobile-header-icon:active{
+            background:var(--primary);
+            color:white;
+            transform:scale(0.95);
+        }
+        .notification-badge{
+            position:absolute;
+            top:4px;right:4px;
+            background:#ef4444;
+            color:white;
+            border-radius:10px;
+            min-width:18px;height:18px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:10px;
+            font-weight:700;
+            padding:0 5px;
+            border:2px solid var(--white);
+            box-shadow:0 2px 4px rgba(0,0,0,0.2);
+        }
+        .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0}
         
         /* Sidebar Overlay for Mobile */
         .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;backdrop-filter:blur(3px);opacity:0;transition:opacity 0.3s ease}
@@ -1714,6 +1810,7 @@ function b2b_adm_header($title) {
             .form-grid{grid-template-columns:1fr;}
         }
         @media (max-width: 768px) {
+            .desktop-header-actions{display:none !important}
             .sidebar-menu-button{position:fixed;left:20px;top:20px;height:40px;width:42px;display:flex;color:#F1F4FF;background:#151A2D}
             .sidebar.collapsed{width:270px;left:-270px}
             .sidebar.collapsed .sidebar-header .sidebar-toggler{transform:none}
@@ -1721,7 +1818,7 @@ function b2b_adm_header($title) {
             .sidebar.collapsed .nav-link :where(.nav-label, .dropdown-icon){opacity:1;pointer-events:auto}
             
             .mobile-menu-toggle{display:flex}
-            .mobile-header{display:block}
+            .mobile-header{display:flex}
             body{flex-direction:column;overflow-x:hidden}
             .sidebar{width:75%;max-width:300px;height:100vh;position:fixed;left:0;top:0;z-index:1001;transform:translateX(-100%);transition:transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);box-shadow:4px 0 24px rgba(0,0,0,0.15);overflow-y:auto}
             .sidebar.mobile-open{transform:translateX(0)}
@@ -1729,7 +1826,7 @@ function b2b_adm_header($title) {
             .sidebar.collapsed.mobile-open{transform:translateX(0) !important}
             .sidebar-toggler{display:none !important}
             .sidebar-header .sidebar-toggler{display:none !important}
-            .sidebar-nav{padding:80px 15px 20px 15px;display:block;overflow-x:hidden}
+            .sidebar-nav{padding:10px 15px 20px 15px;display:block;overflow-x:hidden}
             .sidebar-nav .nav-link{flex:initial;min-width:initial;width:100%;padding:14px 16px;margin-bottom:4px;border-radius:8px}
             .sidebar-nav .nav-link .nav-label{opacity:1 !important;width:auto !important;overflow:visible !important}
             .sidebar .sidebar-nav .nav-link{padding:14px 16px;justify-content:flex-start}
@@ -1770,11 +1867,15 @@ function b2b_adm_header($title) {
             input,select,textarea{font-size:16px;padding:12px}
             .modal-content{margin:12px;width:calc(100% - 24px)}
             .sidebar{width:85%;max-width:280px}
-            .sidebar-nav{padding:70px 12px 16px 12px}
+            .sidebar-nav{padding:10px 12px 16px 12px}
             .sidebar-nav a, .submenu-toggle{padding:12px 14px}
             #bulkEditPanel{padding:12px}
             .bulk-section{padding:12px}
             .page-header{gap:10px}
+            
+            /* Messaging mobile styles */
+            .messaging-container{grid-template-columns:1fr !important;gap:12px !important}
+            .messaging-groups,.messaging-chat{height:auto !important;min-height:400px}
         }
     </style>
     </head>
@@ -1788,6 +1889,16 @@ function b2b_adm_header($title) {
     <!-- Mobile Header Bar -->
     <div class="mobile-header">
         <div class="page-title" id="mobilePageTitle">Admin Panel</div>
+        <div class="mobile-header-actions">
+            <a href="<?= home_url('/b2b-panel/notes') ?>" class="mobile-header-icon" id="notificationIcon" title="Notifications">
+                <i class="fa-solid fa-bell"></i>
+                <span class="notification-badge" id="notificationBadge" style="display:none;"></span>
+            </a>
+            <a href="<?= home_url('/b2b-panel/messaging') ?>" class="mobile-header-icon" id="messageIcon" title="Messages">
+                <i class="fa-solid fa-message"></i>
+                <span class="notification-badge" id="messageBadge" style="display:none;"></span>
+            </a>
+        </div>
     </div>
 
     <!-- Sidebar Overlay for Mobile -->
@@ -1905,6 +2016,24 @@ function b2b_adm_header($title) {
                     </a>
                 </div>
                 
+                <!-- Personnel (Admin Only) -->
+                <?php if(current_user_can('manage_options')): ?>
+                <div class="nav-item">
+                    <a href="<?= home_url('/personnel-panel') ?>" class="nav-link" data-title="Personel">
+                        <i class="fa-solid fa-user-group"></i> <span class="nav-label">Personel</span>
+                    </a>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Accounting (Admin Only) -->
+                <?php if(current_user_can('manage_options')): ?>
+                <div class="nav-item">
+                    <a href="<?= home_url('/accounting-panel') ?>" class="nav-link" data-title="Accounting">
+                        <i class="fa-solid fa-chart-line"></i> <span class="nav-label">Accounting</span>
+                    </a>
+                </div>
+                <?php endif; ?>
+                
                 <!-- B2B Module Dropdown -->
                 <div class="nav-item dropdown-container <?= in_array(get_query_var('b2b_adm_page'), ['b2b_approvals','b2b_groups','b2b_settings','b2b_form_editor','b2b_roles'])?'open':'' ?>">
                     <div class="nav-link dropdown-toggle" onclick="toggleDropdown(this)" data-title="B2B Module" style="cursor:pointer">
@@ -2018,6 +2147,18 @@ function b2b_adm_header($title) {
     </div>
 
     <div class="main">
+    <!-- Desktop Header Actions -->
+    <div class="desktop-header-actions">
+        <a href="<?= home_url('/b2b-panel/notes') ?>" class="header-action-icon" title="Notifications">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notification-badge" id="desktopNotificationBadge" style="display:none;"></span>
+        </a>
+        <a href="<?= home_url('/b2b-panel/messaging') ?>" class="header-action-icon" title="Messages">
+            <i class="fa-solid fa-message"></i>
+            <span class="notification-badge" id="desktopMessageBadge" style="display:none;"></span>
+        </a>
+    </div>
+    
     <script>
     // Define ajaxurl for AJAX requests (not available in front-end by default)
     var ajaxurl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
@@ -2161,6 +2302,25 @@ function b2b_adm_header($title) {
             mobileTitle.textContent = pageTitle.textContent;
         }
     }
+    
+    // Show static notification indicators on mobile and desktop headers
+    function showNotificationIndicators() {
+        const badges = [
+            'notificationBadge', 'messageBadge', 
+            'desktopNotificationBadge', 'desktopMessageBadge',
+            'salesDesktopNotificationBadge', 'salesDesktopMessageBadge'
+        ];
+        badges.forEach(badgeId => {
+            const badge = document.getElementById(badgeId);
+            if(badge) {
+                badge.style.display = 'flex';
+                badge.innerHTML = '<span class="sr-only">New</span>•'; // Dot with accessible text
+            }
+        });
+    }
+    
+    // Initialize indicators when DOM is ready
+    document.addEventListener('DOMContentLoaded', showNotificationIndicators);
     </script>
     <?php
 }
@@ -4492,8 +4652,9 @@ add_action('template_redirect', function () {
     $paged = max(1, $_GET['paged'] ?? 1);
     $status = $_GET['status'] ?? '';
     $s = $_GET['s'] ?? '';
+    $per_page = 20;
     
-    $args = ['post_type'=>'shop_order', 'post_status'=>'any', 'posts_per_page'=>20, 'paged'=>$paged, 'orderby'=>'date', 'order'=>'DESC'];
+    $args = ['post_type'=>'shop_order', 'post_status'=>'any', 'posts_per_page'=>$per_page, 'paged'=>$paged, 'orderby'=>'date', 'order'=>'DESC'];
     if($status) $args['post_status'] = 'wc-'.$status;
     if($s && is_numeric($s)) $args['post__in'] = [intval($s)];
     
@@ -4585,6 +4746,7 @@ add_action('template_redirect', function () {
             <?php endif; ?>
         </div>
 
+        <div class="table-responsive">
         <table id="orderTable">
             <thead><tr>
                 <th data-col="0">No</th>
@@ -4620,7 +4782,29 @@ add_action('template_redirect', function () {
             <?php endwhile; else: ?><tr><td colspan="8" style="padding:20px;text-align:center">No orders found.</td></tr><?php endif; ?>
             </tbody>
         </table>
-        <?php if($query->max_num_pages > 1) echo "<div style='margin-top:20px;text-align:center'>".paginate_links(['base'=>add_query_arg('paged','%#%'),'format'=>'','current'=>$paged,'total'=>$query->max_num_pages])."</div>"; ?>
+        </div><!-- .table-responsive -->
+        <!-- Pagination -->
+        <?php if($query->max_num_pages > 1): ?>
+        <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
+            <span style="color:#6b7280;font-size:14px;">Page:</span>
+            <select onchange="window.location.href=this.value" style="margin:0;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:white;cursor:pointer;">
+                <?php 
+                for($i = 1; $i <= $query->max_num_pages; $i++) {
+                    $page_params = [];
+                    if($status) $page_params[] = 'status=' . urlencode($status);
+                    if($s) $page_params[] = 's=' . urlencode($s);
+                    if($i > 1) $page_params[] = 'paged=' . $i;
+                    $page_url = home_url('/b2b-panel/orders') . (!empty($page_params) ? '?' . implode('&', $page_params) : '');
+                    $selected = ($i == $paged) ? 'selected' : '';
+                    echo '<option value="' . esc_attr($page_url) . '" ' . $selected . '>Page ' . $i . ' of ' . $query->max_num_pages . '</option>';
+                }
+                ?>
+            </select>
+            <span style="color:#6b7280;font-size:14px;">
+                (Showing <?= min($per_page, $query->found_posts) ?> of <?= $query->found_posts ?> orders)
+            </span>
+        </div>
+        <?php endif; ?>
     </div>
 
     <div id="ordModal" class="modal"><div class="modal-content"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3>Details</h3><span onclick="$('#ordModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="mBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div></div></div>
@@ -6755,6 +6939,7 @@ add_action('template_redirect', function () {
                 </div>
             </div>
             
+            <div class="table-responsive">
             <table id="custTable">
                 <thead><tr>
                     <th data-col="0">ID</th>
@@ -6845,6 +7030,7 @@ add_action('template_redirect', function () {
                 <?php endforeach; endif; ?>
                 </tbody>
             </table>
+            </div><!-- .table-responsive -->
 
             <?php if($total_pages > 1): ?>
             <div style="margin-top:20px;display:flex;justify-content:center;align-items:center;gap:10px;">
@@ -11727,6 +11913,18 @@ function sa_render_dashboard_page() {
         </div>
         
         <div class="main">
+            <!-- Desktop Header Actions -->
+            <div class="desktop-header-actions">
+                <a href="?sales_panel=notes" class="header-action-icon" title="Notifications">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="notification-badge" id="salesDesktopNotificationBadge" style="display:none;"></span>
+                </a>
+                <a href="?sales_panel=messaging" class="header-action-icon" title="Messages">
+                    <i class="fa-solid fa-message"></i>
+                    <span class="notification-badge" id="salesDesktopMessageBadge" style="display:none;"></span>
+                </a>
+            </div>
+            
             <div class="stats">
                 <div class="stat-card">
                     <h3>Total Customers</h3>
@@ -14979,9 +15177,9 @@ add_action('template_redirect', function () {
         </div>
     <?php else: ?>
     
-    <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;" class="messaging-container">
         <!-- Groups List -->
-        <div class="card" style="height:600px;overflow-y:auto;">
+        <div class="card messaging-groups" style="height:600px;overflow-y:auto;">
             <h3 style="margin-top:0;">Your Groups</h3>
             <?php foreach ($user_groups as $group_id => $group): ?>
                 <a href="?group=<?= $group_id ?>" class="<?= $selected_group == $group_id ? 'active' : '' ?>" style="display:block;padding:12px;margin-bottom:8px;border-radius:8px;text-decoration:none;color:inherit;background:<?= $selected_group == $group_id ? '#eff6ff' : '#f9fafb' ?>;border-left:4px solid <?= $selected_group == $group_id ? '#3b82f6' : 'transparent' ?>;">
@@ -14992,7 +15190,7 @@ add_action('template_redirect', function () {
         </div>
         
         <!-- Messages -->
-        <div class="card" style="height:600px;display:flex;flex-direction:column;">
+        <div class="card messaging-chat" style="height:600px;display:flex;flex-direction:column;">
             <?php if ($selected_group && isset($user_groups[$selected_group])): ?>
                 <h3 style="margin:0 0 15px 0;padding-bottom:15px;border-bottom:1px solid #e5e7eb;">
                     <?= esc_html($user_groups[$selected_group]['name']) ?>

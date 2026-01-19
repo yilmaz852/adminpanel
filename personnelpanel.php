@@ -5979,11 +5979,14 @@ function b2b_personnel_process_payment() {
     update_post_meta($personnel_id, '_payment_records', $payments);
     
     // Update balance
-    $new_balance = $current_balance + $accrued - $amount;
+    $new_balance = $current_balance + $amount_signed;
     update_post_meta($personnel_id, '_payment_balance', $new_balance);
     
     // Log activity
     b2b_log_personnel_activity($personnel_id, 'payment_added', "Payment of $" . number_format($amount, 2) . " recorded");
+    
+    // Trigger accounting integration hook
+    do_action('personnel_payment_created', $payment['id'], $payment);
     
     wp_redirect(home_url('/personnel-panel/payroll-payments?msg=payment_added'));
     exit;
@@ -6488,6 +6491,9 @@ function b2b_personnel_process_bulk_accrual() {
             'amount' => $accrual_amount,
             'transaction_id' => $transaction_id
         ]);
+        
+        // Trigger accounting integration hook
+        do_action('personnel_payment_created', $transaction_id, $new_transaction);
         
         $processed_count++;
     }

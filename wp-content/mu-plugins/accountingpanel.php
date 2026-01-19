@@ -408,3 +408,291 @@ function b2b_accounting_get_recent_transactions($limit = 10) {
     
     return $transactions;
 }
+
+/**
+ * Create accounting transaction (used by integrations)
+ */
+function b2b_accounting_create_transaction($data) {
+    // Validate required fields
+    if (empty($data['type']) || empty($data['amount']) || empty($data['date'])) {
+        return false;
+    }
+    
+    // Create transaction post
+    $post_id = wp_insert_post([
+        'post_type' => 'acc_transaction',
+        'post_status' => 'publish',
+        'post_title' => sprintf(
+            '%s - %s - $%s',
+            ucfirst($data['type']),
+            $data['category'] ?? 'Other',
+            number_format($data['amount'], 2)
+        ),
+    ]);
+    
+    if (!$post_id || is_wp_error($post_id)) {
+        return false;
+    }
+    
+    // Save transaction meta
+    update_post_meta($post_id, '_acc_type', $data['type']); // 'income' or 'expense'
+    update_post_meta($post_id, '_acc_category', $data['category'] ?? 'Other');
+    update_post_meta($post_id, '_acc_amount', floatval($data['amount']));
+    update_post_meta($post_id, '_acc_date', $data['date']);
+    update_post_meta($post_id, '_acc_description', $data['description'] ?? '');
+    update_post_meta($post_id, '_acc_reference', $data['reference'] ?? '');
+    update_post_meta($post_id, '_acc_source', $data['source'] ?? 'manual'); // 'order', 'payroll', 'manual'
+    update_post_meta($post_id, '_acc_source_id', $data['source_id'] ?? '');
+    
+    // Additional fields for detailed tracking
+    if (!empty($data['gross_amount'])) {
+        update_post_meta($post_id, '_acc_gross_amount', floatval($data['gross_amount']));
+    }
+    if (!empty($data['net_amount'])) {
+        update_post_meta($post_id, '_acc_net_amount', floatval($data['net_amount']));
+    }
+    if (!empty($data['tax_amount'])) {
+        update_post_meta($post_id, '_acc_tax_amount', floatval($data['tax_amount']));
+    }
+    if (!empty($data['shipping_amount'])) {
+        update_post_meta($post_id, '_acc_shipping_amount', floatval($data['shipping_amount']));
+    }
+    if (!empty($data['refund_amount'])) {
+        update_post_meta($post_id, '_acc_refund_amount', floatval($data['refund_amount']));
+    }
+    
+    return $post_id;
+}
+
+/* =====================================================
+ * 6. ORDER INTEGRATION - WooCommerce Orders
+ * ===================================================== */
+
+/**
+ * Hook: When WooCommerce order is completed, create income transaction
+ */
+add_action('woocommerce_order_status_completed', 'b2b_accounting_sync_order_income', 10, 1);
+function b2b_accounting_sync_order_income($order_id) {
+    // Check if already synced
+    if (get_post_meta($order_id, '_acc_synced', true)) {
+        return;
+    }
+    
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
+    }
+    
+    // Get order financial details
+    $total = $order->get_total();
+    $subtotal = $order->get_subtotal();
+    $tax = $order->get_total_tax();
+    $shipping = $order->get_shipping_total();
+    $refund = $order->get_total_refunded();
+    
+    // Create accounting transaction
+    $transaction_data = [
+        'type' => 'income',
+        'category' => 'Sales Revenue',
+        'amount' => $total - $refund, // Net amount after refunds
+        'date' => $order->get_date_completed() ? $order->get_date_completed()->date('Y-m-d') : date('Y-m-d'),
+        'description' => sprintf('Order #%d - %s', $order_id, $order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
+        'reference' => 'ORDER-' . $order_id,
+        'source' => 'order',
+        'source_id' => $order_id,
+        'gross_amount' => $total,
+        'net_amount' => $subtotal,
+        'tax_amount' => $tax,
+        'shipping_amount' => $shipping,
+        'refund_amount' => $refund,
+    ];
+    
+    $txn_id = b2b_accounting_create_transaction($transaction_data);
+    
+    if ($txn_id) {
+        // Mark order as synced
+        update_post_meta($order_id, '_acc_synced', true);
+        update_post_meta($order_id, '_acc_transaction_id', $txn_id);
+    }
+}
+
+/**
+ * Hook: When order is refunded, update accounting transaction
+ */
+add_action('woocommerce_order_refunded', 'b2b_accounting_handle_order_refund', 10, 2);
+function b2b_accounting_handle_order_refund($order_id, $refund_id) {
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
+    }
+    
+    $refund_amount = $order->get_total_refunded();
+    
+    // Create refund transaction (negative income or positive expense)
+    $transaction_data = [
+        'type' => 'expense',
+        'category' => 'Refunds',
+        'amount' => $refund_amount,
+        'date' => date('Y-m-d'),
+        'description' => sprintf('Refund for Order #%d', $order_id),
+        'reference' => 'REFUND-' . $refund_id,
+        'source' => 'order',
+        'source_id' => $order_id,
+        'refund_amount' => $refund_amount,
+    ];
+    
+    b2b_accounting_create_transaction($transaction_data);
+}
+
+/* =====================================================
+ * 7. PAYROLL INTEGRATION - Personnel Payments
+ * ===================================================== */
+
+/**
+ * Hook: When personnel payment is made, create expense transaction
+ * This hooks into the personnel module's payment creation
+ */
+add_action('personnel_payment_created', 'b2b_accounting_sync_payroll_expense', 10, 2);
+function b2b_accounting_sync_payroll_expense($payment_id, $payment_data) {
+    // Check if already synced
+    $meta_table = 'personnel_data';
+    global $wpdb;
+    $synced = $wpdb->get_var($wpdb->prepare(
+        "SELECT meta_value FROM {$wpdb->prefix}{$meta_table} WHERE id = %d AND meta_key = '_acc_synced'",
+        $payment_id
+    ));
+    
+    if ($synced) {
+        return;
+    }
+    
+    // Get personnel name
+    $personnel_id = $payment_data['personnel_id'] ?? 0;
+    $personnel_name = 'Unknown Employee';
+    if ($personnel_id) {
+        $first_name = get_user_meta($personnel_id, '_first_name', true);
+        $last_name = get_user_meta($personnel_id, '_last_name', true);
+        if ($first_name || $last_name) {
+            $personnel_name = trim($first_name . ' ' . $last_name);
+        }
+    }
+    
+    // Determine category based on transaction type or payment type
+    $transaction_type = $payment_data['transaction_type'] ?? 'expense';
+    $category_map = [
+        'income' => [
+            'accrued_salary' => 'Salary Accrual',
+            'bonus' => 'Bonus Accrual',
+            'commission' => 'Commission',
+            'allowance' => 'Allowance',
+            'overtime_pay' => 'Overtime Pay',
+            'other_income' => 'Other Personnel Income',
+        ],
+        'expense' => [
+            'salary_payment' => 'Salary Payments',
+            'deduction' => 'Payroll Deductions',
+            'advance_payment' => 'Advance Payments',
+            'tax_withholding' => 'Tax Withholding',
+            'insurance_deduction' => 'Insurance Deductions',
+            'other_expense' => 'Other Payroll Expenses',
+        ],
+    ];
+    
+    $payment_category = $payment_data['category'] ?? 'other';
+    $acc_category = $category_map[$transaction_type][$payment_category] ?? 'Payroll Expense';
+    
+    // Create accounting transaction
+    $transaction_data = [
+        'type' => $transaction_type,
+        'category' => $acc_category,
+        'amount' => floatval($payment_data['amount'] ?? 0),
+        'date' => $payment_data['date'] ?? date('Y-m-d'),
+        'description' => sprintf(
+            '%s - %s (%s)',
+            $personnel_name,
+            $acc_category,
+            $payment_data['description'] ?? ''
+        ),
+        'reference' => 'PAYROLL-' . $payment_id,
+        'source' => 'payroll',
+        'source_id' => $payment_id,
+    ];
+    
+    $txn_id = b2b_accounting_create_transaction($transaction_data);
+    
+    if ($txn_id) {
+        // Mark payment as synced (using direct SQL for personnel_data table)
+        $wpdb->insert(
+            $wpdb->prefix . $meta_table,
+            [
+                'id' => $payment_id,
+                'meta_key' => '_acc_synced',
+                'meta_value' => true
+            ]
+        );
+        $wpdb->insert(
+            $wpdb->prefix . $meta_table,
+            [
+                'id' => $payment_id,
+                'meta_key' => '_acc_transaction_id',
+                'meta_value' => $txn_id
+            ]
+        );
+    }
+}
+
+/**
+ * Manually sync existing orders (one-time sync utility)
+ */
+function b2b_accounting_sync_existing_orders($limit = 50) {
+    $args = [
+        'limit' => $limit,
+        'status' => 'completed',
+        'meta_query' => [
+            [
+                'key' => '_acc_synced',
+                'compare' => 'NOT EXISTS'
+            ]
+        ]
+    ];
+    
+    $orders = wc_get_orders($args);
+    $synced_count = 0;
+    
+    foreach ($orders as $order) {
+        b2b_accounting_sync_order_income($order->get_id());
+        $synced_count++;
+    }
+    
+    return $synced_count;
+}
+
+/**
+ * Manually sync existing personnel payments (one-time sync utility)
+ */
+function b2b_accounting_sync_existing_payroll($limit = 100) {
+    global $wpdb;
+    
+    // Get unsync payments from personnel_transactions table
+    $table_name = $wpdb->prefix . 'personnel_transactions';
+    $payments = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM {$table_name} 
+        WHERE id NOT IN (
+            SELECT CAST(meta_value AS UNSIGNED) 
+            FROM {$wpdb->prefix}personnel_data 
+            WHERE meta_key = '_acc_synced'
+        )
+        ORDER BY date DESC
+        LIMIT %d",
+        $limit
+    ), ARRAY_A);
+    
+    $synced_count = 0;
+    
+    foreach ($payments as $payment) {
+        b2b_accounting_sync_payroll_expense($payment['id'], $payment);
+        $synced_count++;
+    }
+    
+    return $synced_count;
+}

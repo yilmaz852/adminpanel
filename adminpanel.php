@@ -887,6 +887,7 @@ function b2b_pro_admin_menu() {
     add_submenu_page('b2b-panel', 'Başvurular', 'Başvurular', 'manage_options', 'b2b-panel', 'b2b_page_approvals');
     add_submenu_page('b2b-panel', 'Gruplar & Üyeler', 'Gruplar & Üyeler', 'manage_options', 'b2b-groups-list', 'b2b_page_group_list');
     add_submenu_page('b2b-panel', 'Genel Ayarlar', 'Genel Ayarlar', 'manage_options', 'b2b-settings', 'b2b_page_settings');
+    add_submenu_page('b2b-panel', 'Satış Fişi Ayarları', 'Satış Fişi Ayarları', 'manage_options', 'b2b-packing-slip-settings', 'b2b_page_packing_slip_settings');
     add_submenu_page('b2b-panel', 'Form Düzenleyici', 'Form Düzenleyici', 'manage_options', 'b2b-form-editor', 'b2b_page_form_editor');
     add_submenu_page('b2b-panel', 'Sales Agent', 'Sales Agent', 'manage_options', 'b2b-sales-agent', 'b2b_page_sales_agent_settings');
 }
@@ -8287,7 +8288,6 @@ add_action('template_redirect', function () {
             update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
             update_option('sales_manager_can_order', isset($_POST['sales_manager_can_order']) ? 1 : 0);
             update_option('sales_view_all_customers', isset($_POST['sales_view_all_customers']) ? 1 : 0);
-            update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
             
             echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0;"><i class="fa-solid fa-check-circle"></i> Settings saved successfully!</div>';
         }
@@ -8300,7 +8300,6 @@ add_action('template_redirect', function () {
     $merge_products = get_option('sales_merge_products', 0);
     $manager_can_order = get_option('sales_manager_can_order', 0);
     $view_all_customers = get_option('sales_view_all_customers', 0);
-    $packing_slip_show_prices = get_option('packing_slip_show_prices', 1);
     ?>
     
     <div class="page-header">
@@ -8391,17 +8390,6 @@ add_action('template_redirect', function () {
                     </span>
                 </label>
                 <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Sales agents and managers can view all customers with "customer" role, not just assigned ones</p>
-            </div>
-            
-            <div style="margin-bottom:0;padding-top:15px;border-top:1px solid #e5e7eb;">
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
-                    <input type="checkbox" name="packing_slip_show_prices" value="1" <?= checked($packing_slip_show_prices, 1, false) ?> 
-                           style="width:18px;height:18px;cursor:pointer;">
-                    <span style="font-weight:600;color:#374151;">
-                        <i class="fa-solid fa-tag"></i> Show Prices on Packing Slips
-                    </span>
-                </label>
-                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Display product prices and totals on packing slip printouts</p>
             </div>
         </div>
         
@@ -8879,6 +8867,168 @@ function b2b_register_sales_agent_settings() {
     ]);
 }
 add_action('admin_init', 'b2b_register_sales_agent_settings');
+
+// ==========================================================================
+// PACKING SLIP SETTINGS PAGE
+// ==========================================================================
+
+function b2b_page_packing_slip_settings() {
+    b2b_adm_guard();
+    
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    // Save settings if form submitted
+    if (isset($_POST['ps_save_settings']) && check_admin_referer('ps_settings_save', 'ps_settings_nonce')) {
+        update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
+        
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
+                <i class="fa-solid fa-check-circle"></i> Ayarlar başarıyla kaydedildi!
+              </div>';
+    }
+    
+    // Get current values
+    $show_prices = get_option('packing_slip_show_prices', 1);
+    
+    b2b_adm_header('Satış Fişi Ayarları');
+    ?>
+    <style>
+        .ps-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .ps-card h2 {
+            margin: 0 0 20px 0;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.25rem;
+        }
+        .ps-setting {
+            padding: 15px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .ps-setting:last-child {
+            border-bottom: none;
+        }
+        .ps-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+        .ps-label input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .ps-label-text {
+            font-weight: 600;
+            color: #374151;
+            font-size: 15px;
+        }
+        .ps-description {
+            color: #6b7280;
+            font-size: 13px;
+            margin-left: 30px;
+        }
+        .ps-btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .ps-btn:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        .ps-info-box {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border: 1px solid #3b82f6;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .ps-info-box h3 {
+            color: #1e40af;
+            margin: 0 0 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ps-info-box p {
+            color: #1e40af;
+            font-size: 13px;
+            line-height: 1.6;
+            margin: 0;
+        }
+    </style>
+    
+    <div class="content-wrapper">
+        <div class="page-header">
+            <h1 class="page-title">
+                <i class="fa-solid fa-file-invoice"></i> Satış Fişi Ayarları
+            </h1>
+            <p style="color:#6b7280;margin-top:8px;">Satış fişi çıktılarının görünüm ve içerik ayarlarını yönetin</p>
+        </div>
+        
+        <form method="post">
+            <?php wp_nonce_field('ps_settings_save', 'ps_settings_nonce'); ?>
+            
+            <div class="ps-card">
+                <h2>
+                    <i class="fa-solid fa-sliders"></i> Genel Ayarlar
+                </h2>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <input type="checkbox" name="packing_slip_show_prices" value="1" <?= checked($show_prices, 1, false) ?>>
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-tag"></i> Fiyatları Göster
+                        </span>
+                    </label>
+                    <p class="ps-description">
+                        Satış fişinde ürün fiyatları ve toplam tutarları göster. Bu seçenek kapalıysa sadece ürün adları ve miktarları görünür.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="ps-info-box">
+                <h3>
+                    <i class="fa-solid fa-info-circle"></i> Nasıl Kullanılır?
+                </h3>
+                <p>
+                    <strong>1.</strong> Sipariş listesinde yazdır <i class="fa-solid fa-print"></i> butonuna tıklayın<br>
+                    <strong>2.</strong> Satış fişi yeni sekmede açılır<br>
+                    <strong>3.</strong> "Yazdır" butonuna veya Ctrl+P tuşlarına basarak yazdırın
+                </p>
+            </div>
+            
+            <div style="margin-top:25px;">
+                <button type="submit" name="ps_save_settings" class="ps-btn">
+                    <i class="fa-solid fa-save"></i> Ayarları Kaydet
+                </button>
+            </div>
+        </form>
+    </div>
+    <?php
+    b2b_adm_footer();
+}
 
 // Render Sales Agent settings page
 function b2b_page_sales_agent_settings() {

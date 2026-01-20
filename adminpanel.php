@@ -1389,6 +1389,137 @@ add_action('wp_ajax_b2b_adm_wh_update', function(){
     wp_send_json_success(['new_state' => ($new === '1')]);
 });
 
+// D. Get Order Edit Data
+add_action('wp_ajax_b2b_adm_get_order_edit_data', function(){
+    if (!current_user_can('manage_options')) wp_die();
+    $oid = intval($_GET['order_id']);
+    $order = wc_get_order($oid);
+    if (!$order) wp_send_json_error('Order not found');
+    
+    // Billing data
+    $billing = [
+        'first_name' => $order->get_billing_first_name(),
+        'last_name' => $order->get_billing_last_name(),
+        'company' => $order->get_billing_company(),
+        'address_1' => $order->get_billing_address_1(),
+        'address_2' => $order->get_billing_address_2(),
+        'city' => $order->get_billing_city(),
+        'postcode' => $order->get_billing_postcode(),
+        'state' => $order->get_billing_state(),
+        'country' => $order->get_billing_country(),
+        'email' => $order->get_billing_email(),
+        'phone' => $order->get_billing_phone()
+    ];
+    
+    // Shipping data
+    $shipping = [
+        'first_name' => $order->get_shipping_first_name(),
+        'last_name' => $order->get_shipping_last_name(),
+        'company' => $order->get_shipping_company(),
+        'address_1' => $order->get_shipping_address_1(),
+        'address_2' => $order->get_shipping_address_2(),
+        'city' => $order->get_shipping_city(),
+        'postcode' => $order->get_shipping_postcode(),
+        'state' => $order->get_shipping_state(),
+        'country' => $order->get_shipping_country()
+    ];
+    
+    // Items
+    $items = [];
+    foreach ($order->get_items() as $item_id => $item) {
+        $product = $item->get_product();
+        $items[] = [
+            'item_id' => $item_id,
+            'name' => $item->get_name(),
+            'sku' => $product ? $product->get_sku() : '',
+            'qty' => $item->get_quantity()
+        ];
+    }
+    
+    wp_send_json_success([
+        'billing' => $billing,
+        'shipping' => $shipping,
+        'items' => $items,
+        'customer_note' => $order->get_customer_note()
+    ]);
+});
+
+// E. Save Order Changes
+add_action('wp_ajax_b2b_adm_save_order', function(){
+    if (!current_user_can('manage_options')) wp_die();
+    $oid = intval($_POST['order_id']);
+    $order = wc_get_order($oid);
+    if (!$order) wp_send_json_error('Order not found');
+    
+    // Update billing
+    if (isset($_POST['billing'])) {
+        $billing = $_POST['billing'];
+        $order->set_billing_first_name(sanitize_text_field($billing['first_name'] ?? ''));
+        $order->set_billing_last_name(sanitize_text_field($billing['last_name'] ?? ''));
+        $order->set_billing_company(sanitize_text_field($billing['company'] ?? ''));
+        $order->set_billing_address_1(sanitize_text_field($billing['address_1'] ?? ''));
+        $order->set_billing_address_2(sanitize_text_field($billing['address_2'] ?? ''));
+        $order->set_billing_city(sanitize_text_field($billing['city'] ?? ''));
+        $order->set_billing_postcode(sanitize_text_field($billing['postcode'] ?? ''));
+        $order->set_billing_state(sanitize_text_field($billing['state'] ?? ''));
+        $order->set_billing_country(sanitize_text_field($billing['country'] ?? ''));
+        $order->set_billing_email(sanitize_email($billing['email'] ?? ''));
+        $order->set_billing_phone(sanitize_text_field($billing['phone'] ?? ''));
+    }
+    
+    // Update shipping
+    if (isset($_POST['shipping'])) {
+        $shipping = $_POST['shipping'];
+        $order->set_shipping_first_name(sanitize_text_field($shipping['first_name'] ?? ''));
+        $order->set_shipping_last_name(sanitize_text_field($shipping['last_name'] ?? ''));
+        $order->set_shipping_company(sanitize_text_field($shipping['company'] ?? ''));
+        $order->set_shipping_address_1(sanitize_text_field($shipping['address_1'] ?? ''));
+        $order->set_shipping_address_2(sanitize_text_field($shipping['address_2'] ?? ''));
+        $order->set_shipping_city(sanitize_text_field($shipping['city'] ?? ''));
+        $order->set_shipping_postcode(sanitize_text_field($shipping['postcode'] ?? ''));
+        $order->set_shipping_state(sanitize_text_field($shipping['state'] ?? ''));
+        $order->set_shipping_country(sanitize_text_field($shipping['country'] ?? ''));
+    }
+    
+    // Update item quantities
+    if (isset($_POST['items']) && is_array($_POST['items'])) {
+        foreach ($_POST['items'] as $item_data) {
+            $item_id = intval($item_data['item_id']);
+            $qty = intval($item_data['qty']);
+            
+            if ($qty > 0) {
+                foreach ($order->get_items() as $order_item_id => $order_item) {
+                    if ($order_item_id == $item_id) {
+                        $order_item->set_quantity($qty);
+                        $order_item->save();
+                        break;
+                    }
+                }
+            } else {
+                // Remove item if quantity is 0
+                $order->remove_item($item_id);
+            }
+        }
+    }
+    
+    // Update customer note
+    if (isset($_POST['customer_note'])) {
+        $order->set_customer_note(sanitize_textarea_field($_POST['customer_note']));
+    }
+    
+    // Recalculate totals
+    $order->calculate_totals();
+    
+    // Save order
+    $order->save();
+    
+    // Add admin note
+    $order->add_order_note('Order details updated via B2B Admin Panel', false, true);
+    
+    wp_send_json_success();
+});
+
+
 /* =====================================================
    5. UI: HEADER & CSS
 ===================================================== */
@@ -5005,7 +5136,8 @@ add_action('template_redirect', function () {
                     </select>
                 </td>
                 <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
-                    <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px"><i class="fa-regular fa-eye"></i></button>
+                    <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px" title="View Order"><i class="fa-regular fa-eye"></i></button>
+                    <button class="secondary" onclick="editOrder(<?=$oid?>)" style="padding:6px 10px" title="Edit Order"><i class="fa-regular fa-pen-to-square"></i></button>
                     <a href="<?= home_url('/packing-slip/' . $oid) ?>" target="_blank" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Packing Slip"><i class="fa-solid fa-print"></i></a>
                     <?=$pdf_btn?>
                 </td>
@@ -5039,6 +5171,8 @@ add_action('template_redirect', function () {
     </div>
 
     <div id="ordModal" class="modal"><div class="modal-content"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3>Details</h3><span onclick="$('#ordModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="mBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div></div></div>
+    
+    <div id="editModal" class="modal"><div class="modal-content" style="max-width:900px"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3><i class="fa-solid fa-pen-to-square"></i> Edit Order</h3><span onclick="$('#editModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="editBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div><div style="padding:15px;border-top:1px solid #eee;text-align:right"><button class="button secondary" onclick="$('#editModal').hide()">Cancel</button> <button class="button primary" onclick="saveOrderChanges()" style="background:#10b981;color:white;margin-left:10px"><i class="fa-solid fa-save"></i> Save Changes</button></div></div></div>
 
     <script>
     var ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
@@ -5092,7 +5226,152 @@ add_action('template_redirect', function () {
             }
         });
     }
-    $(window).click(function(e){if(e.target.id=='ordModal')$('#ordModal').hide();});
+    
+    // Edit Modal
+    var currentEditOrder = null;
+    function editOrder(id) {
+        currentEditOrder = id;
+        $('#editModal').css('display','flex'); $('#editBody').html('Loading...');
+        $.get(ajaxUrl, {action:'b2b_adm_get_order_edit_data', order_id:id}, function(r){
+            if(r.success) {
+                var d = r.data;
+                var h = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                        <!-- Left Column -->
+                        <div>
+                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
+                                <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-user"></i> Billing Address</h4>
+                                <div style="display:grid;gap:12px">
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">First Name</label><input type="text" id="billing_first_name" value="${d.billing.first_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Last Name</label><input type="text" id="billing_last_name" value="${d.billing.last_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Company</label><input type="text" id="billing_company" value="${d.billing.company}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 1</label><input type="text" id="billing_address_1" value="${d.billing.address_1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 2</label><input type="text" id="billing_address_2" value="${d.billing.address_2}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">City</label><input type="text" id="billing_city" value="${d.billing.city}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Postcode</label><input type="text" id="billing_postcode" value="${d.billing.postcode}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    </div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">State</label><input type="text" id="billing_state" value="${d.billing.state}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Country</label><input type="text" id="billing_country" value="${d.billing.country}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Email</label><input type="email" id="billing_email" value="${d.billing.email}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Phone</label><input type="text" id="billing_phone" value="${d.billing.phone}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Right Column -->
+                        <div>
+                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
+                                <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-truck"></i> Shipping Address</h4>
+                                <div style="margin-bottom:10px"><button class="button secondary" onclick="copyBillingToShipping()" style="font-size:12px;padding:6px 12px"><i class="fa-solid fa-copy"></i> Copy from Billing</button></div>
+                                <div style="display:grid;gap:12px">
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">First Name</label><input type="text" id="shipping_first_name" value="${d.shipping.first_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Last Name</label><input type="text" id="shipping_last_name" value="${d.shipping.last_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Company</label><input type="text" id="shipping_company" value="${d.shipping.company}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 1</label><input type="text" id="shipping_address_1" value="${d.shipping.address_1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 2</label><input type="text" id="shipping_address_2" value="${d.shipping.address_2}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">City</label><input type="text" id="shipping_city" value="${d.shipping.city}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Postcode</label><input type="text" id="shipping_postcode" value="${d.shipping.postcode}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    </div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">State</label><input type="text" id="shipping_state" value="${d.shipping.state}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Country</label><input type="text" id="shipping_country" value="${d.shipping.country}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Order Items -->
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
+                        <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-box"></i> Order Items</h4>
+                        <table style="width:100%;border-collapse:collapse" id="orderItemsTable">
+                            <thead><tr style="background:#e2e8f0"><th style="padding:10px;text-align:left">Product</th><th style="padding:10px;text-align:center;width:100px">Quantity</th><th style="padding:10px;text-align:center;width:80px">Actions</th></tr></thead>
+                            <tbody>${d.items.map((item,idx)=>`<tr style="border-bottom:1px solid #e2e8f0" data-item-id="${item.item_id}"><td style="padding:10px">${item.name}<br><small style="color:#6b7280">${item.sku}</small></td><td style="padding:10px;text-align:center"><input type="number" min="1" value="${item.qty}" data-item-id="${item.item_id}" class="item-qty" style="width:70px;padding:6px;border:1px solid #d1d5db;border-radius:4px;text-align:center"/></td><td style="padding:10px;text-align:center"><button class="button secondary" onclick="removeOrderItem(${item.item_id})" style="padding:6px 10px;font-size:12px;background:#ef4444;color:white"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('')}</tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Customer Note -->
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px">
+                        <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-note-sticky"></i> Customer Note</h4>
+                        <textarea id="customer_note" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;min-height:80px">${d.customer_note}</textarea>
+                    </div>
+                `;
+                $('#editBody').html(h);
+            }
+        });
+    }
+    
+    function copyBillingToShipping() {
+        $('#shipping_first_name').val($('#billing_first_name').val());
+        $('#shipping_last_name').val($('#billing_last_name').val());
+        $('#shipping_company').val($('#billing_company').val());
+        $('#shipping_address_1').val($('#billing_address_1').val());
+        $('#shipping_address_2').val($('#billing_address_2').val());
+        $('#shipping_city').val($('#billing_city').val());
+        $('#shipping_postcode').val($('#billing_postcode').val());
+        $('#shipping_state').val($('#billing_state').val());
+        $('#shipping_country').val($('#billing_country').val());
+    }
+    
+    function removeOrderItem(itemId) {
+        if(!confirm('Are you sure you want to remove this item?')) return;
+        $('tr[data-item-id="'+itemId+'"]').fadeOut(300, function(){ $(this).remove(); });
+    }
+    
+    function saveOrderChanges() {
+        if(!confirm('Save all changes to this order?')) return;
+        
+        // Collect all data
+        var data = {
+            action: 'b2b_adm_save_order',
+            order_id: currentEditOrder,
+            billing: {
+                first_name: $('#billing_first_name').val(),
+                last_name: $('#billing_last_name').val(),
+                company: $('#billing_company').val(),
+                address_1: $('#billing_address_1').val(),
+                address_2: $('#billing_address_2').val(),
+                city: $('#billing_city').val(),
+                postcode: $('#billing_postcode').val(),
+                state: $('#billing_state').val(),
+                country: $('#billing_country').val(),
+                email: $('#billing_email').val(),
+                phone: $('#billing_phone').val()
+            },
+            shipping: {
+                first_name: $('#shipping_first_name').val(),
+                last_name: $('#shipping_last_name').val(),
+                company: $('#shipping_company').val(),
+                address_1: $('#shipping_address_1').val(),
+                address_2: $('#shipping_address_2').val(),
+                city: $('#shipping_city').val(),
+                postcode: $('#shipping_postcode').val(),
+                state: $('#shipping_state').val(),
+                country: $('#shipping_country').val()
+            },
+            items: [],
+            customer_note: $('#customer_note').val()
+        };
+        
+        // Collect item quantities
+        $('.item-qty').each(function(){
+            data.items.push({
+                item_id: $(this).data('item-id'),
+                qty: $(this).val()
+            });
+        });
+        
+        $.post(ajaxUrl, data, function(r){
+            if(r.success) {
+                alert('Order updated successfully!');
+                $('#editModal').hide();
+                location.reload();
+            } else {
+                alert('Error: ' + (r.data || 'Unknown error'));
+            }
+        });
+    }
+    
+    $(window).click(function(e){if(e.target.id=='ordModal')$('#ordModal').hide();if(e.target.id=='editModal')$('#editModal').hide();});
     </script>
     <?php b2b_adm_footer(); exit;
 });

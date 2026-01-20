@@ -5384,7 +5384,7 @@ add_action('template_redirect', function () {
     if (get_query_var('b2b_adm_page') !== 'order_edit') return;
     b2b_adm_guard();
     
-    $order_id = intval($_GET['id'] ?? 0);
+    $order_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
     if (!$order_id) wp_die('Order ID is required');
     
     $order = wc_get_order($order_id);
@@ -5532,7 +5532,7 @@ add_action('template_redirect', function () {
                             <?php foreach ($items as $item_id => $item): 
                                 $product = $item->get_product();
                                 $item_total = $item->get_total();
-                                $item_price = $item->get_total() / max(1, $item->get_quantity());
+                                $item_price = $item->get_subtotal() / max(1, $item->get_quantity());
                             ?>
                             <tr style="border-bottom:1px solid #e5e7eb">
                                 <td style="padding:15px">
@@ -5728,15 +5728,11 @@ add_action('template_redirect', function () {
     
     <script>
     function copyBillingToShipping() {
-        document.getElementById('shipping_first_name').value = document.querySelector('input[name="billing[first_name]"]').value;
-        document.getElementById('shipping_last_name').value = document.querySelector('input[name="billing[last_name]"]').value;
-        document.getElementById('shipping_company').value = document.querySelector('input[name="billing[company]"]').value;
-        document.getElementById('shipping_address_1').value = document.querySelector('input[name="billing[address_1]"]').value;
-        document.getElementById('shipping_address_2').value = document.querySelector('input[name="billing[address_2]"]').value;
-        document.getElementById('shipping_city').value = document.querySelector('input[name="billing[city]"]').value;
-        document.getElementById('shipping_postcode').value = document.querySelector('input[name="billing[postcode]"]').value;
-        document.getElementById('shipping_state').value = document.querySelector('input[name="billing[state]"]').value;
-        document.getElementById('shipping_country').value = document.querySelector('input[name="billing[country]"]').value;
+        const fields = ['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'postcode', 'state', 'country'];
+        fields.forEach(field => {
+            const billingValue = document.querySelector(`input[name="billing[${field}]"]`).value;
+            document.getElementById(`shipping_${field}`).value = billingValue;
+        });
     }
     </script>
     

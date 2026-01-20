@@ -889,9 +889,7 @@ function b2b_pro_admin_menu() {
     add_submenu_page('b2b-panel', 'Genel Ayarlar', 'Genel Ayarlar', 'manage_options', 'b2b-settings', 'b2b_page_settings');
     add_submenu_page('b2b-panel', 'Form Düzenleyici', 'Form Düzenleyici', 'manage_options', 'b2b-form-editor', 'b2b_page_form_editor');
     add_submenu_page('b2b-panel', 'Sales Agent', 'Sales Agent', 'manage_options', 'b2b-sales-agent', 'b2b_page_sales_agent_settings');
-    
-    // Add Packing Slip Settings under WordPress Settings menu
-    add_options_page('Packing Slip Settings', 'Packing Slip', 'manage_options', 'packing-slip-settings', 'b2b_page_packing_slip_settings');
+    add_submenu_page('b2b-panel', 'Packing Slip Settings', 'Packing Slip Settings', 'manage_options', 'b2b-packing-slip-settings', 'b2b_page_packing_slip_settings');
 }
 add_action('admin_menu', 'b2b_pro_admin_menu');
 

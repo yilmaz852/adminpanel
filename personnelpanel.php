@@ -340,6 +340,251 @@ function b2b_personnel_list_page() {
     b2b_adm_header('Personnel Management');
     ?>
     
+    <style>
+        /* Personnel Panel Specific Styles */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .search-filters {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .search-box {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            min-width: 250px;
+        }
+        
+        .filter-select {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .add-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.875rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .add-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-edit {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-edit:hover {
+            background: #2563eb;
+        }
+        
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+        
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #059669;
+        }
+        
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        /* Button Color Variants */
+        .add-btn i,
+        .btn i {
+            margin-right: 0.375rem;
+        }
+        
+        .add-btn.btn-success,
+        .btn-success {
+            background: #10b981;
+        }
+        
+        .add-btn.btn-success:hover,
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .add-btn.btn-purple,
+        .btn-purple {
+            background: #8b5cf6;
+        }
+        
+        .add-btn.btn-purple:hover,
+        .btn-purple:hover {
+            background: #7c3aed;
+        }
+        
+        .add-btn.btn-indigo,
+        .btn-indigo {
+            background: #6366f1;
+        }
+        
+        .add-btn.btn-indigo:hover,
+        .btn-indigo:hover {
+            background: #4f46e5;
+        }
+        
+        .add-btn.btn-amber,
+        .btn-amber {
+            background: #f59e0b;
+        }
+        
+        .add-btn.btn-amber:hover,
+        .btn-amber:hover {
+            background: #d97706;
+        }
+        
+        .add-btn.btn-cyan,
+        .btn-cyan {
+            background: #0ea5e9;
+        }
+        
+        .add-btn.btn-cyan:hover,
+        .btn-cyan:hover {
+            background: #0284c7;
+        }
+        
+        .add-btn.btn-teal,
+        .btn-teal {
+            background: #14b8a6;
+        }
+        
+        .add-btn.btn-teal:hover,
+        .btn-teal:hover {
+            background: #0d9488;
+        }
+        
+        .add-btn.btn-gray,
+        .btn-gray {
+            background: #6b7280;
+        }
+        
+        .add-btn.btn-gray:hover,
+        .btn-gray:hover {
+            background: #4b5563;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #6b7280;
+        }
+        
+        .empty-state i {
+            font-size: 4rem;
+            color: #d1d5db;
+            margin-bottom: 1rem;
+        }
+        
+        .empty-state p {
+            font-size: 1.125rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        @media (max-width: 768px) {
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-filters {
+                flex-direction: column;
+            }
+            
+            .search-box {
+                min-width: 100%;
+            }
+        }
+    </style>
+    
     <div class="page-header">
         <h1 class="page-title"><i class="fas fa-users"></i> Personnel Management</h1>
     </div>
@@ -356,28 +601,30 @@ function b2b_personnel_list_page() {
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <button type="submit" class="btn btn-edit"><i class="fas fa-search"></i> Search</button>
+                    <button type="submit" class="btn btn-edit">
+                        <i class="fas fa-search"></i> Search
+                    </button>
                 </form>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <a href="<?= home_url('/personnel-panel/attendance') ?>" class="add-btn" style="background: #f59e0b; color: white;">
+                    <a href="<?= home_url('/personnel-panel/attendance') ?>" class="add-btn btn-amber">
                         <i class="fas fa-clock"></i> Attendance
                     </a>
-                    <a href="<?= home_url('/personnel-panel/leave-calendar') ?>" class="add-btn" style="background: #0ea5e9; color: white;">
+                    <a href="<?= home_url('/personnel-panel/leave-calendar') ?>" class="add-btn btn-cyan">
                         <i class="fas fa-calendar-alt"></i> Leave Calendar
                     </a>
-                    <a href="<?= home_url('/personnel-panel/leave-approvals') ?>" class="add-btn" style="background: #14b8a6; color: white;">
+                    <a href="<?= home_url('/personnel-panel/leave-approvals') ?>" class="add-btn btn-teal">
                         <i class="fas fa-check-circle"></i> Leave Approvals
                     </a>
-                    <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="add-btn" style="background: #10b981; color: white;">
+                    <a href="<?= home_url('/personnel-panel/payroll-payments') ?>" class="add-btn btn-success">
                         <i class="fas fa-money-check-alt"></i> Payroll Payments
                     </a>
-                    <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn" style="background: #8b5cf6; color: white;">
+                    <a href="<?= home_url('/personnel-panel/activity') ?>" class="add-btn btn-purple">
                         <i class="fas fa-history"></i> Activity Log
                     </a>
-                    <a href="<?= home_url('/personnel-panel/export') ?>" class="add-btn" style="background: #10b981; color: white;">
+                    <a href="<?= home_url('/personnel-panel/export') ?>" class="add-btn btn-success">
                         <i class="fas fa-file-csv"></i> Export CSV
                     </a>
-                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn" style="background: #6366f1; color: white;">
+                    <a href="<?= home_url('/personnel-panel/departments') ?>" class="add-btn btn-indigo">
                         <i class="fas fa-building"></i> Departments
                     </a>
                     <a href="<?= home_url('/personnel-panel/add') ?>" class="add-btn">
@@ -478,23 +725,23 @@ function b2b_personnel_list_page() {
                                     <td><?= $maas ? '$' . number_format($maas, 0, '.', ',') : '-' ?></td>
                                     <td><?= $baslangic ? date('m/d/Y', strtotime($baslangic)) : '-' ?></td>
                                     <td>
-                                        <div class="actions" style="display:flex;gap:5px;flex-wrap:wrap;">
-                                            <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" class="btn btn-edit" style="background:#6366f1; color:white;" title="View Details">
+                                        <div class="actions">
+                                            <a href="<?= home_url('/personnel-panel/view/' . $id) ?>" class="btn btn-indigo" title="View Details">
                                                 <i class="fas fa-eye"></i>
                                             </a>
                                             <a href="<?= home_url('/personnel-panel/edit/' . $id) ?>" class="btn btn-edit" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/clock-in-form/' . $id) ?>" class="btn btn-edit" style="background:#10b981; color:white;" title="Clock In">
+                                            <a href="<?= home_url('/personnel-panel/clock-in-form/' . $id) ?>" class="btn btn-success" title="Clock In">
                                                 <i class="fas fa-sign-in-alt"></i>
                                             </a>
                                             <a href="<?= home_url('/personnel-panel/clock-out-form/' . $id) ?>" class="btn btn-delete" title="Clock Out">
                                                 <i class="fas fa-sign-out-alt"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/request-leave/' . $id) ?>" class="btn btn-edit" style="background:#0ea5e9; color:white;" title="Request Leave">
+                                            <a href="<?= home_url('/personnel-panel/request-leave/' . $id) ?>" class="btn btn-cyan" title="Request Leave">
                                                 <i class="fas fa-calendar-check"></i>
                                             </a>
-                                            <a href="<?= home_url('/personnel-panel/add-payment/' . $id) ?>" class="btn btn-edit" style="background:#10b981; color:white;" title="Add Payment">
+                                            <a href="<?= home_url('/personnel-panel/add-payment/' . $id) ?>" class="btn btn-success" title="Add Payment">
                                                 <i class="fas fa-dollar-sign"></i>
                                             </a>
                                         </div>
@@ -953,6 +1200,9 @@ function b2b_personnel_form_page($personnel_id = 0) {
     
     <div class="page-header">
         <h1 class="page-title"><i class="fas fa-user-plus"></i> <?= $is_edit ? 'Edit Personnel' : 'Add New Personnel' ?></h1>
+        <a href="<?= home_url('/personnel-panel') ?>" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 0.875rem;">
+            <i class="fas fa-arrow-left"></i> Back to List
+        </a>
     </div>
     
     <div class="card">
@@ -1703,22 +1953,22 @@ function b2b_personnel_view_page() {
                 <div>
                     <h1 style="margin:0 0 5px 0;font-size:28px;color:#111827;"><?= esc_html($person->post_title) ?></h1>
                     <p style="margin:0 0 10px 0;color:#6b7280;"><?= esc_html($gorev) ?> • <?= esc_html($dept_name) ?></p>
-                    <a href="<?= home_url('/personnel-panel/upload-photo/' . $personnel_id) ?>" class="add-btn" style="background:#8b5cf6;font-size:13px;padding:6px 12px;">
+                    <a href="<?= home_url('/personnel-panel/upload-photo/' . $personnel_id) ?>" class="add-btn btn-purple" style="font-size:13px;padding:6px 12px;">
                         <i class="fas fa-camera"></i> <?= $photo_url ? 'Change Photo' : 'Upload Photo' ?>
                     </a>
                 </div>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                <a href="<?= home_url('/personnel-panel/metrics/' . $personnel_id) ?>" class="add-btn" style="background:#10b981;">
+                <a href="<?= home_url('/personnel-panel/metrics/' . $personnel_id) ?>" class="add-btn btn-success">
                     <i class="fas fa-chart-line"></i> Metrics
                 </a>
-                <a href="<?= home_url('/personnel-panel/enhanced-audit/' . $personnel_id) ?>" class="add-btn" style="background:#8b5cf6;">
+                <a href="<?= home_url('/personnel-panel/enhanced-audit/' . $personnel_id) ?>" class="add-btn btn-purple">
                     <i class="fas fa-history"></i> Audit Log
                 </a>
-                <a href="<?= home_url('/personnel-panel/edit/' . $personnel_id) ?>" class="add-btn" style="background:#6366f1;">
+                <a href="<?= home_url('/personnel-panel/edit/' . $personnel_id) ?>" class="add-btn btn-indigo">
                     <i class="fas fa-edit"></i> Edit
                 </a>
-                <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
+                <a href="<?= home_url('/personnel-panel') ?>" class="add-btn btn-gray">
                     <i class="fas fa-arrow-left"></i> Back to List
                 </a>
             </div>
@@ -2549,10 +2799,10 @@ function b2b_personnel_attendance_page() {
         <div class="content-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
             <h1 style="margin:0;font-size:28px;color:#111827;">Attendance Dashboard</h1>
             <div style="display:flex;gap:10px;">
-                <a href="<?= home_url('/personnel-panel/reports') ?>" class="add-btn" style="background:#8b5cf6;">
+                <a href="<?= home_url('/personnel-panel/reports') ?>" class="add-btn btn-purple">
                     <i class="fas fa-chart-bar"></i> Reports
                 </a>
-                <a href="<?= home_url('/personnel-panel') ?>" class="add-btn" style="background:#6b7280;">
+                <a href="<?= home_url('/personnel-panel') ?>" class="add-btn btn-gray">
                     <i class="fas fa-arrow-left"></i> Back to Personnel
                 </a>
             </div>
@@ -2565,8 +2815,12 @@ function b2b_personnel_attendance_page() {
                     <label style="display:block;margin-bottom:5px;font-weight:600;color:#374151;">Select Date</label>
                     <input type="date" name="date" value="<?= esc_attr($selected_date) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;">
                 </div>
-                <button type="submit" class="add-btn">View Attendance</button>
-                <a href="?date=<?= date('Y-m-d') ?>" class="add-btn" style="background:#6b7280;">Today</a>
+                <button type="submit" class="add-btn">
+                    <i class="fas fa-search"></i> View Attendance
+                </button>
+                <a href="?date=<?= date('Y-m-d') ?>" class="add-btn btn-gray">
+                    <i class="fas fa-calendar-day"></i> Today
+                </a>
             </form>
         </div>
 
@@ -4313,8 +4567,12 @@ function b2b_personnel_print_view() {
         </div>
 
         <div class="no-print">
-            <button onclick="window.print()">Print This Page</button>
-            <button onclick="window.close()" style="background:#6b7280;">Close</button>
+            <button onclick="window.print()" class="add-btn btn-success">
+                <i class="fas fa-print"></i> Print This Page
+            </button>
+            <button onclick="window.close()" class="add-btn btn-gray">
+                <i class="fas fa-times"></i> Close
+            </button>
         </div>
     <?php
     b2b_adm_footer();

@@ -889,6 +889,7 @@ function b2b_pro_admin_menu() {
     add_submenu_page('b2b-panel', 'Genel Ayarlar', 'Genel Ayarlar', 'manage_options', 'b2b-settings', 'b2b_page_settings');
     add_submenu_page('b2b-panel', 'Form Düzenleyici', 'Form Düzenleyici', 'manage_options', 'b2b-form-editor', 'b2b_page_form_editor');
     add_submenu_page('b2b-panel', 'Sales Agent', 'Sales Agent', 'manage_options', 'b2b-sales-agent', 'b2b_page_sales_agent_settings');
+    add_submenu_page('b2b-settings', 'Packing Slip Settings', 'Packing Slip Settings', 'manage_options', 'b2b-packing-slip-settings', 'b2b_page_packing_slip_settings');
 }
 add_action('admin_menu', 'b2b_pro_admin_menu');
 
@@ -1876,6 +1877,162 @@ function b2b_adm_header($title) {
             /* Messaging mobile styles */
             .messaging-container{grid-template-columns:1fr !important;gap:12px !important}
             .messaging-groups,.messaging-chat{height:auto !important;min-height:400px}
+        }
+        
+        /* Personnel Panel Button Styles - Global */
+        .add-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.875rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .add-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .add-btn i,
+        .btn i {
+            margin-right: 0.375rem;
+        }
+        
+        .add-btn.btn-success,
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .add-btn.btn-success:hover,
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .add-btn.btn-purple,
+        .btn-purple {
+            background: #8b5cf6;
+            color: white;
+        }
+        
+        .add-btn.btn-purple:hover,
+        .btn-purple:hover {
+            background: #7c3aed;
+        }
+        
+        .add-btn.btn-indigo,
+        .btn-indigo {
+            background: #6366f1;
+            color: white;
+        }
+        
+        .add-btn.btn-indigo:hover,
+        .btn-indigo:hover {
+            background: #4f46e5;
+        }
+        
+        .add-btn.btn-amber,
+        .btn-amber {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .add-btn.btn-amber:hover,
+        .btn-amber:hover {
+            background: #d97706;
+        }
+        
+        .add-btn.btn-cyan,
+        .btn-cyan {
+            background: #0ea5e9;
+            color: white;
+        }
+        
+        .add-btn.btn-cyan:hover,
+        .btn-cyan:hover {
+            background: #0284c7;
+        }
+        
+        .add-btn.btn-teal,
+        .btn-teal {
+            background: #14b8a6;
+            color: white;
+        }
+        
+        .add-btn.btn-teal:hover,
+        .btn-teal:hover {
+            background: #0d9488;
+        }
+        
+        .add-btn.btn-gray,
+        .btn-gray {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .add-btn.btn-gray:hover,
+        .btn-gray:hover {
+            background: #4b5563;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: white;
+        }
+        
+        .btn-edit {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-edit:hover {
+            background: #2563eb;
+        }
+        
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+        
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #059669;
+        }
+        
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #4b5563;
         }
     </style>
     </head>
@@ -3594,56 +3751,109 @@ add_action('template_redirect', function () {
             $start_date = date('Y-m-d 00:00:00', strtotime('-30 days'));
     }
     
-    // Sales Reports Query
-    $sales_query = $wpdb->prepare("
-        SELECT 
-            COUNT(DISTINCT p.ID) as order_count,
-            SUM(pm.meta_value) as total_sales,
-            AVG(pm.meta_value) as avg_order_value
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-        WHERE p.post_type = 'shop_order'
-        AND p.post_status = 'wc-completed'
-        AND pm.meta_key = '_order_total'
-        AND p.post_date BETWEEN %s AND %s
-    ", $start_date, $end_date);
+    // Check if WooCommerce is using HPOS
+    $hpos_enabled = class_exists('Automattic\WooCommerce\Utilities\OrderUtil') && 
+                     method_exists('Automattic\WooCommerce\Utilities\OrderUtil', 'custom_orders_table_usage_is_enabled') &&
+                     \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+    
+    // Sales Reports Query - Support both HPOS and legacy
+    if ($hpos_enabled) {
+        // Use HPOS tables
+        $sales_query = $wpdb->prepare("
+            SELECT 
+                COUNT(DISTINCT o.id) as order_count,
+                SUM(o.total_amount) as total_sales,
+                AVG(o.total_amount) as avg_order_value
+            FROM {$wpdb->prefix}wc_orders o
+            WHERE o.type = 'shop_order'
+            AND o.status = 'wc-completed'
+            AND o.date_created_gmt BETWEEN %s AND %s
+        ", $start_date, $end_date);
+    } else {
+        // Use legacy post tables
+        $sales_query = $wpdb->prepare("
+            SELECT 
+                COUNT(DISTINCT p.ID) as order_count,
+                SUM(pm.meta_value) as total_sales,
+                AVG(pm.meta_value) as avg_order_value
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status = 'wc-completed'
+            AND pm.meta_key = '_order_total'
+            AND p.post_date BETWEEN %s AND %s
+        ", $start_date, $end_date);
+    }
     
     $sales_data = $wpdb->get_row($sales_query);
     
     // Daily sales breakdown
-    $daily_sales = $wpdb->get_results($wpdb->prepare("
-        SELECT 
-            DATE(p.post_date) as date,
-            COUNT(DISTINCT p.ID) as orders,
-            SUM(pm.meta_value) as revenue
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-        WHERE p.post_type = 'shop_order'
-        AND p.post_status = 'wc-completed'
-        AND pm.meta_key = '_order_total'
-        AND p.post_date BETWEEN %s AND %s
-        GROUP BY DATE(p.post_date)
-        ORDER BY date DESC
-        LIMIT 30
-    ", $start_date, $end_date));
+    if ($hpos_enabled) {
+        $daily_sales = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                DATE(o.date_created_gmt) as date,
+                COUNT(DISTINCT o.id) as orders,
+                SUM(o.total_amount) as revenue
+            FROM {$wpdb->prefix}wc_orders o
+            WHERE o.type = 'shop_order'
+            AND o.status = 'wc-completed'
+            AND o.date_created_gmt BETWEEN %s AND %s
+            GROUP BY DATE(o.date_created_gmt)
+            ORDER BY date DESC
+            LIMIT 30
+        ", $start_date, $end_date));
+    } else {
+        $daily_sales = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                DATE(p.post_date) as date,
+                COUNT(DISTINCT p.ID) as orders,
+                SUM(pm.meta_value) as revenue
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status = 'wc-completed'
+            AND pm.meta_key = '_order_total'
+            AND p.post_date BETWEEN %s AND %s
+            GROUP BY DATE(p.post_date)
+            ORDER BY date DESC
+            LIMIT 30
+        ", $start_date, $end_date));
+    }
     
     // Top Customers Query
-    $top_customers = $wpdb->get_results($wpdb->prepare("
-        SELECT 
-            pm_customer.meta_value as customer_id,
-            COUNT(DISTINCT p.ID) as order_count,
-            SUM(pm_total.meta_value) as total_spent
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
-        INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
-        WHERE p.post_type = 'shop_order'
-        AND p.post_status = 'wc-completed'
-        AND p.post_date BETWEEN %s AND %s
-        AND pm_customer.meta_value > 0
-        GROUP BY pm_customer.meta_value
-        ORDER BY total_spent DESC
-        LIMIT 10
-    ", $start_date, $end_date));
+    if ($hpos_enabled) {
+        $top_customers = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                o.customer_id,
+                COUNT(DISTINCT o.id) as order_count,
+                SUM(o.total_amount) as total_spent
+            FROM {$wpdb->prefix}wc_orders o
+            WHERE o.type = 'shop_order'
+            AND o.status = 'wc-completed'
+            AND o.date_created_gmt BETWEEN %s AND %s
+            AND o.customer_id > 0
+            GROUP BY o.customer_id
+            ORDER BY total_spent DESC
+            LIMIT 10
+        ", $start_date, $end_date));
+    } else {
+        $top_customers = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                pm_customer.meta_value as customer_id,
+                COUNT(DISTINCT p.ID) as order_count,
+                SUM(pm_total.meta_value) as total_spent
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+            INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status = 'wc-completed'
+            AND p.post_date BETWEEN %s AND %s
+            AND pm_customer.meta_value > 0
+            GROUP BY pm_customer.meta_value
+            ORDER BY total_spent DESC
+            LIMIT 10
+        ", $start_date, $end_date));
+    }
     
     // B2B Group Analysis
     $b2b_groups = b2b_get_groups();
@@ -3658,18 +3868,32 @@ add_action('template_redirect', function () {
         
         if(!empty($users_in_group)) {
             $user_ids = implode(',', $users_in_group);
-            $group_data = $wpdb->get_row($wpdb->prepare("
-                SELECT 
-                    COUNT(DISTINCT p.ID) as order_count,
-                    SUM(pm_total.meta_value) as total_sales
-                FROM {$wpdb->posts} p
-                INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
-                INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
-                WHERE p.post_type = 'shop_order'
-                AND p.post_status = 'wc-completed'
-                AND p.post_date BETWEEN %s AND %s
-                AND pm_customer.meta_value IN ($user_ids)
-            ", $start_date, $end_date));
+            
+            if ($hpos_enabled) {
+                $group_data = $wpdb->get_row($wpdb->prepare("
+                    SELECT 
+                        COUNT(DISTINCT o.id) as order_count,
+                        SUM(o.total_amount) as total_sales
+                    FROM {$wpdb->prefix}wc_orders o
+                    WHERE o.type = 'shop_order'
+                    AND o.status = 'wc-completed'
+                    AND o.date_created_gmt BETWEEN %s AND %s
+                    AND o.customer_id IN ($user_ids)
+                ", $start_date, $end_date));
+            } else {
+                $group_data = $wpdb->get_row($wpdb->prepare("
+                    SELECT 
+                        COUNT(DISTINCT p.ID) as order_count,
+                        SUM(pm_total.meta_value) as total_sales
+                    FROM {$wpdb->posts} p
+                    INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id AND pm_total.meta_key = '_order_total'
+                    INNER JOIN {$wpdb->postmeta} pm_customer ON p.ID = pm_customer.post_id AND pm_customer.meta_key = '_customer_user'
+                    WHERE p.post_type = 'shop_order'
+                    AND p.post_status = 'wc-completed'
+                    AND p.post_date BETWEEN %s AND %s
+                    AND pm_customer.meta_value IN ($user_ids)
+                ", $start_date, $end_date));
+            }
             
             $group_sales[] = [
                 'name' => $group['name'],
@@ -7628,7 +7852,7 @@ add_action('template_redirect', function () {
                         <tr style="<?= $edit_slug == $slug ? 'background:#fef3c7;' : '' ?>">
                             <td><strong><?= esc_html($data['name']) ?></strong></td>
                             <td><span style="background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;">%<?= $data['discount'] ?></span></td>
-                            <td><?= wc_price($data['min_order']) ?></td>
+                            <td><?= wc_price($data['min_order'] ?? 0) ?></td>
                             <td><?= $count ?></td>
                             <td style="text-align:right;">
                                 <a href="?b2b_adm_page=b2b_groups&edit=<?= urlencode($slug) ?>">
@@ -8643,6 +8867,168 @@ function b2b_register_sales_agent_settings() {
     ]);
 }
 add_action('admin_init', 'b2b_register_sales_agent_settings');
+
+// ==========================================================================
+// PACKING SLIP SETTINGS PAGE
+// ==========================================================================
+
+function b2b_page_packing_slip_settings() {
+    b2b_adm_guard();
+    
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    // Save settings if form submitted
+    if (isset($_POST['ps_save_settings']) && check_admin_referer('ps_settings_save', 'ps_settings_nonce')) {
+        update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
+        
+        echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
+                <i class="fa-solid fa-check-circle"></i> Settings saved successfully!
+              </div>';
+    }
+    
+    // Get current values
+    $show_prices = get_option('packing_slip_show_prices', 1);
+    
+    b2b_adm_header('Packing Slip Settings');
+    ?>
+    <style>
+        .ps-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .ps-card h2 {
+            margin: 0 0 20px 0;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.25rem;
+        }
+        .ps-setting {
+            padding: 15px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .ps-setting:last-child {
+            border-bottom: none;
+        }
+        .ps-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+        .ps-label input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .ps-label-text {
+            font-weight: 600;
+            color: #374151;
+            font-size: 15px;
+        }
+        .ps-description {
+            color: #6b7280;
+            font-size: 13px;
+            margin-left: 30px;
+        }
+        .ps-btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .ps-btn:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        .ps-info-box {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border: 1px solid #3b82f6;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .ps-info-box h3 {
+            color: #1e40af;
+            margin: 0 0 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ps-info-box p {
+            color: #1e40af;
+            font-size: 13px;
+            line-height: 1.6;
+            margin: 0;
+        }
+    </style>
+    
+    <div class="content-wrapper">
+        <div class="page-header">
+            <h1 class="page-title">
+                <i class="fa-solid fa-file-invoice"></i> Packing Slip Settings
+            </h1>
+            <p style="color:#6b7280;margin-top:8px;">Manage packing slip appearance and content settings</p>
+        </div>
+        
+        <form method="post">
+            <?php wp_nonce_field('ps_settings_save', 'ps_settings_nonce'); ?>
+            
+            <div class="ps-card">
+                <h2>
+                    <i class="fa-solid fa-sliders"></i> General Settings
+                </h2>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <input type="checkbox" name="packing_slip_show_prices" value="1" <?= checked($show_prices, 1, false) ?>>
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-tag"></i> Show Prices
+                        </span>
+                    </label>
+                    <p class="ps-description">
+                        Display product prices and totals on the packing slip. When disabled, only product names and quantities are visible.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="ps-info-box">
+                <h3>
+                    <i class="fa-solid fa-info-circle"></i> How to Use
+                </h3>
+                <p>
+                    <strong>1.</strong> Click the print <i class="fa-solid fa-print"></i> button in the orders list<br>
+                    <strong>2.</strong> The packing slip opens in a new tab<br>
+                    <strong>3.</strong> Click "Print" button or press Ctrl+P to print
+                </p>
+            </div>
+            
+            <div style="margin-top:25px;">
+                <button type="submit" name="ps_save_settings" class="ps-btn">
+                    <i class="fa-solid fa-save"></i> Save Settings
+                </button>
+            </div>
+        </form>
+    </div>
+    <?php
+    b2b_adm_footer();
+}
 
 // Render Sales Agent settings page
 function b2b_page_sales_agent_settings() {
@@ -11298,9 +11684,10 @@ add_action('init', function () {
     add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
     add_rewrite_rule('^sales-panel/messaging/?$', 'index.php?sales_panel=messaging', 'top');
     add_rewrite_rule('^sales-panel/notes/?$', 'index.php?sales_panel=notes', 'top');
+    add_rewrite_rule('^packing-slip/([0-9]+)/?$', 'index.php?packing_slip_order_id=$matches[1]', 'top');
 
     // Flush rewrite rules and refresh capabilities once
-    if (!get_option('sales_agent_flush_v3_messaging')) {
+    if (!get_option('sales_agent_flush_v4_packing_slip')) {
         flush_rewrite_rules();
         
         // Force refresh of role capabilities
@@ -11319,7 +11706,8 @@ add_action('init', function () {
             }
         }
         
-        update_option('sales_agent_flush_v3_messaging', true);
+        update_option('sales_agent_flush_v4_packing_slip', true);
+        delete_option('sales_agent_flush_v3_messaging'); // Clean up old marker
         delete_option('sales_agent_flush_v2'); // Clean up old marker
         delete_option('sales_agent_flush_v1'); // Clean up old marker
     }
@@ -11330,11 +11718,19 @@ add_filter('query_vars', function ($vars) {
     $vars[] = 'sales_login';
     $vars[] = 'sales_panel';
     $vars[] = 'customer_id';
+    $vars[] = 'packing_slip_order_id';
     return $vars;
 }, 20);
 
 // Role-based redirect logic
 add_action('template_redirect', function () {
+    // Check if accessing packing slip
+    $packing_slip_order_id = get_query_var('packing_slip_order_id');
+    if ($packing_slip_order_id) {
+        sa_render_packing_slip($packing_slip_order_id);
+        exit;
+    }
+    
     $sales_login = get_query_var('sales_login');
     $sales_panel = get_query_var('sales_panel');
     
@@ -12619,6 +13015,9 @@ function sa_render_orders_page() {
                                     <i class="fa-regular fa-eye"></i> View
                                 </button>
                                 <?= $pdf_link ?>
+                                <a href="<?= home_url('/packing-slip/' . $order->get_id()) ?>" class="btn btn-primary" target="_blank" style="padding:8px;margin-left:5px" title="Packing Slip">
+                                    <i class="fa-solid fa-print"></i>
+                                </a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -15526,3 +15925,197 @@ add_action('template_redirect', function () {
 }, 999);
 
 // End of Messaging and Notes System
+
+/**
+ * PACKING SLIP SYSTEM
+ */
+
+// Render HTML packing slip for an order
+function sa_render_packing_slip($order_id) {
+    $order = wc_get_order($order_id);
+    
+    if (!$order) {
+        wp_die('Order not found');
+    }
+    
+    // Get settings
+    $show_prices = get_option('packing_slip_show_prices', 1);
+    
+    // Get order details
+    $order_date = $order->get_date_created()->format('d.m.Y');
+    $order_number = $order->get_id();
+    $customer = get_userdata($order->get_customer_id());
+    $billing_address = $order->get_formatted_billing_address();
+    $shipping_address = $order->get_formatted_shipping_address();
+    $customer_note = $order->get_customer_note();
+    
+    // Get company info (you can customize this)
+    $company_name = get_bloginfo('name');
+    $company_address = get_option('woocommerce_store_address', '') . '<br>' .
+                       get_option('woocommerce_store_city', '') . ' ' .
+                       get_option('woocommerce_store_postcode', '');
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Packing Slip #<?= $order_number ?></title>
+        <style>
+            @media print {
+                .no-print { display: none !important; }
+                body { margin: 0; }
+            }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+            .header { border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
+            .header h1 { font-size: 28px; color: #333; }
+            .header .company-info { font-size: 12px; color: #666; margin-top: 10px; }
+            .order-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
+            .order-info h2 { font-size: 18px; margin-bottom: 10px; color: #333; }
+            .order-info table { width: 100%; font-size: 14px; }
+            .order-info td { padding: 5px 0; }
+            .order-info td:first-child { font-weight: 600; color: #666; width: 150px; }
+            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+            .address-box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+            .address-box h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333; text-transform: uppercase; }
+            .address-box p { font-size: 13px; line-height: 1.8; color: #555; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th { background: #333; color: #fff; padding: 12px; text-align: left; font-size: 13px; text-transform: uppercase; }
+            .items-table td { padding: 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+            .items-table tr:hover { background: #f9f9f9; }
+            .items-table .product-name { font-weight: 600; color: #333; }
+            .items-table .product-sku { color: #999; font-size: 11px; }
+            .totals { max-width: 400px; margin-left: auto; }
+            .totals table { width: 100%; }
+            .totals td { padding: 8px; font-size: 14px; }
+            .totals .total-label { text-align: right; font-weight: 600; color: #666; }
+            .totals .total-amount { text-align: right; font-weight: 700; }
+            .totals tr.grand-total { border-top: 2px solid #333; }
+            .totals tr.grand-total td { padding-top: 15px; font-size: 16px; color: #333; }
+            .note { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 8px; margin-top: 20px; }
+            .note h4 { font-size: 14px; margin-bottom: 10px; color: #856404; }
+            .note p { font-size: 13px; color: #856404; }
+            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #999; }
+            .print-btn { position: fixed; top: 20px; right: 20px; background: #4f46e5; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
+            .print-btn:hover { background: #4338ca; }
+            .print-btn i { margin-right: 8px; }
+        </style>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    </head>
+    <body>
+        <button class="print-btn no-print" onclick="window.print()">
+            <i class="fa-solid fa-print"></i> Print
+        </button>
+        
+        <div class="header">
+            <h1>PACKING SLIP</h1>
+            <div class="company-info">
+                <strong><?= esc_html($company_name) ?></strong><br>
+                <?= wp_kses_post($company_address) ?>
+            </div>
+        </div>
+        
+        <div class="order-info">
+            <h2>Order Information</h2>
+            <table>
+                <tr>
+                    <td>Order Number:</td>
+                    <td><strong>#<?= $order_number ?></strong></td>
+                </tr>
+                <tr>
+                    <td>Order Date:</td>
+                    <td><?= $order_date ?></td>
+                </tr>
+                <tr>
+                    <td>Customer:</td>
+                    <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="addresses">
+            <div class="address-box">
+                <h3><i class="fa-solid fa-file-invoice"></i> Billing Address</h3>
+                <p><?= wp_kses_post($billing_address ?: 'Not provided') ?></p>
+            </div>
+            <div class="address-box">
+                <h3><i class="fa-solid fa-truck"></i> Shipping Address</h3>
+                <p><?= wp_kses_post($shipping_address ?: 'Same as billing') ?></p>
+            </div>
+        </div>
+        
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th style="text-align:center;width:100px;">Quantity</th>
+                    <?php if ($show_prices): ?>
+                    <th style="text-align:right;width:120px;">Price</th>
+                    <th style="text-align:right;width:120px;">Total</th>
+                    <?php endif; ?>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($order->get_items() as $item): 
+                    $product = $item->get_product();
+                    $sku = $product ? $product->get_sku() : '';
+                ?>
+                <tr>
+                    <td>
+                        <div class="product-name"><?= esc_html($item->get_name()) ?></div>
+                        <?php if ($sku): ?>
+                            <div class="product-sku">SKU: <?= esc_html($sku) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td style="text-align:center;"><?= $item->get_quantity() ?></td>
+                    <?php if ($show_prices): ?>
+                    <td style="text-align:right;"><?= wc_price($item->get_subtotal() / $item->get_quantity()) ?></td>
+                    <td style="text-align:right;"><?= wc_price($item->get_total()) ?></td>
+                    <?php endif; ?>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        
+        <?php if ($show_prices): ?>
+        <div class="totals">
+            <table>
+                <tr>
+                    <td class="total-label">Subtotal:</td>
+                    <td class="total-amount"><?= wc_price($order->get_subtotal()) ?></td>
+                </tr>
+                <?php if ($order->get_shipping_total() > 0): ?>
+                <tr>
+                    <td class="total-label">Shipping:</td>
+                    <td class="total-amount"><?= wc_price($order->get_shipping_total()) ?></td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($order->get_total_tax() > 0): ?>
+                <tr>
+                    <td class="total-label">Tax:</td>
+                    <td class="total-amount"><?= wc_price($order->get_total_tax()) ?></td>
+                </tr>
+                <?php endif; ?>
+                <tr class="grand-total">
+                    <td class="total-label">TOTAL:</td>
+                    <td class="total-amount"><?= $order->get_formatted_order_total() ?></td>
+                </tr>
+            </table>
+        </div>
+        <?php endif; ?>
+        
+        <?php if ($customer_note): ?>
+        <div class="note">
+            <h4><i class="fa-solid fa-note-sticky"></i> Customer Note:</h4>
+            <p><?= esc_html($customer_note) ?></p>
+        </div>
+        <?php endif; ?>
+        
+        <div class="footer no-print">
+            <p>Generated on <?= current_time('d.m.Y H:i') ?> | <?= esc_html($company_name) ?></p>
+        </div>
+    </body>
+    </html>
+    <?php
+}

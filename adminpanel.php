@@ -8287,6 +8287,7 @@ add_action('template_redirect', function () {
             update_option('sales_merge_products', isset($_POST['sales_merge_products']) ? 1 : 0);
             update_option('sales_manager_can_order', isset($_POST['sales_manager_can_order']) ? 1 : 0);
             update_option('sales_view_all_customers', isset($_POST['sales_view_all_customers']) ? 1 : 0);
+            update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
             
             echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin-bottom:20px;border-radius:8px;border:1px solid #a7f3d0;"><i class="fa-solid fa-check-circle"></i> Settings saved successfully!</div>';
         }
@@ -8299,6 +8300,7 @@ add_action('template_redirect', function () {
     $merge_products = get_option('sales_merge_products', 0);
     $manager_can_order = get_option('sales_manager_can_order', 0);
     $view_all_customers = get_option('sales_view_all_customers', 0);
+    $packing_slip_show_prices = get_option('packing_slip_show_prices', 1);
     ?>
     
     <div class="page-header">
@@ -8389,6 +8391,17 @@ add_action('template_redirect', function () {
                     </span>
                 </label>
                 <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Sales agents and managers can view all customers with "customer" role, not just assigned ones</p>
+            </div>
+            
+            <div style="margin-bottom:0;padding-top:15px;border-top:1px solid #e5e7eb;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" name="packing_slip_show_prices" value="1" <?= checked($packing_slip_show_prices, 1, false) ?> 
+                           style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:600;color:#374151;">
+                        <i class="fa-solid fa-tag"></i> Show Prices on Packing Slips
+                    </span>
+                </label>
+                <p style="color:#6b7280;font-size:12px;margin:5px 0 0 28px;">Display product prices and totals on packing slip printouts</p>
             </div>
         </div>
         
@@ -11521,9 +11534,10 @@ add_action('init', function () {
     add_rewrite_rule('^sales-panel/new-order/([0-9]+)/?$', 'index.php?sales_panel=new-order&customer_id=$matches[1]', 'top');
     add_rewrite_rule('^sales-panel/messaging/?$', 'index.php?sales_panel=messaging', 'top');
     add_rewrite_rule('^sales-panel/notes/?$', 'index.php?sales_panel=notes', 'top');
+    add_rewrite_rule('^packing-slip/([0-9]+)/?$', 'index.php?packing_slip_order_id=$matches[1]', 'top');
 
     // Flush rewrite rules and refresh capabilities once
-    if (!get_option('sales_agent_flush_v3_messaging')) {
+    if (!get_option('sales_agent_flush_v4_packing_slip')) {
         flush_rewrite_rules();
         
         // Force refresh of role capabilities
@@ -11542,7 +11556,8 @@ add_action('init', function () {
             }
         }
         
-        update_option('sales_agent_flush_v3_messaging', true);
+        update_option('sales_agent_flush_v4_packing_slip', true);
+        delete_option('sales_agent_flush_v3_messaging'); // Clean up old marker
         delete_option('sales_agent_flush_v2'); // Clean up old marker
         delete_option('sales_agent_flush_v1'); // Clean up old marker
     }
@@ -11553,11 +11568,19 @@ add_filter('query_vars', function ($vars) {
     $vars[] = 'sales_login';
     $vars[] = 'sales_panel';
     $vars[] = 'customer_id';
+    $vars[] = 'packing_slip_order_id';
     return $vars;
 }, 20);
 
 // Role-based redirect logic
 add_action('template_redirect', function () {
+    // Check if accessing packing slip
+    $packing_slip_order_id = get_query_var('packing_slip_order_id');
+    if ($packing_slip_order_id) {
+        sa_render_packing_slip($packing_slip_order_id);
+        exit;
+    }
+    
     $sales_login = get_query_var('sales_login');
     $sales_panel = get_query_var('sales_panel');
     
@@ -12842,6 +12865,9 @@ function sa_render_orders_page() {
                                     <i class="fa-regular fa-eye"></i> View
                                 </button>
                                 <?= $pdf_link ?>
+                                <a href="<?= home_url('/packing-slip/' . $order->get_id()) ?>" class="btn btn-primary" target="_blank" style="padding:8px;margin-left:5px" title="Packing Slip">
+                                    <i class="fa-solid fa-print"></i>
+                                </a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -15749,3 +15775,197 @@ add_action('template_redirect', function () {
 }, 999);
 
 // End of Messaging and Notes System
+
+/**
+ * PACKING SLIP SYSTEM
+ */
+
+// Render HTML packing slip for an order
+function sa_render_packing_slip($order_id) {
+    $order = wc_get_order($order_id);
+    
+    if (!$order) {
+        wp_die('Order not found');
+    }
+    
+    // Get settings
+    $show_prices = get_option('packing_slip_show_prices', 1);
+    
+    // Get order details
+    $order_date = $order->get_date_created()->format('d.m.Y');
+    $order_number = $order->get_id();
+    $customer = get_userdata($order->get_customer_id());
+    $billing_address = $order->get_formatted_billing_address();
+    $shipping_address = $order->get_formatted_shipping_address();
+    $customer_note = $order->get_customer_note();
+    
+    // Get company info (you can customize this)
+    $company_name = get_bloginfo('name');
+    $company_address = get_option('woocommerce_store_address', '') . '<br>' .
+                       get_option('woocommerce_store_city', '') . ' ' .
+                       get_option('woocommerce_store_postcode', '');
+    
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Packing Slip #<?= $order_number ?></title>
+        <style>
+            @media print {
+                .no-print { display: none !important; }
+                body { margin: 0; }
+            }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+            .header { border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
+            .header h1 { font-size: 28px; color: #333; }
+            .header .company-info { font-size: 12px; color: #666; margin-top: 10px; }
+            .order-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
+            .order-info h2 { font-size: 18px; margin-bottom: 10px; color: #333; }
+            .order-info table { width: 100%; font-size: 14px; }
+            .order-info td { padding: 5px 0; }
+            .order-info td:first-child { font-weight: 600; color: #666; width: 150px; }
+            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+            .address-box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+            .address-box h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333; text-transform: uppercase; }
+            .address-box p { font-size: 13px; line-height: 1.8; color: #555; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th { background: #333; color: #fff; padding: 12px; text-align: left; font-size: 13px; text-transform: uppercase; }
+            .items-table td { padding: 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+            .items-table tr:hover { background: #f9f9f9; }
+            .items-table .product-name { font-weight: 600; color: #333; }
+            .items-table .product-sku { color: #999; font-size: 11px; }
+            .totals { max-width: 400px; margin-left: auto; }
+            .totals table { width: 100%; }
+            .totals td { padding: 8px; font-size: 14px; }
+            .totals .total-label { text-align: right; font-weight: 600; color: #666; }
+            .totals .total-amount { text-align: right; font-weight: 700; }
+            .totals tr.grand-total { border-top: 2px solid #333; }
+            .totals tr.grand-total td { padding-top: 15px; font-size: 16px; color: #333; }
+            .note { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 8px; margin-top: 20px; }
+            .note h4 { font-size: 14px; margin-bottom: 10px; color: #856404; }
+            .note p { font-size: 13px; color: #856404; }
+            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #999; }
+            .print-btn { position: fixed; top: 20px; right: 20px; background: #4f46e5; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
+            .print-btn:hover { background: #4338ca; }
+            .print-btn i { margin-right: 8px; }
+        </style>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    </head>
+    <body>
+        <button class="print-btn no-print" onclick="window.print()">
+            <i class="fa-solid fa-print"></i> Print
+        </button>
+        
+        <div class="header">
+            <h1>PACKING SLIP</h1>
+            <div class="company-info">
+                <strong><?= esc_html($company_name) ?></strong><br>
+                <?= wp_kses_post($company_address) ?>
+            </div>
+        </div>
+        
+        <div class="order-info">
+            <h2>Order Information</h2>
+            <table>
+                <tr>
+                    <td>Order Number:</td>
+                    <td><strong>#<?= $order_number ?></strong></td>
+                </tr>
+                <tr>
+                    <td>Order Date:</td>
+                    <td><?= $order_date ?></td>
+                </tr>
+                <tr>
+                    <td>Customer:</td>
+                    <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="addresses">
+            <div class="address-box">
+                <h3><i class="fa-solid fa-file-invoice"></i> Billing Address</h3>
+                <p><?= wp_kses_post($billing_address ?: 'Not provided') ?></p>
+            </div>
+            <div class="address-box">
+                <h3><i class="fa-solid fa-truck"></i> Shipping Address</h3>
+                <p><?= wp_kses_post($shipping_address ?: 'Same as billing') ?></p>
+            </div>
+        </div>
+        
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th style="text-align:center;width:100px;">Quantity</th>
+                    <?php if ($show_prices): ?>
+                    <th style="text-align:right;width:120px;">Price</th>
+                    <th style="text-align:right;width:120px;">Total</th>
+                    <?php endif; ?>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($order->get_items() as $item): 
+                    $product = $item->get_product();
+                    $sku = $product ? $product->get_sku() : '';
+                ?>
+                <tr>
+                    <td>
+                        <div class="product-name"><?= esc_html($item->get_name()) ?></div>
+                        <?php if ($sku): ?>
+                            <div class="product-sku">SKU: <?= esc_html($sku) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td style="text-align:center;"><?= $item->get_quantity() ?></td>
+                    <?php if ($show_prices): ?>
+                    <td style="text-align:right;"><?= wc_price($item->get_subtotal() / $item->get_quantity()) ?></td>
+                    <td style="text-align:right;"><?= wc_price($item->get_total()) ?></td>
+                    <?php endif; ?>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        
+        <?php if ($show_prices): ?>
+        <div class="totals">
+            <table>
+                <tr>
+                    <td class="total-label">Subtotal:</td>
+                    <td class="total-amount"><?= wc_price($order->get_subtotal()) ?></td>
+                </tr>
+                <?php if ($order->get_shipping_total() > 0): ?>
+                <tr>
+                    <td class="total-label">Shipping:</td>
+                    <td class="total-amount"><?= wc_price($order->get_shipping_total()) ?></td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($order->get_total_tax() > 0): ?>
+                <tr>
+                    <td class="total-label">Tax:</td>
+                    <td class="total-amount"><?= wc_price($order->get_total_tax()) ?></td>
+                </tr>
+                <?php endif; ?>
+                <tr class="grand-total">
+                    <td class="total-label">TOTAL:</td>
+                    <td class="total-amount"><?= $order->get_formatted_order_total() ?></td>
+                </tr>
+            </table>
+        </div>
+        <?php endif; ?>
+        
+        <?php if ($customer_note): ?>
+        <div class="note">
+            <h4><i class="fa-solid fa-note-sticky"></i> Customer Note:</h4>
+            <p><?= esc_html($customer_note) ?></p>
+        </div>
+        <?php endif; ?>
+        
+        <div class="footer no-print">
+            <p>Generated on <?= current_time('d.m.Y H:i') ?> | <?= esc_html($company_name) ?></p>
+        </div>
+    </body>
+    </html>
+    <?php
+}

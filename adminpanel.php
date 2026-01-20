@@ -16089,6 +16089,12 @@ function sa_render_packing_slip($order_id) {
     $shipping_address = $order->get_formatted_shipping_address();
     $customer_note = $order->get_customer_note();
     $shipping_method = $order->get_shipping_method();
+    $po_number = $order->get_meta('_billing_po_number') ?: get_post_meta($order_id, '_billing_po_number', true);
+    
+    // Get billing email and phone
+    $billing_email = $order->get_billing_email();
+    $billing_phone = $order->get_billing_phone();
+    $shipping_phone = $order->get_shipping_phone();
     
     ?>
     <!DOCTYPE html>
@@ -16139,6 +16145,24 @@ function sa_render_packing_slip($order_id) {
             .print-btn { position: fixed; top: 20px; right: 20px; background: #4f46e5; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
             .print-btn:hover { background: #4338ca; }
             .print-btn i { margin-right: 8px; }
+            .category-header { background: #e5e7eb; padding: 10px; margin-top: 20px; margin-bottom: 10px; font-size: 16px; font-weight: bold; color: #333; border-left: 4px solid #3b82f6; }
+            .items-table .product-description { font-size: 11px; color: #666; margin-top: 3px; }
+            .items-table .product-weight { font-size: 11px; color: #666; }
+            .items-table .product-dimensions { font-size: 11px; color: #666; }
+            .items-table .variant-details { font-size: 11px; color: #666; font-style: italic; }
+            .items-table .check-box { text-align: center; }
+            .items-table .check-box input { width: 20px; height: 20px; }
+            .category-totals { background: #f9fafb; font-weight: bold; border-top: 2px solid #333; }
+            .signature-section { margin-top: 40px; page-break-inside: avoid; }
+            .signature-table { border-collapse: collapse; width: 100%; border: 2px solid #333; }
+            .signature-table td { border: 1px solid #333; padding: 15px; height: 50px; }
+            .signature-table td strong { display: block; margin-bottom: 5px; }
+            .summary-totals { display: flex; justify-content: space-between; margin-top: 20px; gap: 20px; }
+            .summary-box { flex: 1; border: 2px solid #333; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; background: #f9fafb; }
+            .order-barcode { position: fixed; bottom: 10px; right: 10px; text-align: right; }
+            .order-barcode .barcode-label { color: #dc2626; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+            .order-barcode img { height: 70px; width: 180px; border: 1px solid #ddd; padding: 5px; background: white; }
+            @media print { .order-barcode { position: fixed; bottom: 10px; right: 10px; } }
         </style>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     </head>
@@ -16184,35 +16208,136 @@ function sa_render_packing_slip($order_id) {
                     <td><?= esc_html($shipping_method) ?></td>
                 </tr>
                 <?php endif; ?>
+                <?php if ($po_number): ?>
+                <tr>
+                    <td>PO Number:</td>
+                    <td><strong><?= esc_html($po_number) ?></strong></td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($customer_note): ?>
+                <tr>
+                    <td>Customer Note:</td>
+                    <td><?= esc_html($customer_note) ?></td>
+                </tr>
+                <?php endif; ?>
             </table>
         </div>
         
         <div class="addresses">
             <div class="address-box">
-                <h3><i class="fa-solid fa-file-invoice"></i> Billing Address</h3>
-                <p><?= wp_kses_post($billing_address ?: 'Not provided') ?></p>
-            </div>
-            <div class="address-box">
                 <h3><i class="fa-solid fa-truck"></i> Shipping Address</h3>
                 <p><?= wp_kses_post($shipping_address ?: 'Same as billing') ?></p>
+                <?php if ($billing_email): ?>
+                <p><strong>Email:</strong> <?= esc_html($billing_email) ?></p>
+                <?php endif; ?>
+                <?php if ($shipping_phone ?: $billing_phone): ?>
+                <p><strong>Phone:</strong> <?= esc_html($shipping_phone ?: $billing_phone) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="address-box">
+                <h3><i class="fa-solid fa-file-invoice"></i> Billing Address</h3>
+                <p><?= wp_kses_post($billing_address ?: 'Not provided') ?></p>
+                <?php if ($billing_phone && $shipping_phone && $billing_phone != $shipping_phone): ?>
+                <p><strong>Phone:</strong> <?= esc_html($billing_phone) ?></p>
+                <?php endif; ?>
             </div>
         </div>
         
+        <?php
+        // Group products by categories
+        $product_categories = [];
+        $total_quantity = 0;
+        $total_weight = 0;
+        
+        foreach ($order->get_items() as $item_id => $item) {
+            $product = $item->get_product();
+            if (!$product) continue;
+            
+            $product_id = $product->get_id();
+            $product_cats = wp_get_post_terms($product_id, 'product_cat', ['orderby' => 'parent', 'order' => 'ASC']);
+            
+            // Get top category and first sub-category
+            $top_category = '';
+            $first_sub_category = '';
+            foreach ($product_cats as $cat) {
+                if ($cat->parent == 0) {
+                    $top_category = $cat->name;
+                } elseif ($cat->parent != 0 && empty($first_sub_category)) {
+                    $first_sub_category = $cat->name;
+                }
+            }
+            
+            $category_key = 'Uncategorized';
+            if (!empty($top_category) && !empty($first_sub_category)) {
+                $category_key = $top_category . ' / ' . $first_sub_category;
+            } elseif (!empty($top_category)) {
+                $category_key = $top_category;
+            }
+            
+            if (!isset($product_categories[$category_key])) {
+                $product_categories[$category_key] = [];
+            }
+            
+            $product_categories[$category_key][] = [
+                'item' => $item,
+                'product' => $product
+            ];
+            
+            $total_quantity += $item->get_quantity();
+            
+            // Get weight
+            $weight = $product->get_weight();
+            if ($weight && is_numeric($weight)) {
+                $total_weight += floatval($weight) * $item->get_quantity();
+            }
+        }
+        
+        // Display products grouped by category
+        foreach ($product_categories as $category_name => $products):
+            $category_qty = 0;
+            $category_weight = 0;
+        ?>
+        
+        <h2 class="category-header"><?= esc_html($category_name) ?></h2>
         <table class="items-table">
             <thead>
                 <tr>
-                    <th>Product</th>
-                    <th style="text-align:center;width:100px;">Quantity</th>
-                    <?php if ($show_prices): ?>
-                    <th style="text-align:right;width:120px;">Price</th>
-                    <th style="text-align:right;width:120px;">Total</th>
-                    <?php endif; ?>
+                    <th style="width:20%;">Product</th>
+                    <th style="width:25%;">Description</th>
+                    <th style="width:10%;text-align:center;">Quantity</th>
+                    <th style="width:10%;text-align:center;">Weight (lbs)</th>
+                    <th style="width:20%;">Variant Details</th>
+                    <th style="width:10%;text-align:center;">Check</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($order->get_items() as $item): 
-                    $product = $item->get_product();
-                    $sku = $product ? $product->get_sku() : '';
+                <?php foreach ($products as $product_data): 
+                    $item = $product_data['item'];
+                    $product = $product_data['product'];
+                    $sku = $product->get_sku();
+                    $description = $product->get_short_description() ?: $product->get_description();
+                    $weight = $product->get_weight();
+                    $weight_display = ($weight && is_numeric($weight)) ? number_format(floatval($weight), 2) : 'N/A';
+                    
+                    // Get variant details (meta data)
+                    $variant_details = [];
+                    foreach ($item->get_meta_data() as $meta) {
+                        if (substr($meta->key, 0, 1) !== '_') {
+                            $variant_details[] = $meta->key . ': ' . $meta->value;
+                        }
+                    }
+                    $variant_text = !empty($variant_details) ? implode(', ', $variant_details) : '-';
+                    
+                    // Get dimensions
+                    $dimensions = '';
+                    if ($product->has_dimensions()) {
+                        $dimensions = $product->get_dimensions(false);
+                    }
+                    
+                    $category_qty += $item->get_quantity();
+                    if ($weight && is_numeric($weight)) {
+                        $category_weight += floatval($weight) * $item->get_quantity();
+                    }
                 ?>
                 <tr>
                     <td>
@@ -16220,16 +16345,41 @@ function sa_render_packing_slip($order_id) {
                         <?php if ($sku): ?>
                             <div class="product-sku">SKU: <?= esc_html($sku) ?></div>
                         <?php endif; ?>
+                        <?php if ($dimensions): ?>
+                            <div class="product-dimensions">Dimensions: <?= esc_html($dimensions) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <div class="product-description"><?= wp_trim_words(strip_tags($description), 15) ?></div>
                     </td>
                     <td style="text-align:center;"><?= $item->get_quantity() ?></td>
-                    <?php if ($show_prices): ?>
-                    <td style="text-align:right;"><?= wc_price($item->get_subtotal() / $item->get_quantity()) ?></td>
-                    <td style="text-align:right;"><?= wc_price($item->get_total()) ?></td>
-                    <?php endif; ?>
+                    <td style="text-align:center;"><?= $weight_display ?></td>
+                    <td><div class="variant-details"><?= esc_html($variant_text) ?></div></td>
+                    <td class="check-box"><input type="checkbox"></td>
                 </tr>
                 <?php endforeach; ?>
+                
+                <!-- Category Totals Row -->
+                <tr class="category-totals">
+                    <td colspan="2"><strong>Category Totals:</strong></td>
+                    <td style="text-align:center;"><strong><?= $category_qty ?></strong></td>
+                    <td style="text-align:center;"><strong><?= number_format($category_weight, 2) ?></strong></td>
+                    <td colspan="2"></td>
+                </tr>
             </tbody>
         </table>
+        
+        <?php endforeach; ?>
+        
+        <!-- Overall Summary Totals -->
+        <div class="summary-totals">
+            <div class="summary-box">
+                Total Quantity: <?= $total_quantity ?>
+            </div>
+            <div class="summary-box">
+                Total Weight (lbs): <?= number_format($total_weight, 2) ?>
+            </div>
+        </div>
         
         <?php if ($show_prices): ?>
         <div class="totals">
@@ -16258,12 +16408,33 @@ function sa_render_packing_slip($order_id) {
         </div>
         <?php endif; ?>
         
-        <?php if ($customer_note): ?>
-        <div class="note">
-            <h4><i class="fa-solid fa-note-sticky"></i> Customer Note:</h4>
-            <p><?= esc_html($customer_note) ?></p>
+        <!-- Signature Section -->
+        <div class="signature-section">
+            <h3 style="margin-bottom: 10px;">Verification</h3>
+            <table class="signature-table">
+                <tr>
+                    <td><strong>Checked by:</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Personnel Name:</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Date:</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Signature:</strong></td>
+                </tr>
+            </table>
         </div>
-        <?php endif; ?>
+        
+        <!-- Order Number with Barcode (Bottom Right) -->
+        <div class="order-barcode no-print">
+            <div class="barcode-label">Order #<?= $order_number ?></div>
+            <img 
+                src="https://bwipjs-api.metafloor.com/?bcid=code128&text=<?= urlencode($order_number) ?>&scale=1.2&includetext"
+                alt="Order Barcode"
+            />
+        </div>
         
         <div class="footer no-print">
             <p>Generated on <?= current_time('d.m.Y H:i') ?> | <?= esc_html($company_name) ?></p>

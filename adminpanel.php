@@ -887,9 +887,11 @@ function b2b_pro_admin_menu() {
     add_submenu_page('b2b-panel', 'Başvurular', 'Başvurular', 'manage_options', 'b2b-panel', 'b2b_page_approvals');
     add_submenu_page('b2b-panel', 'Gruplar & Üyeler', 'Gruplar & Üyeler', 'manage_options', 'b2b-groups-list', 'b2b_page_group_list');
     add_submenu_page('b2b-panel', 'Genel Ayarlar', 'Genel Ayarlar', 'manage_options', 'b2b-settings', 'b2b_page_settings');
-    add_submenu_page('b2b-panel', 'Satış Fişi Ayarları', 'Satış Fişi Ayarları', 'manage_options', 'b2b-packing-slip-settings', 'b2b_page_packing_slip_settings');
     add_submenu_page('b2b-panel', 'Form Düzenleyici', 'Form Düzenleyici', 'manage_options', 'b2b-form-editor', 'b2b_page_form_editor');
     add_submenu_page('b2b-panel', 'Sales Agent', 'Sales Agent', 'manage_options', 'b2b-sales-agent', 'b2b_page_sales_agent_settings');
+    
+    // Add Packing Slip Settings under WordPress Settings menu
+    add_options_page('Packing Slip Settings', 'Packing Slip', 'manage_options', 'packing-slip-settings', 'b2b_page_packing_slip_settings');
 }
 add_action('admin_menu', 'b2b_pro_admin_menu');
 
@@ -8884,14 +8886,14 @@ function b2b_page_packing_slip_settings() {
         update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
         
         echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
-                <i class="fa-solid fa-check-circle"></i> Ayarlar başarıyla kaydedildi!
+                <i class="fa-solid fa-check-circle"></i> Settings saved successfully!
               </div>';
     }
     
     // Get current values
     $show_prices = get_option('packing_slip_show_prices', 1);
     
-    b2b_adm_header('Satış Fişi Ayarları');
+    b2b_adm_header('Packing Slip Settings');
     ?>
     <style>
         .ps-card {
@@ -8982,9 +8984,9 @@ function b2b_page_packing_slip_settings() {
     <div class="content-wrapper">
         <div class="page-header">
             <h1 class="page-title">
-                <i class="fa-solid fa-file-invoice"></i> Satış Fişi Ayarları
+                <i class="fa-solid fa-file-invoice"></i> Packing Slip Settings
             </h1>
-            <p style="color:#6b7280;margin-top:8px;">Satış fişi çıktılarının görünüm ve içerik ayarlarını yönetin</p>
+            <p style="color:#6b7280;margin-top:8px;">Manage packing slip appearance and content settings</p>
         </div>
         
         <form method="post">
@@ -8992,36 +8994,36 @@ function b2b_page_packing_slip_settings() {
             
             <div class="ps-card">
                 <h2>
-                    <i class="fa-solid fa-sliders"></i> Genel Ayarlar
+                    <i class="fa-solid fa-sliders"></i> General Settings
                 </h2>
                 
                 <div class="ps-setting">
                     <label class="ps-label">
                         <input type="checkbox" name="packing_slip_show_prices" value="1" <?= checked($show_prices, 1, false) ?>>
                         <span class="ps-label-text">
-                            <i class="fa-solid fa-tag"></i> Fiyatları Göster
+                            <i class="fa-solid fa-tag"></i> Show Prices
                         </span>
                     </label>
                     <p class="ps-description">
-                        Satış fişinde ürün fiyatları ve toplam tutarları göster. Bu seçenek kapalıysa sadece ürün adları ve miktarları görünür.
+                        Display product prices and totals on the packing slip. When disabled, only product names and quantities are visible.
                     </p>
                 </div>
             </div>
             
             <div class="ps-info-box">
                 <h3>
-                    <i class="fa-solid fa-info-circle"></i> Nasıl Kullanılır?
+                    <i class="fa-solid fa-info-circle"></i> How to Use
                 </h3>
                 <p>
-                    <strong>1.</strong> Sipariş listesinde yazdır <i class="fa-solid fa-print"></i> butonuna tıklayın<br>
-                    <strong>2.</strong> Satış fişi yeni sekmede açılır<br>
-                    <strong>3.</strong> "Yazdır" butonuna veya Ctrl+P tuşlarına basarak yazdırın
+                    <strong>1.</strong> Click the print <i class="fa-solid fa-print"></i> button in the orders list<br>
+                    <strong>2.</strong> The packing slip opens in a new tab<br>
+                    <strong>3.</strong> Click "Print" button or press Ctrl+P to print
                 </p>
             </div>
             
             <div style="margin-top:25px;">
                 <button type="submit" name="ps_save_settings" class="ps-btn">
-                    <i class="fa-solid fa-save"></i> Ayarları Kaydet
+                    <i class="fa-solid fa-save"></i> Save Settings
                 </button>
             </div>
         </form>

@@ -16315,7 +16315,8 @@ function sa_render_packing_slip($order_id) {
                     $item = $product_data['item'];
                     $product = $product_data['product'];
                     $sku = $product->get_sku();
-                    $description = $product->get_short_description() ?: $product->get_description();
+                    $short_desc = $product->get_short_description();
+                    $description = $short_desc ?: wp_trim_words(strip_tags($product->get_description()), 30);
                     $weight = $product->get_weight();
                     $weight_display = ($weight && is_numeric($weight)) ? number_format(floatval($weight), 2) : 'N/A';
                     
@@ -16323,7 +16324,7 @@ function sa_render_packing_slip($order_id) {
                     $variant_details = [];
                     foreach ($item->get_meta_data() as $meta) {
                         if (substr($meta->key, 0, 1) !== '_') {
-                            $variant_details[] = $meta->key . ': ' . $meta->value;
+                            $variant_details[] = esc_html($meta->key) . ': ' . esc_html($meta->value);
                         }
                     }
                     $variant_text = !empty($variant_details) ? implode(', ', $variant_details) : '-';
@@ -16350,7 +16351,7 @@ function sa_render_packing_slip($order_id) {
                         <?php endif; ?>
                     </td>
                     <td>
-                        <div class="product-description"><?= wp_trim_words(strip_tags($description), 15) ?></div>
+                        <div class="product-description"><?= esc_html(wp_trim_words(strip_tags($description), 15)) ?></div>
                     </td>
                     <td style="text-align:center;"><?= $item->get_quantity() ?></td>
                     <td style="text-align:center;"><?= $weight_display ?></td>
@@ -16428,10 +16429,10 @@ function sa_render_packing_slip($order_id) {
         </div>
         
         <!-- Order Number with Barcode (Bottom Right) -->
-        <div class="order-barcode no-print">
+        <div class="order-barcode">
             <div class="barcode-label">Order #<?= $order_number ?></div>
             <img 
-                src="https://bwipjs-api.metafloor.com/?bcid=code128&text=<?= urlencode($order_number) ?>&scale=1.2&includetext"
+                src="https://bwipjs-api.metafloor.com/?bcid=code128&text=<?= urlencode(preg_replace('/[^0-9]/', '', $order_number)) ?>&scale=1.2&includetext"
                 alt="Order Barcode"
             />
         </div>

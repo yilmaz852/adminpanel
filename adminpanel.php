@@ -16105,11 +16105,13 @@ function sa_render_packing_slip($order_id) {
         <style>
             @media print {
                 .no-print { display: none !important; }
-                body { margin: 0; padding: 10px; }
+                body { margin: 0; padding: 10px; padding-bottom: 80px; }
                 .order-barcode { position: absolute; bottom: 5px; right: 5px; }
+                .signature-section, .summary-totals, .items-table { page-break-inside: avoid; }
+                .category-header { page-break-after: avoid; }
             }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; padding: 10px; line-height: 1.3; font-size: 11px; }
+            body { font-family: Arial, sans-serif; padding: 10px; padding-bottom: 80px; line-height: 1.3; font-size: 11px; }
             .header-container { display: grid; grid-template-columns: 150px 1fr; gap: 10px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; align-items: start; }
             .header-logo { max-width: 150px; }
             .header-logo img { max-width: 100%; height: auto; }
@@ -16117,16 +16119,16 @@ function sa_render_packing_slip($order_id) {
             .shop-info h3 { font-size: 16px; color: #333; margin-bottom: 4px; }
             .shop-info .shop-address { font-size: 9px; color: #666; line-height: 1.4; }
             .document-title { text-align: center; font-size: 18px; color: #333; margin: 8px 0; text-transform: uppercase; font-weight: bold; }
-            .order-info { background: #f5f5f5; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
+            .order-info { background: #f5f5f5; padding: 8px; margin-bottom: 8px; border-radius: 4px; page-break-inside: avoid; }
             .order-info h2 { font-size: 12px; margin-bottom: 4px; color: #333; }
             .order-info table { width: 100%; font-size: 10px; }
             .order-info td { padding: 2px 0; }
             .order-info td:first-child { font-weight: 600; color: #666; width: 100px; }
-            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; page-break-inside: avoid; }
             .address-box { border: 1px solid #ddd; padding: 8px; border-radius: 4px; }
             .address-box h3 { font-size: 11px; font-weight: 600; margin-bottom: 4px; color: #333; text-transform: uppercase; }
             .address-box p { font-size: 9px; line-height: 1.4; color: #555; margin: 2px 0; }
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; page-break-inside: avoid; }
             .items-table th { background: #333; color: #fff; padding: 6px 4px; text-align: left; font-size: 10px; text-transform: uppercase; }
             .items-table td { padding: 4px; border-bottom: 1px solid #ddd; font-size: 10px; }
             .items-table tr:hover { background: #f9f9f9; }
@@ -16137,19 +16139,19 @@ function sa_render_packing_slip($order_id) {
             .items-table .variant-details { font-size: 8px; color: #666; font-style: italic; }
             .items-table .check-box { text-align: center; }
             .items-table .check-box input { width: 14px; height: 14px; }
-            .category-header { background: #e5e7eb; padding: 4px 8px; margin-top: 8px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #333; border-left: 3px solid #3b82f6; }
+            .category-header { background: #e5e7eb; padding: 4px 8px; margin-top: 8px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #333; border-left: 3px solid #3b82f6; page-break-after: avoid; }
             .category-totals { background: #f9fafb; font-weight: bold; border-top: 2px solid #333; }
             .signature-section { margin-top: 12px; page-break-inside: avoid; }
             .signature-section h3 { font-size: 11px; margin-bottom: 4px; }
             .signature-table { border-collapse: collapse; width: 100%; border: 1px solid #333; }
             .signature-table td { border: 1px solid #333; padding: 6px; height: 30px; font-size: 9px; }
             .signature-table td strong { display: inline; margin-right: 4px; }
-            .summary-totals { display: flex; justify-content: space-between; margin-top: 8px; gap: 10px; }
+            .summary-totals { display: flex; justify-content: space-between; margin-top: 8px; gap: 10px; page-break-inside: avoid; }
             .summary-box { flex: 1; border: 2px solid #333; padding: 8px; text-align: center; font-size: 12px; font-weight: bold; background: #f9fafb; }
             .order-barcode { position: absolute; bottom: 5px; right: 5px; text-align: right; }
             .order-barcode .barcode-label { color: #dc2626; font-size: 14px; font-weight: bold; margin-bottom: 4px; }
             .order-barcode img { height: 50px; width: 140px; border: 1px solid #ddd; padding: 2px; background: white; }
-            .totals { max-width: 300px; margin-left: auto; margin-top: 8px; }
+            .totals { max-width: 300px; margin-left: auto; margin-top: 8px; page-break-inside: avoid; }
             .totals table { width: 100%; }
             .totals td { padding: 4px; font-size: 10px; }
             .totals .total-label { text-align: right; font-weight: 600; color: #666; }
@@ -16329,7 +16331,12 @@ function sa_render_packing_slip($order_id) {
                     // Get dimensions
                     $dimensions = '';
                     if ($product->has_dimensions()) {
-                        $dimensions = $product->get_dimensions(false);
+                        $dim_array = $product->get_dimensions(false);
+                        if (is_array($dim_array)) {
+                            $dimensions = implode(' × ', array_filter($dim_array)) . ' ' . get_option('woocommerce_dimension_unit');
+                        } else {
+                            $dimensions = $product->get_dimensions(false);
+                        }
                     }
                     
                     $category_qty += $item->get_quantity();

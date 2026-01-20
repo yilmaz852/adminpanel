@@ -64,6 +64,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
     add_rewrite_rule('^b2b-panel/settings/sales-agent/?$', 'index.php?b2b_adm_page=settings_sales_agent', 'top');
     add_rewrite_rule('^b2b-panel/settings/payments/?$', 'index.php?b2b_adm_page=settings_payments', 'top');
+    add_rewrite_rule('^b2b-panel/settings/packing-slip/?$', 'index.php?b2b_adm_page=settings_packing_slip', 'top');
     
     // Support Module
     add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
@@ -81,12 +82,12 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/stock-planning/supplier-orders/?$', 'index.php?b2b_adm_page=supplier_orders', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures stock planning module rewrites are properly registered
-    if (!get_option('b2b_rewrite_v22_stock_planning')) {
+    // Fixed version that ensures packing slip settings rewrites are properly registered
+    if (!get_option('b2b_rewrite_v23_packing_slip')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v22_stock_planning', true);
+        update_option('b2b_rewrite_v23_packing_slip', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v21_payments');
+        delete_option('b2b_rewrite_v22_stock_planning');
     }
 });
 
@@ -1388,6 +1389,137 @@ add_action('wp_ajax_b2b_adm_wh_update', function(){
     wp_send_json_success(['new_state' => ($new === '1')]);
 });
 
+// D. Get Order Edit Data
+add_action('wp_ajax_b2b_adm_get_order_edit_data', function(){
+    if (!current_user_can('manage_options')) wp_die();
+    $oid = intval($_GET['order_id']);
+    $order = wc_get_order($oid);
+    if (!$order) wp_send_json_error('Order not found');
+    
+    // Billing data
+    $billing = [
+        'first_name' => $order->get_billing_first_name(),
+        'last_name' => $order->get_billing_last_name(),
+        'company' => $order->get_billing_company(),
+        'address_1' => $order->get_billing_address_1(),
+        'address_2' => $order->get_billing_address_2(),
+        'city' => $order->get_billing_city(),
+        'postcode' => $order->get_billing_postcode(),
+        'state' => $order->get_billing_state(),
+        'country' => $order->get_billing_country(),
+        'email' => $order->get_billing_email(),
+        'phone' => $order->get_billing_phone()
+    ];
+    
+    // Shipping data
+    $shipping = [
+        'first_name' => $order->get_shipping_first_name(),
+        'last_name' => $order->get_shipping_last_name(),
+        'company' => $order->get_shipping_company(),
+        'address_1' => $order->get_shipping_address_1(),
+        'address_2' => $order->get_shipping_address_2(),
+        'city' => $order->get_shipping_city(),
+        'postcode' => $order->get_shipping_postcode(),
+        'state' => $order->get_shipping_state(),
+        'country' => $order->get_shipping_country()
+    ];
+    
+    // Items
+    $items = [];
+    foreach ($order->get_items() as $item_id => $item) {
+        $product = $item->get_product();
+        $items[] = [
+            'item_id' => $item_id,
+            'name' => $item->get_name(),
+            'sku' => $product ? $product->get_sku() : '',
+            'qty' => $item->get_quantity()
+        ];
+    }
+    
+    wp_send_json_success([
+        'billing' => $billing,
+        'shipping' => $shipping,
+        'items' => $items,
+        'customer_note' => $order->get_customer_note()
+    ]);
+});
+
+// E. Save Order Changes
+add_action('wp_ajax_b2b_adm_save_order', function(){
+    if (!current_user_can('manage_options')) wp_die();
+    $oid = intval($_POST['order_id']);
+    $order = wc_get_order($oid);
+    if (!$order) wp_send_json_error('Order not found');
+    
+    // Update billing
+    if (isset($_POST['billing'])) {
+        $billing = $_POST['billing'];
+        $order->set_billing_first_name(sanitize_text_field($billing['first_name'] ?? ''));
+        $order->set_billing_last_name(sanitize_text_field($billing['last_name'] ?? ''));
+        $order->set_billing_company(sanitize_text_field($billing['company'] ?? ''));
+        $order->set_billing_address_1(sanitize_text_field($billing['address_1'] ?? ''));
+        $order->set_billing_address_2(sanitize_text_field($billing['address_2'] ?? ''));
+        $order->set_billing_city(sanitize_text_field($billing['city'] ?? ''));
+        $order->set_billing_postcode(sanitize_text_field($billing['postcode'] ?? ''));
+        $order->set_billing_state(sanitize_text_field($billing['state'] ?? ''));
+        $order->set_billing_country(sanitize_text_field($billing['country'] ?? ''));
+        $order->set_billing_email(sanitize_email($billing['email'] ?? ''));
+        $order->set_billing_phone(sanitize_text_field($billing['phone'] ?? ''));
+    }
+    
+    // Update shipping
+    if (isset($_POST['shipping'])) {
+        $shipping = $_POST['shipping'];
+        $order->set_shipping_first_name(sanitize_text_field($shipping['first_name'] ?? ''));
+        $order->set_shipping_last_name(sanitize_text_field($shipping['last_name'] ?? ''));
+        $order->set_shipping_company(sanitize_text_field($shipping['company'] ?? ''));
+        $order->set_shipping_address_1(sanitize_text_field($shipping['address_1'] ?? ''));
+        $order->set_shipping_address_2(sanitize_text_field($shipping['address_2'] ?? ''));
+        $order->set_shipping_city(sanitize_text_field($shipping['city'] ?? ''));
+        $order->set_shipping_postcode(sanitize_text_field($shipping['postcode'] ?? ''));
+        $order->set_shipping_state(sanitize_text_field($shipping['state'] ?? ''));
+        $order->set_shipping_country(sanitize_text_field($shipping['country'] ?? ''));
+    }
+    
+    // Update item quantities
+    if (isset($_POST['items']) && is_array($_POST['items'])) {
+        foreach ($_POST['items'] as $item_data) {
+            $item_id = intval($item_data['item_id']);
+            $qty = intval($item_data['qty']);
+            
+            if ($qty > 0) {
+                foreach ($order->get_items() as $order_item_id => $order_item) {
+                    if ($order_item_id == $item_id) {
+                        $order_item->set_quantity($qty);
+                        $order_item->save();
+                        break;
+                    }
+                }
+            } else {
+                // Remove item if quantity is 0
+                $order->remove_item($item_id);
+            }
+        }
+    }
+    
+    // Update customer note
+    if (isset($_POST['customer_note'])) {
+        $order->set_customer_note(sanitize_textarea_field($_POST['customer_note']));
+    }
+    
+    // Recalculate totals
+    $order->calculate_totals();
+    
+    // Save order
+    $order->save();
+    
+    // Add admin note
+    $order->add_order_note('Order details updated via B2B Admin Panel', false, true);
+    
+    wp_send_json_success();
+});
+
+
 /* =====================================================
    5. UI: HEADER & CSS
 ===================================================== */
@@ -2264,6 +2396,11 @@ function b2b_adm_header($title) {
                         <div class="nav-item">
                             <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>" data-title="Sales Agent">
                                 <i class="fa-solid fa-user-tie"></i> <span class="nav-label">Sales Agent</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings/packing-slip') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_packing_slip'?'active':'' ?>" data-title="Packing Slip">
+                                <i class="fa-solid fa-file-invoice"></i> <span class="nav-label">Packing Slip</span>
                             </a>
                         </div>
                     </div>
@@ -4999,7 +5136,9 @@ add_action('template_redirect', function () {
                     </select>
                 </td>
                 <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
-                    <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px"><i class="fa-regular fa-eye"></i></button>
+                    <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px" title="View Order"><i class="fa-regular fa-eye"></i></button>
+                    <button class="secondary" onclick="editOrder(<?=$oid?>)" style="padding:6px 10px" title="Edit Order"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <a href="<?= home_url('/packing-slip/' . $oid) ?>" target="_blank" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Packing Slip"><i class="fa-solid fa-print"></i></a>
                     <?=$pdf_btn?>
                 </td>
             </tr>
@@ -5032,6 +5171,8 @@ add_action('template_redirect', function () {
     </div>
 
     <div id="ordModal" class="modal"><div class="modal-content"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3>Details</h3><span onclick="$('#ordModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="mBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div></div></div>
+    
+    <div id="editModal" class="modal"><div class="modal-content" style="max-width:900px"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3><i class="fa-solid fa-pen-to-square"></i> Edit Order</h3><span onclick="$('#editModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="editBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div><div style="padding:15px;border-top:1px solid #eee;text-align:right"><button class="button secondary" onclick="$('#editModal').hide()">Cancel</button> <button class="button primary" onclick="saveOrderChanges()" style="background:#10b981;color:white;margin-left:10px"><i class="fa-solid fa-save"></i> Save Changes</button></div></div></div>
 
     <script>
     var ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
@@ -5085,7 +5226,152 @@ add_action('template_redirect', function () {
             }
         });
     }
-    $(window).click(function(e){if(e.target.id=='ordModal')$('#ordModal').hide();});
+    
+    // Edit Modal
+    var currentEditOrder = null;
+    function editOrder(id) {
+        currentEditOrder = id;
+        $('#editModal').css('display','flex'); $('#editBody').html('Loading...');
+        $.get(ajaxUrl, {action:'b2b_adm_get_order_edit_data', order_id:id}, function(r){
+            if(r.success) {
+                var d = r.data;
+                var h = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+                        <!-- Left Column -->
+                        <div>
+                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
+                                <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-user"></i> Billing Address</h4>
+                                <div style="display:grid;gap:12px">
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">First Name</label><input type="text" id="billing_first_name" value="${d.billing.first_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Last Name</label><input type="text" id="billing_last_name" value="${d.billing.last_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Company</label><input type="text" id="billing_company" value="${d.billing.company}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 1</label><input type="text" id="billing_address_1" value="${d.billing.address_1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 2</label><input type="text" id="billing_address_2" value="${d.billing.address_2}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">City</label><input type="text" id="billing_city" value="${d.billing.city}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Postcode</label><input type="text" id="billing_postcode" value="${d.billing.postcode}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    </div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">State</label><input type="text" id="billing_state" value="${d.billing.state}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Country</label><input type="text" id="billing_country" value="${d.billing.country}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Email</label><input type="email" id="billing_email" value="${d.billing.email}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Phone</label><input type="text" id="billing_phone" value="${d.billing.phone}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Right Column -->
+                        <div>
+                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
+                                <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-truck"></i> Shipping Address</h4>
+                                <div style="margin-bottom:10px"><button class="button secondary" onclick="copyBillingToShipping()" style="font-size:12px;padding:6px 12px"><i class="fa-solid fa-copy"></i> Copy from Billing</button></div>
+                                <div style="display:grid;gap:12px">
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">First Name</label><input type="text" id="shipping_first_name" value="${d.shipping.first_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Last Name</label><input type="text" id="shipping_last_name" value="${d.shipping.last_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Company</label><input type="text" id="shipping_company" value="${d.shipping.company}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 1</label><input type="text" id="shipping_address_1" value="${d.shipping.address_1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 2</label><input type="text" id="shipping_address_2" value="${d.shipping.address_2}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">City</label><input type="text" id="shipping_city" value="${d.shipping.city}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Postcode</label><input type="text" id="shipping_postcode" value="${d.shipping.postcode}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    </div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">State</label><input type="text" id="shipping_state" value="${d.shipping.state}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Country</label><input type="text" id="shipping_country" value="${d.shipping.country}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Order Items -->
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
+                        <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-box"></i> Order Items</h4>
+                        <table style="width:100%;border-collapse:collapse" id="orderItemsTable">
+                            <thead><tr style="background:#e2e8f0"><th style="padding:10px;text-align:left">Product</th><th style="padding:10px;text-align:center;width:100px">Quantity</th><th style="padding:10px;text-align:center;width:80px">Actions</th></tr></thead>
+                            <tbody>${d.items.map((item,idx)=>`<tr style="border-bottom:1px solid #e2e8f0" data-item-id="${item.item_id}"><td style="padding:10px">${item.name}<br><small style="color:#6b7280">${item.sku}</small></td><td style="padding:10px;text-align:center"><input type="number" min="1" value="${item.qty}" data-item-id="${item.item_id}" class="item-qty" style="width:70px;padding:6px;border:1px solid #d1d5db;border-radius:4px;text-align:center"/></td><td style="padding:10px;text-align:center"><button class="button secondary" onclick="removeOrderItem(${item.item_id})" style="padding:6px 10px;font-size:12px;background:#ef4444;color:white"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('')}</tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Customer Note -->
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px">
+                        <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-note-sticky"></i> Customer Note</h4>
+                        <textarea id="customer_note" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;min-height:80px">${d.customer_note}</textarea>
+                    </div>
+                `;
+                $('#editBody').html(h);
+            }
+        });
+    }
+    
+    function copyBillingToShipping() {
+        $('#shipping_first_name').val($('#billing_first_name').val());
+        $('#shipping_last_name').val($('#billing_last_name').val());
+        $('#shipping_company').val($('#billing_company').val());
+        $('#shipping_address_1').val($('#billing_address_1').val());
+        $('#shipping_address_2').val($('#billing_address_2').val());
+        $('#shipping_city').val($('#billing_city').val());
+        $('#shipping_postcode').val($('#billing_postcode').val());
+        $('#shipping_state').val($('#billing_state').val());
+        $('#shipping_country').val($('#billing_country').val());
+    }
+    
+    function removeOrderItem(itemId) {
+        if(!confirm('Are you sure you want to remove this item?')) return;
+        $('tr[data-item-id="'+itemId+'"]').fadeOut(300, function(){ $(this).remove(); });
+    }
+    
+    function saveOrderChanges() {
+        if(!confirm('Save all changes to this order?')) return;
+        
+        // Collect all data
+        var data = {
+            action: 'b2b_adm_save_order',
+            order_id: currentEditOrder,
+            billing: {
+                first_name: $('#billing_first_name').val(),
+                last_name: $('#billing_last_name').val(),
+                company: $('#billing_company').val(),
+                address_1: $('#billing_address_1').val(),
+                address_2: $('#billing_address_2').val(),
+                city: $('#billing_city').val(),
+                postcode: $('#billing_postcode').val(),
+                state: $('#billing_state').val(),
+                country: $('#billing_country').val(),
+                email: $('#billing_email').val(),
+                phone: $('#billing_phone').val()
+            },
+            shipping: {
+                first_name: $('#shipping_first_name').val(),
+                last_name: $('#shipping_last_name').val(),
+                company: $('#shipping_company').val(),
+                address_1: $('#shipping_address_1').val(),
+                address_2: $('#shipping_address_2').val(),
+                city: $('#shipping_city').val(),
+                postcode: $('#shipping_postcode').val(),
+                state: $('#shipping_state').val(),
+                country: $('#shipping_country').val()
+            },
+            items: [],
+            customer_note: $('#customer_note').val()
+        };
+        
+        // Collect item quantities
+        $('.item-qty').each(function(){
+            data.items.push({
+                item_id: $(this).data('item-id'),
+                qty: $(this).val()
+            });
+        });
+        
+        $.post(ajaxUrl, data, function(r){
+            if(r.success) {
+                alert('Order updated successfully!');
+                $('#editModal').hide();
+                location.reload();
+            } else {
+                alert('Error: ' + (r.data || 'Unknown error'));
+            }
+        });
+    }
+    
+    $(window).click(function(e){if(e.target.id=='ordModal')$('#ordModal').hide();if(e.target.id=='editModal')$('#editModal').hide();});
     </script>
     <?php b2b_adm_footer(); exit;
 });
@@ -8872,6 +9158,12 @@ add_action('admin_init', 'b2b_register_sales_agent_settings');
 // PACKING SLIP SETTINGS PAGE
 // ==========================================================================
 
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_packing_slip') return;
+    b2b_page_packing_slip_settings();
+    exit;
+});
+
 function b2b_page_packing_slip_settings() {
     b2b_adm_guard();
     
@@ -8882,6 +9174,68 @@ function b2b_page_packing_slip_settings() {
     // Save settings if form submitted
     if (isset($_POST['ps_save_settings']) && check_admin_referer('ps_settings_save', 'ps_settings_nonce')) {
         update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
+        update_option('packing_slip_company_name', sanitize_text_field($_POST['packing_slip_company_name'] ?? ''));
+        update_option('packing_slip_company_address', sanitize_textarea_field($_POST['packing_slip_company_address'] ?? ''));
+        update_option('packing_slip_warehouse_notes', sanitize_textarea_field($_POST['packing_slip_warehouse_notes'] ?? ''));
+        update_option('packing_slip_show_instructions', isset($_POST['packing_slip_show_instructions']) ? 1 : 0);
+        
+        // Handle logo upload
+        if (isset($_FILES['packing_slip_logo']) && $_FILES['packing_slip_logo']['size'] > 0) {
+            require_once(ABSPATH . 'wp-admin/includes/file.php');
+            
+            // Validate file type
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $file_type = $_FILES['packing_slip_logo']['type'];
+            
+            if (!in_array($file_type, $allowed_types)) {
+                echo '<div style="background:#fee2e2;color:#991b1b;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #fca5a5">
+                        <i class="fa-solid fa-exclamation-circle"></i> Only image files (JPG, PNG, GIF, WEBP) are allowed.
+                      </div>';
+            } else {
+                // Upload with proper validation
+                $upload_overrides = [
+                    'test_form' => false,
+                    'mimes' => [
+                        'jpg|jpeg|jpe' => 'image/jpeg',
+                        'png' => 'image/png',
+                        'gif' => 'image/gif',
+                        'webp' => 'image/webp'
+                    ]
+                ];
+                
+                $upload = wp_handle_upload($_FILES['packing_slip_logo'], $upload_overrides);
+                
+                if (!isset($upload['error'])) {
+                    // Delete old logo file if exists
+                    $old_logo = get_option('packing_slip_logo_url', '');
+                    if ($old_logo) {
+                        $old_file = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $old_logo);
+                        if (file_exists($old_file)) {
+                            @unlink($old_file);
+                        }
+                    }
+                    
+                    update_option('packing_slip_logo_url', $upload['url']);
+                } else {
+                    echo '<div style="background:#fee2e2;color:#991b1b;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #fca5a5">
+                            <i class="fa-solid fa-exclamation-circle"></i> Upload error: ' . esc_html($upload['error']) . '
+                          </div>';
+                }
+            }
+        }
+        
+        // Handle logo removal
+        if (isset($_POST['remove_logo'])) {
+            $old_logo = get_option('packing_slip_logo_url', '');
+            if ($old_logo) {
+                // Delete the file from filesystem
+                $old_file = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $old_logo);
+                if (file_exists($old_file)) {
+                    @unlink($old_file);
+                }
+                delete_option('packing_slip_logo_url');
+            }
+        }
         
         echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
                 <i class="fa-solid fa-check-circle"></i> Settings saved successfully!
@@ -8890,6 +9244,11 @@ function b2b_page_packing_slip_settings() {
     
     // Get current values
     $show_prices = get_option('packing_slip_show_prices', 1);
+    $company_name = get_option('packing_slip_company_name', get_bloginfo('name'));
+    $company_address = get_option('packing_slip_company_address', '');
+    $logo_url = get_option('packing_slip_logo_url', '');
+    $warehouse_notes = get_option('packing_slip_warehouse_notes', '');
+    $show_instructions = get_option('packing_slip_show_instructions', 1);
     
     b2b_adm_header('Packing Slip Settings');
     ?>
@@ -8987,12 +9346,62 @@ function b2b_page_packing_slip_settings() {
             <p style="color:#6b7280;margin-top:8px;">Manage packing slip appearance and content settings</p>
         </div>
         
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             <?php wp_nonce_field('ps_settings_save', 'ps_settings_nonce'); ?>
             
             <div class="ps-card">
                 <h2>
-                    <i class="fa-solid fa-sliders"></i> General Settings
+                    <i class="fa-solid fa-building"></i> Company Information
+                </h2>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-signature"></i> Company Name
+                        </span>
+                    </label>
+                    <input type="text" name="packing_slip_company_name" value="<?= esc_attr($company_name) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;" placeholder="Enter company name">
+                    <p class="ps-description">
+                        The company name that will appear on the packing slip header.
+                    </p>
+                </div>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-location-dot"></i> Company Address
+                        </span>
+                    </label>
+                    <textarea name="packing_slip_company_address" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;min-height:80px;" placeholder="Enter company address"><?= esc_textarea($company_address) ?></textarea>
+                    <p class="ps-description">
+                        The company address that will appear on the packing slip header.
+                    </p>
+                </div>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-image"></i> Company Logo
+                        </span>
+                    </label>
+                    <?php if ($logo_url): ?>
+                        <div style="margin:10px 0;">
+                            <img src="<?= esc_url($logo_url) ?>" style="max-width:200px;max-height:100px;border:1px solid #e5e7eb;padding:5px;border-radius:6px;">
+                            <label style="display:block;margin-top:10px;">
+                                <input type="checkbox" name="remove_logo" value="1"> Remove current logo
+                            </label>
+                        </div>
+                    <?php endif; ?>
+                    <input type="file" name="packing_slip_logo" accept="image/*" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;">
+                    <p class="ps-description">
+                        Upload a logo image that will appear on the packing slip header. Recommended size: 200x100px.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="ps-card">
+                <h2>
+                    <i class="fa-solid fa-sliders"></i> Display Settings
                 </h2>
                 
                 <div class="ps-setting">
@@ -9004,6 +9413,36 @@ function b2b_page_packing_slip_settings() {
                     </label>
                     <p class="ps-description">
                         Display product prices and totals on the packing slip. When disabled, only product names and quantities are visible.
+                    </p>
+                </div>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <input type="checkbox" name="packing_slip_show_instructions" value="1" <?= checked($show_instructions, 1, false) ?>>
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-tags"></i> Show Shipping Instructions
+                        </span>
+                    </label>
+                    <p class="ps-description">
+                        Display special shipping instruction labels (Fragile, Keep Cold, etc.) based on product categories or custom fields.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="ps-card">
+                <h2>
+                    <i class="fa-solid fa-clipboard-list"></i> Warehouse Instructions
+                </h2>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-note-sticky"></i> Special Notes for Warehouse Staff
+                        </span>
+                    </label>
+                    <textarea name="packing_slip_warehouse_notes" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;min-height:100px;" placeholder="Enter special instructions for warehouse staff..."><?= esc_textarea($warehouse_notes) ?></textarea>
+                    <p class="ps-description">
+                        These notes will be displayed on every packing slip. Use this for general warehouse instructions, safety reminders, or quality control procedures.
                     </p>
                 </div>
             </div>
@@ -15940,6 +16379,22 @@ function sa_render_packing_slip($order_id) {
     
     // Get settings
     $show_prices = get_option('packing_slip_show_prices', 1);
+    $company_name = get_option('packing_slip_company_name', get_bloginfo('name'));
+    
+    // Build default address only if values exist
+    $default_address = [];
+    if ($addr = get_option('woocommerce_store_address', '')) $default_address[] = $addr;
+    if ($city = get_option('woocommerce_store_city', '')) {
+        $line = $city;
+        if ($postcode = get_option('woocommerce_store_postcode', '')) $line .= ' ' . $postcode;
+        $default_address[] = $line;
+    }
+    $default_address_str = implode("\n", $default_address);
+    
+    $company_address = get_option('packing_slip_company_address', $default_address_str);
+    $logo_url = get_option('packing_slip_logo_url', '');
+    $warehouse_notes = get_option('packing_slip_warehouse_notes', '');
+    $show_instructions = get_option('packing_slip_show_instructions', 1);
     
     // Get order details
     $order_date = $order->get_date_created()->format('d.m.Y');
@@ -15948,12 +16403,13 @@ function sa_render_packing_slip($order_id) {
     $billing_address = $order->get_formatted_billing_address();
     $shipping_address = $order->get_formatted_shipping_address();
     $customer_note = $order->get_customer_note();
+    $shipping_method = $order->get_shipping_method();
+    $po_number = $order->get_meta('_billing_po_number') ?: get_post_meta($order_id, '_billing_po_number', true);
     
-    // Get company info (you can customize this)
-    $company_name = get_bloginfo('name');
-    $company_address = get_option('woocommerce_store_address', '') . '<br>' .
-                       get_option('woocommerce_store_city', '') . ' ' .
-                       get_option('woocommerce_store_postcode', '');
+    // Get billing email and phone
+    $billing_email = $order->get_billing_email();
+    $billing_phone = $order->get_billing_phone();
+    $shipping_phone = $order->get_shipping_phone();
     
     ?>
     <!DOCTYPE html>
@@ -15964,42 +16420,73 @@ function sa_render_packing_slip($order_id) {
         <style>
             @media print {
                 .no-print { display: none !important; }
-                body { margin: 0; }
+                body { margin: 0; padding: 10px; padding-bottom: 80px; }
+                .order-barcode { position: absolute; bottom: 5px; right: 5px; }
+                .signature-section, .summary-totals, .items-table { page-break-inside: avoid; }
+                .category-header { page-break-after: avoid; }
             }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
-            .header { border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
-            .header h1 { font-size: 28px; color: #333; }
-            .header .company-info { font-size: 12px; color: #666; margin-top: 10px; }
-            .order-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
-            .order-info h2 { font-size: 18px; margin-bottom: 10px; color: #333; }
-            .order-info table { width: 100%; font-size: 14px; }
-            .order-info td { padding: 5px 0; }
-            .order-info td:first-child { font-weight: 600; color: #666; width: 150px; }
-            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-            .address-box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
-            .address-box h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333; text-transform: uppercase; }
-            .address-box p { font-size: 13px; line-height: 1.8; color: #555; }
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            .items-table th { background: #333; color: #fff; padding: 12px; text-align: left; font-size: 13px; text-transform: uppercase; }
-            .items-table td { padding: 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+            body { font-family: Arial, sans-serif; padding: 10px; padding-bottom: 80px; line-height: 1.3; font-size: 11px; }
+            .header-container { display: grid; grid-template-columns: 150px 1fr; gap: 10px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; align-items: start; }
+            .header-logo { max-width: 150px; }
+            .header-logo img { max-width: 100%; height: auto; }
+            .shop-info { text-align: right; }
+            .shop-info h3 { font-size: 16px; color: #333; margin-bottom: 4px; }
+            .shop-info .shop-address { font-size: 9px; color: #666; line-height: 1.4; }
+            .document-title { text-align: center; font-size: 18px; color: #333; margin: 8px 0; text-transform: uppercase; font-weight: bold; }
+            .order-info { background: #f5f5f5; padding: 8px; margin-bottom: 8px; border-radius: 4px; page-break-inside: avoid; }
+            .order-info h2 { font-size: 12px; margin-bottom: 4px; color: #333; }
+            .order-info table { width: 100%; font-size: 10px; }
+            .order-info td { padding: 2px 0; }
+            .order-info td:first-child { font-weight: 600; color: #666; width: 100px; }
+            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; page-break-inside: avoid; }
+            .address-box { border: 1px solid #ddd; padding: 8px; border-radius: 4px; }
+            .address-box h3 { font-size: 11px; font-weight: 600; margin-bottom: 4px; color: #333; text-transform: uppercase; }
+            .address-box p { font-size: 9px; line-height: 1.4; color: #555; margin: 2px 0; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; page-break-inside: avoid; }
+            .items-table th { background: #333; color: #fff; padding: 6px 4px; text-align: left; font-size: 10px; text-transform: uppercase; }
+            .items-table td { padding: 4px; border-bottom: 1px solid #ddd; font-size: 10px; }
             .items-table tr:hover { background: #f9f9f9; }
-            .items-table .product-name { font-weight: 600; color: #333; }
-            .items-table .product-sku { color: #999; font-size: 11px; }
-            .totals { max-width: 400px; margin-left: auto; }
+            .items-table .product-name { font-weight: 600; color: #333; font-size: 10px; }
+            .items-table .product-sku { color: #999; font-size: 8px; }
+            .items-table .product-description { font-size: 8px; color: #666; margin-top: 2px; }
+            .items-table .product-dimensions { font-size: 8px; color: #666; }
+            .items-table .variant-details { font-size: 8px; color: #666; font-style: italic; }
+            .items-table .check-box { text-align: center; }
+            .items-table .check-box input { width: 14px; height: 14px; }
+            .category-header { background: #e5e7eb; padding: 4px 8px; margin-top: 8px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #333; border-left: 3px solid #3b82f6; page-break-after: avoid; }
+            .category-totals { background: #f9fafb; font-weight: bold; border-top: 2px solid #333; }
+            .signature-section { margin-top: 12px; page-break-inside: avoid; }
+            .signature-section h3 { font-size: 11px; margin-bottom: 4px; }
+            .signature-table { border-collapse: collapse; width: 100%; border: 1px solid #333; }
+            .signature-table td { border: 1px solid #333; padding: 6px; height: 30px; font-size: 9px; }
+            .signature-table td strong { display: inline; margin-right: 4px; }
+            .summary-totals { display: flex; justify-content: space-between; margin-top: 8px; gap: 10px; page-break-inside: avoid; }
+            .summary-box { flex: 1; border: 2px solid #333; padding: 8px; text-align: center; font-size: 12px; font-weight: bold; background: #f9fafb; }
+            .order-barcode { position: absolute; bottom: 5px; right: 5px; text-align: right; }
+            .order-barcode .barcode-label { color: #dc2626; font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+            .order-barcode img { height: 50px; width: 140px; border: 1px solid #ddd; padding: 2px; background: white; }
+            .totals { max-width: 300px; margin-left: auto; margin-top: 8px; page-break-inside: avoid; }
             .totals table { width: 100%; }
-            .totals td { padding: 8px; font-size: 14px; }
+            .totals td { padding: 4px; font-size: 10px; }
             .totals .total-label { text-align: right; font-weight: 600; color: #666; }
             .totals .total-amount { text-align: right; font-weight: 700; }
             .totals tr.grand-total { border-top: 2px solid #333; }
-            .totals tr.grand-total td { padding-top: 15px; font-size: 16px; color: #333; }
-            .note { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 8px; margin-top: 20px; }
-            .note h4 { font-size: 14px; margin-bottom: 10px; color: #856404; }
-            .note p { font-size: 13px; color: #856404; }
-            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #999; }
-            .print-btn { position: fixed; top: 20px; right: 20px; background: #4f46e5; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
+            .totals tr.grand-total td { padding-top: 6px; font-size: 11px; color: #333; }
+            .print-btn { position: fixed; top: 10px; right: 10px; background: #4f46e5; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
             .print-btn:hover { background: #4338ca; }
-            .print-btn i { margin-right: 8px; }
+            .print-btn i { margin-right: 6px; }
+            .footer { margin-top: 15px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center; font-size: 8px; color: #999; }
+            .warehouse-notes { background: #fef3c7; border: 2px solid #f59e0b; border-radius: 6px; padding: 10px; margin: 10px 0; page-break-inside: avoid; }
+            .warehouse-notes h3 { font-size: 11px; color: #92400e; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+            .warehouse-notes p { font-size: 9px; color: #78350f; line-height: 1.4; margin: 0; white-space: pre-line; }
+            .shipping-instructions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; page-break-inside: avoid; }
+            .instruction-tag { background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; display: inline-flex; align-items: center; gap: 4px; }
+            .instruction-tag.fragile { background: #dc2626; }
+            .instruction-tag.cold { background: #2563eb; }
+            .instruction-tag.hazard { background: #f59e0b; }
+            .instruction-tag.heavy { background: #7c3aed; }
+            .instruction-tag.glass { background: #dc2626; border: 2px dashed white; }
         </style>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     </head>
@@ -16008,13 +16495,99 @@ function sa_render_packing_slip($order_id) {
             <i class="fa-solid fa-print"></i> Print
         </button>
         
-        <div class="header">
-            <h1>PACKING SLIP</h1>
-            <div class="company-info">
-                <strong><?= esc_html($company_name) ?></strong><br>
-                <?= wp_kses_post($company_address) ?>
+        <div class="header-container">
+            <div class="header-logo">
+                <?php if ($logo_url): ?>
+                    <img src="<?= esc_url($logo_url) ?>" alt="<?= esc_attr($company_name) ?>">
+                <?php else: ?>
+                    <h2 style="margin:0;font-size:20px;color:#333;"><?= esc_html($company_name) ?></h2>
+                <?php endif; ?>
+            </div>
+            <div class="shop-info">
+                <h3><?= esc_html($company_name) ?></h3>
+                <div class="shop-address"><?= nl2br(esc_html($company_address)) ?></div>
             </div>
         </div>
+        
+        <h1 class="document-title">Packing Slip</h1>
+        
+        <?php
+        // Detect shipping instructions based on product categories and meta
+        $shipping_instructions = [];
+        
+        if ($show_instructions) {
+            $has_fragile = false;
+            $has_cold = false;
+            $has_hazard = false;
+            $has_heavy = false;
+            $has_glass = false;
+            
+            foreach ($order->get_items() as $item) {
+                $product = $item->get_product();
+                if (!$product) continue;
+                
+                // Check product categories
+                $product_cats = wp_get_post_terms($product->get_id(), 'product_cat');
+                foreach ($product_cats as $cat) {
+                    $cat_slug = strtolower($cat->slug);
+                    $cat_name = strtolower($cat->name);
+                    
+                    if (strpos($cat_slug, 'fragile') !== false || strpos($cat_name, 'fragile') !== false || strpos($cat_name, 'kırılabilir') !== false) {
+                        $has_fragile = true;
+                    }
+                    if (strpos($cat_slug, 'frozen') !== false || strpos($cat_slug, 'cold') !== false || strpos($cat_name, 'soğuk') !== false || strpos($cat_name, 'dondurulmuş') !== false) {
+                        $has_cold = true;
+                    }
+                    if (strpos($cat_slug, 'hazard') !== false || strpos($cat_slug, 'chemical') !== false || strpos($cat_name, 'tehlikeli') !== false) {
+                        $has_hazard = true;
+                    }
+                    if (strpos($cat_slug, 'glass') !== false || strpos($cat_name, 'cam') !== false) {
+                        $has_glass = true;
+                    }
+                }
+                
+                // Check product weight for heavy items
+                $weight = $product->get_weight();
+                if ($weight && is_numeric($weight) && floatval($weight) > 20) { // Heavy if over 20 lbs
+                    $has_heavy = true;
+                }
+                
+                // Check product meta for shipping instructions
+                $shipping_class = $product->get_shipping_class();
+                if (strpos(strtolower($shipping_class), 'fragile') !== false) $has_fragile = true;
+                if (strpos(strtolower($shipping_class), 'cold') !== false) $has_cold = true;
+            }
+            
+            if ($has_fragile) $shipping_instructions[] = ['label' => 'FRAGILE / KIRILABİLİR', 'class' => 'fragile', 'icon' => 'fa-wine-glass-crack'];
+            if ($has_glass) $shipping_instructions[] = ['label' => 'GLASS / CAM', 'class' => 'glass', 'icon' => 'fa-wine-glass'];
+            if ($has_cold) $shipping_instructions[] = ['label' => 'KEEP COLD / SOĞUK TUTUN', 'class' => 'cold', 'icon' => 'fa-snowflake'];
+            if ($has_hazard) $shipping_instructions[] = ['label' => 'HAZARDOUS / TEHLİKELİ', 'class' => 'hazard', 'icon' => 'fa-triangle-exclamation'];
+            if ($has_heavy) $shipping_instructions[] = ['label' => 'HEAVY / AĞIR', 'class' => 'heavy', 'icon' => 'fa-weight-hanging'];
+        }
+        ?>
+        
+        <?php if (!empty($shipping_instructions)): ?>
+        <!-- Shipping Instructions -->
+        <div class="shipping-instructions">
+            <?php foreach ($shipping_instructions as $instruction): ?>
+                <span class="instruction-tag <?= esc_attr($instruction['class']) ?>">
+                    <i class="fa-solid <?= esc_attr($instruction['icon']) ?>"></i>
+                    <?= esc_html($instruction['label']) ?>
+                </span>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        
+        <?php if ($warehouse_notes): ?>
+        <!-- Warehouse Notes -->
+        <div class="warehouse-notes">
+            <h3>
+                <i class="fa-solid fa-clipboard-list"></i>
+                Warehouse Instructions / Depo Talimatları
+            </h3>
+            <p><?= esc_html($warehouse_notes) ?></p>
+        </div>
+        <?php endif; ?>
         
         <div class="order-info">
             <h2>Order Information</h2>
@@ -16031,35 +16604,148 @@ function sa_render_packing_slip($order_id) {
                     <td>Customer:</td>
                     <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
                 </tr>
+                <?php if ($shipping_method): ?>
+                <tr>
+                    <td>Shipping Method:</td>
+                    <td><?= esc_html($shipping_method) ?></td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($po_number): ?>
+                <tr>
+                    <td>PO Number:</td>
+                    <td><strong><?= esc_html($po_number) ?></strong></td>
+                </tr>
+                <?php endif; ?>
+                <?php if ($customer_note): ?>
+                <tr>
+                    <td>Customer Note:</td>
+                    <td><?= esc_html($customer_note) ?></td>
+                </tr>
+                <?php endif; ?>
             </table>
         </div>
         
         <div class="addresses">
             <div class="address-box">
-                <h3><i class="fa-solid fa-file-invoice"></i> Billing Address</h3>
-                <p><?= wp_kses_post($billing_address ?: 'Not provided') ?></p>
-            </div>
-            <div class="address-box">
                 <h3><i class="fa-solid fa-truck"></i> Shipping Address</h3>
                 <p><?= wp_kses_post($shipping_address ?: 'Same as billing') ?></p>
+                <?php if ($billing_email): ?>
+                <p><strong>Email:</strong> <?= esc_html($billing_email) ?></p>
+                <?php endif; ?>
+                <?php if ($shipping_phone ?: $billing_phone): ?>
+                <p><strong>Phone:</strong> <?= esc_html($shipping_phone ?: $billing_phone) ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="address-box">
+                <h3><i class="fa-solid fa-file-invoice"></i> Billing Address</h3>
+                <p><?= wp_kses_post($billing_address ?: 'Not provided') ?></p>
+                <?php if ($billing_phone && $shipping_phone && $billing_phone != $shipping_phone): ?>
+                <p><strong>Phone:</strong> <?= esc_html($billing_phone) ?></p>
+                <?php endif; ?>
             </div>
         </div>
         
+        <?php
+        // Group products by categories
+        $product_categories = [];
+        $total_quantity = 0;
+        $total_weight = 0;
+        
+        foreach ($order->get_items() as $item_id => $item) {
+            $product = $item->get_product();
+            if (!$product) continue;
+            
+            $product_id = $product->get_id();
+            $product_cats = wp_get_post_terms($product_id, 'product_cat', ['orderby' => 'parent', 'order' => 'ASC']);
+            
+            // Get top category and first sub-category
+            $top_category = '';
+            $first_sub_category = '';
+            foreach ($product_cats as $cat) {
+                if ($cat->parent == 0) {
+                    $top_category = $cat->name;
+                } elseif ($cat->parent != 0 && empty($first_sub_category)) {
+                    $first_sub_category = $cat->name;
+                }
+            }
+            
+            $category_key = 'Uncategorized';
+            if (!empty($top_category) && !empty($first_sub_category)) {
+                $category_key = $top_category . ' / ' . $first_sub_category;
+            } elseif (!empty($top_category)) {
+                $category_key = $top_category;
+            }
+            
+            if (!isset($product_categories[$category_key])) {
+                $product_categories[$category_key] = [];
+            }
+            
+            $product_categories[$category_key][] = [
+                'item' => $item,
+                'product' => $product
+            ];
+            
+            $total_quantity += $item->get_quantity();
+            
+            // Get weight
+            $weight = $product->get_weight();
+            if ($weight && is_numeric($weight)) {
+                $total_weight += floatval($weight) * $item->get_quantity();
+            }
+        }
+        
+        // Display products grouped by category
+        foreach ($product_categories as $category_name => $products):
+            $category_qty = 0;
+            $category_weight = 0;
+        ?>
+        
+        <h2 class="category-header"><?= esc_html($category_name) ?></h2>
         <table class="items-table">
             <thead>
                 <tr>
-                    <th>Product</th>
-                    <th style="text-align:center;width:100px;">Quantity</th>
-                    <?php if ($show_prices): ?>
-                    <th style="text-align:right;width:120px;">Price</th>
-                    <th style="text-align:right;width:120px;">Total</th>
-                    <?php endif; ?>
+                    <th style="width:20%;">Product</th>
+                    <th style="width:25%;">Description</th>
+                    <th style="width:10%;text-align:center;">Quantity</th>
+                    <th style="width:10%;text-align:center;">Weight (lbs)</th>
+                    <th style="width:20%;">Variant Details</th>
+                    <th style="width:10%;text-align:center;">Check</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($order->get_items() as $item): 
-                    $product = $item->get_product();
-                    $sku = $product ? $product->get_sku() : '';
+                <?php foreach ($products as $product_data): 
+                    $item = $product_data['item'];
+                    $product = $product_data['product'];
+                    $sku = $product->get_sku();
+                    $short_desc = $product->get_short_description();
+                    $description = $short_desc ?: wp_trim_words(strip_tags($product->get_description()), 30);
+                    $weight = $product->get_weight();
+                    $weight_display = ($weight && is_numeric($weight)) ? number_format(floatval($weight), 2) : 'N/A';
+                    
+                    // Get variant details (meta data)
+                    $variant_details = [];
+                    foreach ($item->get_meta_data() as $meta) {
+                        if (substr($meta->key, 0, 1) !== '_') {
+                            $variant_details[] = esc_html($meta->key) . ': ' . esc_html($meta->value);
+                        }
+                    }
+                    $variant_text = !empty($variant_details) ? implode(', ', $variant_details) : '-';
+                    
+                    // Get dimensions
+                    $dimensions = '';
+                    if ($product->has_dimensions()) {
+                        $dim_array = $product->get_dimensions(false);
+                        if (is_array($dim_array)) {
+                            $dimensions = implode(' × ', array_filter($dim_array)) . ' ' . get_option('woocommerce_dimension_unit');
+                        } else {
+                            $dimensions = $product->get_dimensions(false);
+                        }
+                    }
+                    
+                    $category_qty += $item->get_quantity();
+                    if ($weight && is_numeric($weight)) {
+                        $category_weight += floatval($weight) * $item->get_quantity();
+                    }
                 ?>
                 <tr>
                     <td>
@@ -16067,16 +16753,41 @@ function sa_render_packing_slip($order_id) {
                         <?php if ($sku): ?>
                             <div class="product-sku">SKU: <?= esc_html($sku) ?></div>
                         <?php endif; ?>
+                        <?php if ($dimensions): ?>
+                            <div class="product-dimensions">Dimensions: <?= esc_html($dimensions) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <div class="product-description"><?= esc_html(wp_trim_words(strip_tags($description), 15)) ?></div>
                     </td>
                     <td style="text-align:center;"><?= $item->get_quantity() ?></td>
-                    <?php if ($show_prices): ?>
-                    <td style="text-align:right;"><?= wc_price($item->get_subtotal() / $item->get_quantity()) ?></td>
-                    <td style="text-align:right;"><?= wc_price($item->get_total()) ?></td>
-                    <?php endif; ?>
+                    <td style="text-align:center;"><?= $weight_display ?></td>
+                    <td><div class="variant-details"><?= esc_html($variant_text) ?></div></td>
+                    <td class="check-box"><input type="checkbox"></td>
                 </tr>
                 <?php endforeach; ?>
+                
+                <!-- Category Totals Row -->
+                <tr class="category-totals">
+                    <td colspan="2"><strong>Category Totals:</strong></td>
+                    <td style="text-align:center;"><strong><?= $category_qty ?></strong></td>
+                    <td style="text-align:center;"><strong><?= number_format($category_weight, 2) ?></strong></td>
+                    <td colspan="2"></td>
+                </tr>
             </tbody>
         </table>
+        
+        <?php endforeach; ?>
+        
+        <!-- Overall Summary Totals -->
+        <div class="summary-totals">
+            <div class="summary-box">
+                Total Quantity: <?= $total_quantity ?>
+            </div>
+            <div class="summary-box">
+                Total Weight (lbs): <?= number_format($total_weight, 2) ?>
+            </div>
+        </div>
         
         <?php if ($show_prices): ?>
         <div class="totals">
@@ -16105,12 +16816,33 @@ function sa_render_packing_slip($order_id) {
         </div>
         <?php endif; ?>
         
-        <?php if ($customer_note): ?>
-        <div class="note">
-            <h4><i class="fa-solid fa-note-sticky"></i> Customer Note:</h4>
-            <p><?= esc_html($customer_note) ?></p>
+        <!-- Signature Section -->
+        <div class="signature-section">
+            <h3 style="margin-bottom: 10px;">Verification</h3>
+            <table class="signature-table">
+                <tr>
+                    <td><strong>Checked by:</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Personnel Name:</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Date:</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Signature:</strong></td>
+                </tr>
+            </table>
         </div>
-        <?php endif; ?>
+        
+        <!-- Order Number with Barcode (Bottom Right) -->
+        <div class="order-barcode">
+            <div class="barcode-label">Order #<?= $order_number ?></div>
+            <img 
+                src="https://bwipjs-api.metafloor.com/?bcid=code128&text=<?= urlencode(preg_replace('/[^0-9]/', '', $order_number)) ?>&scale=1.2&includetext"
+                alt="Order Barcode"
+            />
+        </div>
         
         <div class="footer no-print">
             <p>Generated on <?= current_time('d.m.Y H:i') ?> | <?= esc_html($company_name) ?></p>

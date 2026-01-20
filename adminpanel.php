@@ -16105,64 +16105,61 @@ function sa_render_packing_slip($order_id) {
         <style>
             @media print {
                 .no-print { display: none !important; }
-                body { margin: 0; }
+                body { margin: 0; padding: 10px; }
+                .order-barcode { position: absolute; bottom: 5px; right: 5px; }
             }
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
-            .header-container { display: grid; grid-template-columns: 200px 1fr; gap: 20px; border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 20px; align-items: start; }
-            .header-logo { max-width: 200px; }
+            body { font-family: Arial, sans-serif; padding: 10px; line-height: 1.3; font-size: 11px; }
+            .header-container { display: grid; grid-template-columns: 150px 1fr; gap: 10px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; align-items: start; }
+            .header-logo { max-width: 150px; }
             .header-logo img { max-width: 100%; height: auto; }
             .shop-info { text-align: right; }
-            .shop-info h3 { font-size: 24px; color: #333; margin-bottom: 10px; }
-            .shop-info .shop-address { font-size: 12px; color: #666; line-height: 1.8; }
-            .document-title { text-align: center; font-size: 28px; color: #333; margin: 20px 0; text-transform: uppercase; }
-            .order-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
-            .order-info h2 { font-size: 18px; margin-bottom: 10px; color: #333; }
-            .order-info table { width: 100%; font-size: 14px; }
-            .order-info td { padding: 5px 0; }
-            .order-info td:first-child { font-weight: 600; color: #666; width: 150px; }
-            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-            .address-box { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
-            .address-box h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #333; text-transform: uppercase; }
-            .address-box p { font-size: 13px; line-height: 1.8; color: #555; }
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            .items-table th { background: #333; color: #fff; padding: 12px; text-align: left; font-size: 13px; text-transform: uppercase; }
-            .items-table td { padding: 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+            .shop-info h3 { font-size: 16px; color: #333; margin-bottom: 4px; }
+            .shop-info .shop-address { font-size: 9px; color: #666; line-height: 1.4; }
+            .document-title { text-align: center; font-size: 18px; color: #333; margin: 8px 0; text-transform: uppercase; font-weight: bold; }
+            .order-info { background: #f5f5f5; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
+            .order-info h2 { font-size: 12px; margin-bottom: 4px; color: #333; }
+            .order-info table { width: 100%; font-size: 10px; }
+            .order-info td { padding: 2px 0; }
+            .order-info td:first-child { font-weight: 600; color: #666; width: 100px; }
+            .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+            .address-box { border: 1px solid #ddd; padding: 8px; border-radius: 4px; }
+            .address-box h3 { font-size: 11px; font-weight: 600; margin-bottom: 4px; color: #333; text-transform: uppercase; }
+            .address-box p { font-size: 9px; line-height: 1.4; color: #555; margin: 2px 0; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            .items-table th { background: #333; color: #fff; padding: 6px 4px; text-align: left; font-size: 10px; text-transform: uppercase; }
+            .items-table td { padding: 4px; border-bottom: 1px solid #ddd; font-size: 10px; }
             .items-table tr:hover { background: #f9f9f9; }
-            .items-table .product-name { font-weight: 600; color: #333; }
-            .items-table .product-sku { color: #999; font-size: 11px; }
-            .totals { max-width: 400px; margin-left: auto; }
+            .items-table .product-name { font-weight: 600; color: #333; font-size: 10px; }
+            .items-table .product-sku { color: #999; font-size: 8px; }
+            .items-table .product-description { font-size: 8px; color: #666; margin-top: 2px; }
+            .items-table .product-dimensions { font-size: 8px; color: #666; }
+            .items-table .variant-details { font-size: 8px; color: #666; font-style: italic; }
+            .items-table .check-box { text-align: center; }
+            .items-table .check-box input { width: 14px; height: 14px; }
+            .category-header { background: #e5e7eb; padding: 4px 8px; margin-top: 8px; margin-bottom: 4px; font-size: 11px; font-weight: bold; color: #333; border-left: 3px solid #3b82f6; }
+            .category-totals { background: #f9fafb; font-weight: bold; border-top: 2px solid #333; }
+            .signature-section { margin-top: 12px; page-break-inside: avoid; }
+            .signature-section h3 { font-size: 11px; margin-bottom: 4px; }
+            .signature-table { border-collapse: collapse; width: 100%; border: 1px solid #333; }
+            .signature-table td { border: 1px solid #333; padding: 6px; height: 30px; font-size: 9px; }
+            .signature-table td strong { display: inline; margin-right: 4px; }
+            .summary-totals { display: flex; justify-content: space-between; margin-top: 8px; gap: 10px; }
+            .summary-box { flex: 1; border: 2px solid #333; padding: 8px; text-align: center; font-size: 12px; font-weight: bold; background: #f9fafb; }
+            .order-barcode { position: absolute; bottom: 5px; right: 5px; text-align: right; }
+            .order-barcode .barcode-label { color: #dc2626; font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+            .order-barcode img { height: 50px; width: 140px; border: 1px solid #ddd; padding: 2px; background: white; }
+            .totals { max-width: 300px; margin-left: auto; margin-top: 8px; }
             .totals table { width: 100%; }
-            .totals td { padding: 8px; font-size: 14px; }
+            .totals td { padding: 4px; font-size: 10px; }
             .totals .total-label { text-align: right; font-weight: 600; color: #666; }
             .totals .total-amount { text-align: right; font-weight: 700; }
             .totals tr.grand-total { border-top: 2px solid #333; }
-            .totals tr.grand-total td { padding-top: 15px; font-size: 16px; color: #333; }
-            .note { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 8px; margin-top: 20px; }
-            .note h4 { font-size: 14px; margin-bottom: 10px; color: #856404; }
-            .note p { font-size: 13px; color: #856404; }
-            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #999; }
-            .print-btn { position: fixed; top: 20px; right: 20px; background: #4f46e5; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
+            .totals tr.grand-total td { padding-top: 6px; font-size: 11px; color: #333; }
+            .print-btn { position: fixed; top: 10px; right: 10px; background: #4f46e5; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999; }
             .print-btn:hover { background: #4338ca; }
-            .print-btn i { margin-right: 8px; }
-            .category-header { background: #e5e7eb; padding: 10px; margin-top: 20px; margin-bottom: 10px; font-size: 16px; font-weight: bold; color: #333; border-left: 4px solid #3b82f6; }
-            .items-table .product-description { font-size: 11px; color: #666; margin-top: 3px; }
-            .items-table .product-weight { font-size: 11px; color: #666; }
-            .items-table .product-dimensions { font-size: 11px; color: #666; }
-            .items-table .variant-details { font-size: 11px; color: #666; font-style: italic; }
-            .items-table .check-box { text-align: center; }
-            .items-table .check-box input { width: 20px; height: 20px; }
-            .category-totals { background: #f9fafb; font-weight: bold; border-top: 2px solid #333; }
-            .signature-section { margin-top: 40px; page-break-inside: avoid; }
-            .signature-table { border-collapse: collapse; width: 100%; border: 2px solid #333; }
-            .signature-table td { border: 1px solid #333; padding: 15px; height: 50px; }
-            .signature-table td strong { display: block; margin-bottom: 5px; }
-            .summary-totals { display: flex; justify-content: space-between; margin-top: 20px; gap: 20px; }
-            .summary-box { flex: 1; border: 2px solid #333; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; background: #f9fafb; }
-            .order-barcode { position: fixed; bottom: 10px; right: 10px; text-align: right; }
-            .order-barcode .barcode-label { color: #dc2626; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-            .order-barcode img { height: 70px; width: 180px; border: 1px solid #ddd; padding: 5px; background: white; }
-            @media print { .order-barcode { position: fixed; bottom: 10px; right: 10px; } }
+            .print-btn i { margin-right: 6px; }
+            .footer { margin-top: 15px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center; font-size: 8px; color: #999; }
         </style>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     </head>

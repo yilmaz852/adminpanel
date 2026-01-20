@@ -21,6 +21,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-register/?$', 'index.php?b2b_adm_page=register', 'top');
     add_rewrite_rule('^b2b-panel/?$', 'index.php?b2b_adm_page=dashboard', 'top');
     add_rewrite_rule('^b2b-panel/orders/?$', 'index.php?b2b_adm_page=orders', 'top');
+    add_rewrite_rule('^b2b-panel/orders/edit/?$', 'index.php?b2b_adm_page=order_edit', 'top');
     
     // Reports
     add_rewrite_rule('^b2b-panel/reports/?$', 'index.php?b2b_adm_page=reports', 'top');
@@ -82,12 +83,12 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/stock-planning/supplier-orders/?$', 'index.php?b2b_adm_page=supplier_orders', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures packing slip settings rewrites are properly registered
-    if (!get_option('b2b_rewrite_v23_packing_slip')) {
+    // Fixed version that ensures order edit page rewrites are properly registered
+    if (!get_option('b2b_rewrite_v24_order_edit')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v23_packing_slip', true);
+        update_option('b2b_rewrite_v24_order_edit', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v22_stock_planning');
+        delete_option('b2b_rewrite_v23_packing_slip');
     }
 });
 
@@ -2216,7 +2217,7 @@ function b2b_adm_header($title) {
                 
                 <!-- Orders -->
                 <div class="nav-item">
-                    <a href="<?= home_url('/b2b-panel/orders') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>" data-title="Orders">
+                    <a href="<?= home_url('/b2b-panel/orders') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['orders', 'order_edit'])?'active':'' ?>" data-title="Orders">
                         <i class="fa-solid fa-box"></i> <span class="nav-label">Orders</span>
                     </a>
                 </div>
@@ -5137,7 +5138,7 @@ add_action('template_redirect', function () {
                 </td>
                 <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
                     <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px" title="View Order"><i class="fa-regular fa-eye"></i></button>
-                    <button class="secondary" onclick="editOrder(<?=$oid?>)" style="padding:6px 10px" title="Edit Order"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <a href="<?= home_url('/b2b-panel/orders/edit?id=' . $oid) ?>" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Edit Order"><i class="fa-regular fa-pen-to-square"></i></a>
                     <a href="<?= home_url('/packing-slip/' . $oid) ?>" target="_blank" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Packing Slip"><i class="fa-solid fa-print"></i></a>
                     <?=$pdf_btn?>
                 </td>
@@ -5375,6 +5376,373 @@ add_action('template_redirect', function () {
     </script>
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   8B. PAGE: ORDER EDIT (FULL PAGE EDITOR)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'order_edit') return;
+    b2b_adm_guard();
+    
+    $order_id = intval($_GET['id'] ?? 0);
+    if (!$order_id) wp_die('Order ID is required');
+    
+    $order = wc_get_order($order_id);
+    if (!$order) wp_die('Order not found');
+    
+    // Handle form submission
+    if ($_POST && isset($_POST['save_order'])) {
+        check_admin_referer('b2b_save_order_' . $order_id, 'order_nonce');
+        
+        // Update billing address
+        if (isset($_POST['billing'])) {
+            $billing = $_POST['billing'];
+            $order->set_billing_first_name(sanitize_text_field($billing['first_name'] ?? ''));
+            $order->set_billing_last_name(sanitize_text_field($billing['last_name'] ?? ''));
+            $order->set_billing_company(sanitize_text_field($billing['company'] ?? ''));
+            $order->set_billing_address_1(sanitize_text_field($billing['address_1'] ?? ''));
+            $order->set_billing_address_2(sanitize_text_field($billing['address_2'] ?? ''));
+            $order->set_billing_city(sanitize_text_field($billing['city'] ?? ''));
+            $order->set_billing_postcode(sanitize_text_field($billing['postcode'] ?? ''));
+            $order->set_billing_state(sanitize_text_field($billing['state'] ?? ''));
+            $order->set_billing_country(sanitize_text_field($billing['country'] ?? ''));
+            $order->set_billing_email(sanitize_email($billing['email'] ?? ''));
+            $order->set_billing_phone(sanitize_text_field($billing['phone'] ?? ''));
+        }
+        
+        // Update shipping address
+        if (isset($_POST['shipping'])) {
+            $shipping = $_POST['shipping'];
+            $order->set_shipping_first_name(sanitize_text_field($shipping['first_name'] ?? ''));
+            $order->set_shipping_last_name(sanitize_text_field($shipping['last_name'] ?? ''));
+            $order->set_shipping_company(sanitize_text_field($shipping['company'] ?? ''));
+            $order->set_shipping_address_1(sanitize_text_field($shipping['address_1'] ?? ''));
+            $order->set_shipping_address_2(sanitize_text_field($shipping['address_2'] ?? ''));
+            $order->set_shipping_city(sanitize_text_field($shipping['city'] ?? ''));
+            $order->set_shipping_postcode(sanitize_text_field($shipping['postcode'] ?? ''));
+            $order->set_shipping_state(sanitize_text_field($shipping['state'] ?? ''));
+            $order->set_shipping_country(sanitize_text_field($shipping['country'] ?? ''));
+        }
+        
+        // Update item quantities
+        if (isset($_POST['items']) && is_array($_POST['items'])) {
+            foreach ($_POST['items'] as $item_id => $item_data) {
+                $qty = intval($item_data['qty'] ?? 0);
+                
+                if ($qty > 0) {
+                    foreach ($order->get_items() as $order_item_id => $order_item) {
+                        if ($order_item_id == $item_id) {
+                            $order_item->set_quantity($qty);
+                            $order_item->save();
+                            break;
+                        }
+                    }
+                } else {
+                    // Remove item if quantity is 0
+                    $order->remove_item($item_id);
+                }
+            }
+        }
+        
+        // Update order status
+        if (isset($_POST['order_status'])) {
+            $new_status = sanitize_text_field($_POST['order_status']);
+            $order->set_status($new_status);
+        }
+        
+        // Update customer note
+        if (isset($_POST['customer_note'])) {
+            $order->set_customer_note(sanitize_textarea_field($_POST['customer_note']));
+        }
+        
+        // Recalculate totals
+        $order->calculate_totals();
+        
+        // Save order
+        $order->save();
+        
+        // Add admin note
+        $order->add_order_note('Order details updated via B2B Admin Panel', false, true);
+        
+        // Redirect back to orders page with success message
+        wp_redirect(home_url('/b2b-panel/orders?updated=1'));
+        exit;
+    }
+    
+    b2b_adm_header('Edit Order #' . $order_id);
+    
+    // Get order data
+    $order_status = $order->get_status();
+    $order_date = $order->get_date_created();
+    $order_total = $order->get_total();
+    $items = $order->get_items();
+    ?>
+    
+    <div class="page-title-wrapper" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px">
+        <h1 class="page-title" style="margin:0;font-size:28px;font-weight:600;color:#111827">
+            <i class="fa-solid fa-pen-to-square" style="margin-right:10px;color:#6366f1"></i>
+            Edit Order #<?= $order_id ?>
+        </h1>
+        <div style="display:flex;gap:10px">
+            <a href="<?= home_url('/b2b-panel/orders') ?>" class="button secondary" style="padding:10px 20px;border-radius:6px">
+                <i class="fa-solid fa-arrow-left"></i> Back to Orders
+            </a>
+        </div>
+    </div>
+    
+    <!-- Order Info Bar -->
+    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;border-radius:8px;margin-bottom:25px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+        <div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:5px">Order Date</div>
+            <div style="font-size:18px;font-weight:600"><?= $order_date->date_i18n('F j, Y g:i A') ?></div>
+        </div>
+        <div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:5px">Status</div>
+            <div style="font-size:18px;font-weight:600"><?= wc_get_order_status_name($order_status) ?></div>
+        </div>
+        <div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:5px">Total</div>
+            <div style="font-size:24px;font-weight:700"><?= wc_price($order_total) ?></div>
+        </div>
+    </div>
+    
+    <form method="POST" action="">
+        <?php wp_nonce_field('b2b_save_order_' . $order_id, 'order_nonce'); ?>
+        
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:25px;margin-bottom:25px">
+            <!-- Left Column -->
+            <div>
+                <!-- Order Items -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-box" style="margin-right:8px;color:#6366f1"></i>
+                        Order Items
+                    </h3>
+                    
+                    <table style="width:100%;border-collapse:collapse">
+                        <thead>
+                            <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+                                <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
+                                <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
+                                <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($items as $item_id => $item): 
+                                $product = $item->get_product();
+                                $item_total = $item->get_total();
+                                $item_price = $item->get_total() / max(1, $item->get_quantity());
+                            ?>
+                            <tr style="border-bottom:1px solid #e5e7eb">
+                                <td style="padding:15px">
+                                    <div style="font-weight:600;color:#111827;margin-bottom:3px"><?= esc_html($item->get_name()) ?></div>
+                                    <?php if ($product && $product->get_sku()): ?>
+                                    <small style="color:#6b7280">SKU: <?= esc_html($product->get_sku()) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding:15px;text-align:center;color:#374151">
+                                    <?= wc_price($item_price) ?>
+                                </td>
+                                <td style="padding:15px;text-align:center">
+                                    <input type="number" name="items[<?= $item_id ?>][qty]" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
+                                </td>
+                                <td style="padding:15px;text-align:right;font-weight:600;color:#111827">
+                                    <?= wc_price($item_total) ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr style="background:#f9fafb;font-weight:700">
+                                <td colspan="3" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
+                                <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px"><?= wc_price($order_total) ?></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    
+                    <div style="margin-top:15px;padding:12px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
+                        <small style="color:#92400e">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            <strong>Note:</strong> Set quantity to 0 to remove an item from the order. Order totals will be recalculated automatically.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Billing Address -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-user" style="margin-right:8px;color:#10b981"></i>
+                        Billing Address
+                    </h3>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
+                            <input type="text" name="billing[first_name]" value="<?= esc_attr($order->get_billing_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
+                            <input type="text" name="billing[last_name]" value="<?= esc_attr($order->get_billing_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
+                            <input type="text" name="billing[company]" value="<?= esc_attr($order->get_billing_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
+                            <input type="text" name="billing[address_1]" value="<?= esc_attr($order->get_billing_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
+                            <input type="text" name="billing[address_2]" value="<?= esc_attr($order->get_billing_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
+                            <input type="text" name="billing[city]" value="<?= esc_attr($order->get_billing_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
+                            <input type="text" name="billing[postcode]" value="<?= esc_attr($order->get_billing_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
+                            <input type="text" name="billing[state]" value="<?= esc_attr($order->get_billing_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
+                            <input type="text" name="billing[country]" value="<?= esc_attr($order->get_billing_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Email</label>
+                            <input type="email" name="billing[email]" value="<?= esc_attr($order->get_billing_email()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Phone</label>
+                            <input type="text" name="billing[phone]" value="<?= esc_attr($order->get_billing_phone()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Shipping Address -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #f3f4f6">
+                        <h3 style="margin:0;font-size:18px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-truck" style="margin-right:8px;color:#3b82f6"></i>
+                            Shipping Address
+                        </h3>
+                        <button type="button" onclick="copyBillingToShipping()" class="button secondary" style="padding:8px 16px;font-size:13px;border-radius:6px">
+                            <i class="fa-solid fa-copy"></i> Copy from Billing
+                        </button>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
+                            <input type="text" name="shipping[first_name]" id="shipping_first_name" value="<?= esc_attr($order->get_shipping_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
+                            <input type="text" name="shipping[last_name]" id="shipping_last_name" value="<?= esc_attr($order->get_shipping_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
+                            <input type="text" name="shipping[company]" id="shipping_company" value="<?= esc_attr($order->get_shipping_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
+                            <input type="text" name="shipping[address_1]" id="shipping_address_1" value="<?= esc_attr($order->get_shipping_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
+                            <input type="text" name="shipping[address_2]" id="shipping_address_2" value="<?= esc_attr($order->get_shipping_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
+                            <input type="text" name="shipping[city]" id="shipping_city" value="<?= esc_attr($order->get_shipping_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
+                            <input type="text" name="shipping[postcode]" id="shipping_postcode" value="<?= esc_attr($order->get_shipping_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
+                            <input type="text" name="shipping[state]" id="shipping_state" value="<?= esc_attr($order->get_shipping_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
+                            <input type="text" name="shipping[country]" id="shipping_country" value="<?= esc_attr($order->get_shipping_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column -->
+            <div>
+                <!-- Order Status -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-flag" style="margin-right:8px;color:#f59e0b"></i>
+                        Order Status
+                    </h3>
+                    
+                    <select name="order_status" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-weight:600">
+                        <?php
+                        $statuses = wc_get_order_statuses();
+                        foreach ($statuses as $status_key => $status_label):
+                            $status_key = str_replace('wc-', '', $status_key);
+                        ?>
+                        <option value="<?= esc_attr($status_key) ?>" <?= selected($order_status, $status_key, false) ?>>
+                            <?= esc_html($status_label) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <!-- Customer Note -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-note-sticky" style="margin-right:8px;color:#ec4899"></i>
+                        Customer Note
+                    </h3>
+                    
+                    <textarea name="customer_note" rows="5" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;resize:vertical;font-family:inherit"><?= esc_textarea($order->get_customer_note()) ?></textarea>
+                </div>
+                
+                <!-- Save Button -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
+                    <button type="submit" name="save_order" class="button primary" style="width:100%;padding:15px;background:#10b981;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                        <i class="fa-solid fa-save" style="margin-right:8px"></i>
+                        Save Changes
+                    </button>
+                    <div style="margin-top:15px;padding:12px;background:#dbeafe;border-left:4px solid #3b82f6;border-radius:4px">
+                        <small style="color:#1e40af">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            All changes will be saved and order totals will be recalculated.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    
+    <script>
+    function copyBillingToShipping() {
+        document.getElementById('shipping_first_name').value = document.querySelector('input[name="billing[first_name]"]').value;
+        document.getElementById('shipping_last_name').value = document.querySelector('input[name="billing[last_name]"]').value;
+        document.getElementById('shipping_company').value = document.querySelector('input[name="billing[company]"]').value;
+        document.getElementById('shipping_address_1').value = document.querySelector('input[name="billing[address_1]"]').value;
+        document.getElementById('shipping_address_2').value = document.querySelector('input[name="billing[address_2]"]').value;
+        document.getElementById('shipping_city').value = document.querySelector('input[name="billing[city]"]').value;
+        document.getElementById('shipping_postcode').value = document.querySelector('input[name="billing[postcode]"]').value;
+        document.getElementById('shipping_state').value = document.querySelector('input[name="billing[state]"]').value;
+        document.getElementById('shipping_country').value = document.querySelector('input[name="billing[country]"]').value;
+    }
+    </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
 /* =====================================================
    9. PAGE: PRODUCTS (ENHANCED WITH FILTERS & COLUMNS)
 ===================================================== */

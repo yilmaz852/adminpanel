@@ -64,6 +64,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/settings/shipping/edit/?$', 'index.php?b2b_adm_page=shipping_zone_edit', 'top');
     add_rewrite_rule('^b2b-panel/settings/sales-agent/?$', 'index.php?b2b_adm_page=settings_sales_agent', 'top');
     add_rewrite_rule('^b2b-panel/settings/payments/?$', 'index.php?b2b_adm_page=settings_payments', 'top');
+    add_rewrite_rule('^b2b-panel/settings/packing-slip/?$', 'index.php?b2b_adm_page=settings_packing_slip', 'top');
     
     // Support Module
     add_rewrite_rule('^b2b-panel/support-tickets/?$', 'index.php?b2b_adm_page=support-tickets', 'top');
@@ -81,12 +82,12 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/stock-planning/supplier-orders/?$', 'index.php?b2b_adm_page=supplier_orders', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures stock planning module rewrites are properly registered
-    if (!get_option('b2b_rewrite_v22_stock_planning')) {
+    // Fixed version that ensures packing slip settings rewrites are properly registered
+    if (!get_option('b2b_rewrite_v23_packing_slip')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v22_stock_planning', true);
+        update_option('b2b_rewrite_v23_packing_slip', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v21_payments');
+        delete_option('b2b_rewrite_v22_stock_planning');
     }
 });
 
@@ -2264,6 +2265,11 @@ function b2b_adm_header($title) {
                         <div class="nav-item">
                             <a href="<?= home_url('/b2b-panel/settings/sales-agent') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_sales_agent'?'active':'' ?>" data-title="Sales Agent">
                                 <i class="fa-solid fa-user-tie"></i> <span class="nav-label">Sales Agent</span>
+                            </a>
+                        </div>
+                        <div class="nav-item">
+                            <a href="<?= home_url('/b2b-panel/settings/packing-slip') ?>" class="nav-link dropdown-link <?= get_query_var('b2b_adm_page')=='settings_packing_slip'?'active':'' ?>" data-title="Packing Slip">
+                                <i class="fa-solid fa-file-invoice"></i> <span class="nav-label">Packing Slip</span>
                             </a>
                         </div>
                     </div>
@@ -8871,6 +8877,12 @@ add_action('admin_init', 'b2b_register_sales_agent_settings');
 // ==========================================================================
 // PACKING SLIP SETTINGS PAGE
 // ==========================================================================
+
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'settings_packing_slip') return;
+    b2b_page_packing_slip_settings();
+    exit;
+});
 
 function b2b_page_packing_slip_settings() {
     b2b_adm_guard();

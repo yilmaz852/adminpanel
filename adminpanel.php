@@ -5429,17 +5429,20 @@ add_action('template_redirect', function () {
             foreach ($_POST['items'] as $item_id => $item_data) {
                 $qty = intval($item_data['qty'] ?? 0);
                 
-                if ($qty > 0) {
-                    foreach ($order->get_items() as $order_item_id => $order_item) {
-                        if ($order_item_id == $item_id) {
+                // Find the item in the order
+                $item_found = false;
+                foreach ($order->get_items() as $order_item_id => $order_item) {
+                    if ($order_item_id == $item_id) {
+                        $item_found = true;
+                        if ($qty > 0) {
                             $order_item->set_quantity($qty);
                             $order_item->save();
-                            break;
+                        } else {
+                            // Remove item if quantity is 0
+                            $order->remove_item($item_id);
                         }
+                        break;
                     }
-                } else {
-                    // Remove item if quantity is 0
-                    $order->remove_item($item_id);
                 }
             }
         }
@@ -5532,7 +5535,8 @@ add_action('template_redirect', function () {
                             <?php foreach ($items as $item_id => $item): 
                                 $product = $item->get_product();
                                 $item_total = $item->get_total();
-                                $item_price = $item->get_subtotal() / max(1, $item->get_quantity());
+                                $qty = $item->get_quantity();
+                                $item_price = ($qty > 0) ? ($item->get_subtotal() / $qty) : 0;
                             ?>
                             <tr style="border-bottom:1px solid #e5e7eb">
                                 <td style="padding:15px">

@@ -8897,6 +8897,8 @@ function b2b_page_packing_slip_settings() {
         update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
         update_option('packing_slip_company_name', sanitize_text_field($_POST['packing_slip_company_name'] ?? ''));
         update_option('packing_slip_company_address', sanitize_textarea_field($_POST['packing_slip_company_address'] ?? ''));
+        update_option('packing_slip_warehouse_notes', sanitize_textarea_field($_POST['packing_slip_warehouse_notes'] ?? ''));
+        update_option('packing_slip_show_instructions', isset($_POST['packing_slip_show_instructions']) ? 1 : 0);
         
         // Handle logo upload
         if (isset($_FILES['packing_slip_logo']) && $_FILES['packing_slip_logo']['size'] > 0) {
@@ -8966,6 +8968,8 @@ function b2b_page_packing_slip_settings() {
     $company_name = get_option('packing_slip_company_name', get_bloginfo('name'));
     $company_address = get_option('packing_slip_company_address', '');
     $logo_url = get_option('packing_slip_logo_url', '');
+    $warehouse_notes = get_option('packing_slip_warehouse_notes', '');
+    $show_instructions = get_option('packing_slip_show_instructions', 1);
     
     b2b_adm_header('Packing Slip Settings');
     ?>
@@ -9130,6 +9134,36 @@ function b2b_page_packing_slip_settings() {
                     </label>
                     <p class="ps-description">
                         Display product prices and totals on the packing slip. When disabled, only product names and quantities are visible.
+                    </p>
+                </div>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <input type="checkbox" name="packing_slip_show_instructions" value="1" <?= checked($show_instructions, 1, false) ?>>
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-tags"></i> Show Shipping Instructions
+                        </span>
+                    </label>
+                    <p class="ps-description">
+                        Display special shipping instruction labels (Fragile, Keep Cold, etc.) based on product categories or custom fields.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="ps-card">
+                <h2>
+                    <i class="fa-solid fa-clipboard-list"></i> Warehouse Instructions
+                </h2>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-note-sticky"></i> Special Notes for Warehouse Staff
+                        </span>
+                    </label>
+                    <textarea name="packing_slip_warehouse_notes" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;min-height:100px;" placeholder="Enter special instructions for warehouse staff..."><?= esc_textarea($warehouse_notes) ?></textarea>
+                    <p class="ps-description">
+                        These notes will be displayed on every packing slip. Use this for general warehouse instructions, safety reminders, or quality control procedures.
                     </p>
                 </div>
             </div>
@@ -16080,6 +16114,8 @@ function sa_render_packing_slip($order_id) {
     
     $company_address = get_option('packing_slip_company_address', $default_address_str);
     $logo_url = get_option('packing_slip_logo_url', '');
+    $warehouse_notes = get_option('packing_slip_warehouse_notes', '');
+    $show_instructions = get_option('packing_slip_show_instructions', 1);
     
     // Get order details
     $order_date = $order->get_date_created()->format('d.m.Y');
@@ -16162,6 +16198,16 @@ function sa_render_packing_slip($order_id) {
             .print-btn:hover { background: #4338ca; }
             .print-btn i { margin-right: 6px; }
             .footer { margin-top: 15px; padding-top: 8px; border-top: 1px solid #ddd; text-align: center; font-size: 8px; color: #999; }
+            .warehouse-notes { background: #fef3c7; border: 2px solid #f59e0b; border-radius: 6px; padding: 10px; margin: 10px 0; page-break-inside: avoid; }
+            .warehouse-notes h3 { font-size: 11px; color: #92400e; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+            .warehouse-notes p { font-size: 9px; color: #78350f; line-height: 1.4; margin: 0; white-space: pre-line; }
+            .shipping-instructions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; page-break-inside: avoid; }
+            .instruction-tag { background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; display: inline-flex; align-items: center; gap: 4px; }
+            .instruction-tag.fragile { background: #dc2626; }
+            .instruction-tag.cold { background: #2563eb; }
+            .instruction-tag.hazard { background: #f59e0b; }
+            .instruction-tag.heavy { background: #7c3aed; }
+            .instruction-tag.glass { background: #dc2626; border: 2px dashed white; }
         </style>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     </head>
@@ -16185,6 +16231,84 @@ function sa_render_packing_slip($order_id) {
         </div>
         
         <h1 class="document-title">Packing Slip</h1>
+        
+        <?php
+        // Detect shipping instructions based on product categories and meta
+        $shipping_instructions = [];
+        
+        if ($show_instructions) {
+            $has_fragile = false;
+            $has_cold = false;
+            $has_hazard = false;
+            $has_heavy = false;
+            $has_glass = false;
+            
+            foreach ($order->get_items() as $item) {
+                $product = $item->get_product();
+                if (!$product) continue;
+                
+                // Check product categories
+                $product_cats = wp_get_post_terms($product->get_id(), 'product_cat');
+                foreach ($product_cats as $cat) {
+                    $cat_slug = strtolower($cat->slug);
+                    $cat_name = strtolower($cat->name);
+                    
+                    if (strpos($cat_slug, 'fragile') !== false || strpos($cat_name, 'fragile') !== false || strpos($cat_name, 'kırılabilir') !== false) {
+                        $has_fragile = true;
+                    }
+                    if (strpos($cat_slug, 'frozen') !== false || strpos($cat_slug, 'cold') !== false || strpos($cat_name, 'soğuk') !== false || strpos($cat_name, 'dondurulmuş') !== false) {
+                        $has_cold = true;
+                    }
+                    if (strpos($cat_slug, 'hazard') !== false || strpos($cat_slug, 'chemical') !== false || strpos($cat_name, 'tehlikeli') !== false) {
+                        $has_hazard = true;
+                    }
+                    if (strpos($cat_slug, 'glass') !== false || strpos($cat_name, 'cam') !== false) {
+                        $has_glass = true;
+                    }
+                }
+                
+                // Check product weight for heavy items
+                $weight = $product->get_weight();
+                if ($weight && is_numeric($weight) && floatval($weight) > 20) { // Heavy if over 20 lbs
+                    $has_heavy = true;
+                }
+                
+                // Check product meta for shipping instructions
+                $shipping_class = $product->get_shipping_class();
+                if (strpos(strtolower($shipping_class), 'fragile') !== false) $has_fragile = true;
+                if (strpos(strtolower($shipping_class), 'cold') !== false) $has_cold = true;
+            }
+            
+            if ($has_fragile) $shipping_instructions[] = ['label' => 'FRAGILE / KIRILABİLİR', 'class' => 'fragile', 'icon' => 'fa-wine-glass-crack'];
+            if ($has_glass) $shipping_instructions[] = ['label' => 'GLASS / CAM', 'class' => 'glass', 'icon' => 'fa-wine-glass'];
+            if ($has_cold) $shipping_instructions[] = ['label' => 'KEEP COLD / SOĞUK TUTUN', 'class' => 'cold', 'icon' => 'fa-snowflake'];
+            if ($has_hazard) $shipping_instructions[] = ['label' => 'HAZARDOUS / TEHLİKELİ', 'class' => 'hazard', 'icon' => 'fa-triangle-exclamation'];
+            if ($has_heavy) $shipping_instructions[] = ['label' => 'HEAVY / AĞIR', 'class' => 'heavy', 'icon' => 'fa-weight-hanging'];
+        }
+        ?>
+        
+        <?php if (!empty($shipping_instructions)): ?>
+        <!-- Shipping Instructions -->
+        <div class="shipping-instructions">
+            <?php foreach ($shipping_instructions as $instruction): ?>
+                <span class="instruction-tag <?= esc_attr($instruction['class']) ?>">
+                    <i class="fa-solid <?= esc_attr($instruction['icon']) ?>"></i>
+                    <?= esc_html($instruction['label']) ?>
+                </span>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        
+        <?php if ($warehouse_notes): ?>
+        <!-- Warehouse Notes -->
+        <div class="warehouse-notes">
+            <h3>
+                <i class="fa-solid fa-clipboard-list"></i>
+                Warehouse Instructions / Depo Talimatları
+            </h3>
+            <p><?= esc_html($warehouse_notes) ?></p>
+        </div>
+        <?php endif; ?>
         
         <div class="order-info">
             <h2>Order Information</h2>

@@ -8901,15 +8901,59 @@ function b2b_page_packing_slip_settings() {
         // Handle logo upload
         if (isset($_FILES['packing_slip_logo']) && $_FILES['packing_slip_logo']['size'] > 0) {
             require_once(ABSPATH . 'wp-admin/includes/file.php');
-            $upload = wp_handle_upload($_FILES['packing_slip_logo'], ['test_form' => false]);
-            if (!isset($upload['error'])) {
-                update_option('packing_slip_logo_url', $upload['url']);
+            
+            // Validate file type
+            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            $file_type = $_FILES['packing_slip_logo']['type'];
+            
+            if (!in_array($file_type, $allowed_types)) {
+                echo '<div style="background:#fee2e2;color:#991b1b;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #fca5a5">
+                        <i class="fa-solid fa-exclamation-circle"></i> Only image files (JPG, PNG, GIF, WEBP) are allowed.
+                      </div>';
+            } else {
+                // Upload with proper validation
+                $upload_overrides = [
+                    'test_form' => false,
+                    'mimes' => [
+                        'jpg|jpeg|jpe' => 'image/jpeg',
+                        'png' => 'image/png',
+                        'gif' => 'image/gif',
+                        'webp' => 'image/webp'
+                    ]
+                ];
+                
+                $upload = wp_handle_upload($_FILES['packing_slip_logo'], $upload_overrides);
+                
+                if (!isset($upload['error'])) {
+                    // Delete old logo file if exists
+                    $old_logo = get_option('packing_slip_logo_url', '');
+                    if ($old_logo) {
+                        $old_file = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $old_logo);
+                        if (file_exists($old_file)) {
+                            @unlink($old_file);
+                        }
+                    }
+                    
+                    update_option('packing_slip_logo_url', $upload['url']);
+                } else {
+                    echo '<div style="background:#fee2e2;color:#991b1b;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #fca5a5">
+                            <i class="fa-solid fa-exclamation-circle"></i> Upload error: ' . esc_html($upload['error']) . '
+                          </div>';
+                }
             }
         }
         
         // Handle logo removal
         if (isset($_POST['remove_logo'])) {
-            delete_option('packing_slip_logo_url');
+            $old_logo = get_option('packing_slip_logo_url', '');
+            if ($old_logo) {
+                // Delete the file from filesystem
+                $old_file = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $old_logo);
+                if (file_exists($old_file)) {
+                    @unlink($old_file);
+                }
+                delete_option('packing_slip_logo_url');
+            }
         }
         
         echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
@@ -16023,11 +16067,18 @@ function sa_render_packing_slip($order_id) {
     // Get settings
     $show_prices = get_option('packing_slip_show_prices', 1);
     $company_name = get_option('packing_slip_company_name', get_bloginfo('name'));
-    $company_address = get_option('packing_slip_company_address', 
-        get_option('woocommerce_store_address', '') . '<br>' .
-        get_option('woocommerce_store_city', '') . ' ' .
-        get_option('woocommerce_store_postcode', '')
-    );
+    
+    // Build default address only if values exist
+    $default_address = [];
+    if ($addr = get_option('woocommerce_store_address', '')) $default_address[] = $addr;
+    if ($city = get_option('woocommerce_store_city', '')) {
+        $line = $city;
+        if ($postcode = get_option('woocommerce_store_postcode', '')) $line .= ' ' . $postcode;
+        $default_address[] = $line;
+    }
+    $default_address_str = implode("\n", $default_address);
+    
+    $company_address = get_option('packing_slip_company_address', $default_address_str);
     $logo_url = get_option('packing_slip_logo_url', '');
     
     // Get order details
@@ -16101,7 +16152,7 @@ function sa_render_packing_slip($order_id) {
                 <?php if ($logo_url): ?>
                     <img src="<?= esc_url($logo_url) ?>" alt="<?= esc_attr($company_name) ?>">
                 <?php else: ?>
-                    <h2 style="margin:0;"><?= esc_html($company_name) ?></h2>
+                    <h2 style="margin:0;font-size:20px;color:#333;"><?= esc_html($company_name) ?></h2>
                 <?php endif; ?>
             </div>
             <div class="shop-info">
@@ -16110,9 +16161,7 @@ function sa_render_packing_slip($order_id) {
             </div>
         </div>
         
-        <?php if ($logo_url): ?>
         <h1 class="document-title">Packing Slip</h1>
-        <?php endif; ?>
         
         <div class="order-info">
             <h2>Order Information</h2>

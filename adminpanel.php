@@ -5006,6 +5006,7 @@ add_action('template_redirect', function () {
                 </td>
                 <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
                     <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px"><i class="fa-regular fa-eye"></i></button>
+                    <a href="<?= home_url('/packing-slip/' . $oid) ?>" target="_blank" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Packing Slip"><i class="fa-solid fa-print"></i></a>
                     <?=$pdf_btn?>
                 </td>
             </tr>
@@ -8894,6 +8895,22 @@ function b2b_page_packing_slip_settings() {
     // Save settings if form submitted
     if (isset($_POST['ps_save_settings']) && check_admin_referer('ps_settings_save', 'ps_settings_nonce')) {
         update_option('packing_slip_show_prices', isset($_POST['packing_slip_show_prices']) ? 1 : 0);
+        update_option('packing_slip_company_name', sanitize_text_field($_POST['packing_slip_company_name'] ?? ''));
+        update_option('packing_slip_company_address', sanitize_textarea_field($_POST['packing_slip_company_address'] ?? ''));
+        
+        // Handle logo upload
+        if (isset($_FILES['packing_slip_logo']) && $_FILES['packing_slip_logo']['size'] > 0) {
+            require_once(ABSPATH . 'wp-admin/includes/file.php');
+            $upload = wp_handle_upload($_FILES['packing_slip_logo'], ['test_form' => false]);
+            if (!isset($upload['error'])) {
+                update_option('packing_slip_logo_url', $upload['url']);
+            }
+        }
+        
+        // Handle logo removal
+        if (isset($_POST['remove_logo'])) {
+            delete_option('packing_slip_logo_url');
+        }
         
         echo '<div style="background:#d1fae5;color:#065f46;padding:15px;margin:20px 0;border-radius:8px;border:1px solid #a7f3d0">
                 <i class="fa-solid fa-check-circle"></i> Settings saved successfully!
@@ -8902,6 +8919,9 @@ function b2b_page_packing_slip_settings() {
     
     // Get current values
     $show_prices = get_option('packing_slip_show_prices', 1);
+    $company_name = get_option('packing_slip_company_name', get_bloginfo('name'));
+    $company_address = get_option('packing_slip_company_address', '');
+    $logo_url = get_option('packing_slip_logo_url', '');
     
     b2b_adm_header('Packing Slip Settings');
     ?>
@@ -8999,12 +9019,62 @@ function b2b_page_packing_slip_settings() {
             <p style="color:#6b7280;margin-top:8px;">Manage packing slip appearance and content settings</p>
         </div>
         
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             <?php wp_nonce_field('ps_settings_save', 'ps_settings_nonce'); ?>
             
             <div class="ps-card">
                 <h2>
-                    <i class="fa-solid fa-sliders"></i> General Settings
+                    <i class="fa-solid fa-building"></i> Company Information
+                </h2>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-signature"></i> Company Name
+                        </span>
+                    </label>
+                    <input type="text" name="packing_slip_company_name" value="<?= esc_attr($company_name) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;" placeholder="Enter company name">
+                    <p class="ps-description">
+                        The company name that will appear on the packing slip header.
+                    </p>
+                </div>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-location-dot"></i> Company Address
+                        </span>
+                    </label>
+                    <textarea name="packing_slip_company_address" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;min-height:80px;" placeholder="Enter company address"><?= esc_textarea($company_address) ?></textarea>
+                    <p class="ps-description">
+                        The company address that will appear on the packing slip header.
+                    </p>
+                </div>
+                
+                <div class="ps-setting">
+                    <label class="ps-label">
+                        <span class="ps-label-text">
+                            <i class="fa-solid fa-image"></i> Company Logo
+                        </span>
+                    </label>
+                    <?php if ($logo_url): ?>
+                        <div style="margin:10px 0;">
+                            <img src="<?= esc_url($logo_url) ?>" style="max-width:200px;max-height:100px;border:1px solid #e5e7eb;padding:5px;border-radius:6px;">
+                            <label style="display:block;margin-top:10px;">
+                                <input type="checkbox" name="remove_logo" value="1"> Remove current logo
+                            </label>
+                        </div>
+                    <?php endif; ?>
+                    <input type="file" name="packing_slip_logo" accept="image/*" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-top:5px;">
+                    <p class="ps-description">
+                        Upload a logo image that will appear on the packing slip header. Recommended size: 200x100px.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="ps-card">
+                <h2>
+                    <i class="fa-solid fa-sliders"></i> Display Settings
                 </h2>
                 
                 <div class="ps-setting">
@@ -15952,6 +16022,13 @@ function sa_render_packing_slip($order_id) {
     
     // Get settings
     $show_prices = get_option('packing_slip_show_prices', 1);
+    $company_name = get_option('packing_slip_company_name', get_bloginfo('name'));
+    $company_address = get_option('packing_slip_company_address', 
+        get_option('woocommerce_store_address', '') . '<br>' .
+        get_option('woocommerce_store_city', '') . ' ' .
+        get_option('woocommerce_store_postcode', '')
+    );
+    $logo_url = get_option('packing_slip_logo_url', '');
     
     // Get order details
     $order_date = $order->get_date_created()->format('d.m.Y');
@@ -15960,12 +16037,7 @@ function sa_render_packing_slip($order_id) {
     $billing_address = $order->get_formatted_billing_address();
     $shipping_address = $order->get_formatted_shipping_address();
     $customer_note = $order->get_customer_note();
-    
-    // Get company info (you can customize this)
-    $company_name = get_bloginfo('name');
-    $company_address = get_option('woocommerce_store_address', '') . '<br>' .
-                       get_option('woocommerce_store_city', '') . ' ' .
-                       get_option('woocommerce_store_postcode', '');
+    $shipping_method = $order->get_shipping_method();
     
     ?>
     <!DOCTYPE html>
@@ -15980,9 +16052,13 @@ function sa_render_packing_slip($order_id) {
             }
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
-            .header { border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
-            .header h1 { font-size: 28px; color: #333; }
-            .header .company-info { font-size: 12px; color: #666; margin-top: 10px; }
+            .header-container { display: grid; grid-template-columns: 200px 1fr; gap: 20px; border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 20px; align-items: start; }
+            .header-logo { max-width: 200px; }
+            .header-logo img { max-width: 100%; height: auto; }
+            .shop-info { text-align: right; }
+            .shop-info h3 { font-size: 24px; color: #333; margin-bottom: 10px; }
+            .shop-info .shop-address { font-size: 12px; color: #666; line-height: 1.8; }
+            .document-title { text-align: center; font-size: 28px; color: #333; margin: 20px 0; text-transform: uppercase; }
             .order-info { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
             .order-info h2 { font-size: 18px; margin-bottom: 10px; color: #333; }
             .order-info table { width: 100%; font-size: 14px; }
@@ -16020,13 +16096,23 @@ function sa_render_packing_slip($order_id) {
             <i class="fa-solid fa-print"></i> Print
         </button>
         
-        <div class="header">
-            <h1>PACKING SLIP</h1>
-            <div class="company-info">
-                <strong><?= esc_html($company_name) ?></strong><br>
-                <?= wp_kses_post($company_address) ?>
+        <div class="header-container">
+            <div class="header-logo">
+                <?php if ($logo_url): ?>
+                    <img src="<?= esc_url($logo_url) ?>" alt="<?= esc_attr($company_name) ?>">
+                <?php else: ?>
+                    <h2 style="margin:0;"><?= esc_html($company_name) ?></h2>
+                <?php endif; ?>
+            </div>
+            <div class="shop-info">
+                <h3><?= esc_html($company_name) ?></h3>
+                <div class="shop-address"><?= nl2br(esc_html($company_address)) ?></div>
             </div>
         </div>
+        
+        <?php if ($logo_url): ?>
+        <h1 class="document-title">Packing Slip</h1>
+        <?php endif; ?>
         
         <div class="order-info">
             <h2>Order Information</h2>
@@ -16043,6 +16129,12 @@ function sa_render_packing_slip($order_id) {
                     <td>Customer:</td>
                     <td><?= $customer ? esc_html($customer->display_name) : 'Guest' ?></td>
                 </tr>
+                <?php if ($shipping_method): ?>
+                <tr>
+                    <td>Shipping Method:</td>
+                    <td><?= esc_html($shipping_method) ?></td>
+                </tr>
+                <?php endif; ?>
             </table>
         </div>
         

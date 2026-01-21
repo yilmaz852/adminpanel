@@ -6018,13 +6018,22 @@ add_action('template_redirect', function () {
                         <?php if ($group_name): ?>
                         <div style="padding:12px;background:#f0f9ff;border-radius:6px;border-left:4px solid #3b82f6">
                             <div style="font-size:13px;color:#1e40af;margin-bottom:4px">
-                                <i class="fa-solid fa-user-tag"></i> <strong>Customer Role:</strong>
+                                <i class="fa-solid fa-user-tag"></i> <strong>Customer Role/Group:</strong>
                             </div>
                             <div style="font-size:15px;font-weight:600;color:#1e3a8a">
                                 <?= esc_html($group_name) ?>
                                 <?php if ($discount_percent > 0): ?>
-                                    <span style="color:#10b981">(<?= number_format($discount_percent, 0) ?>% discount)</span>
+                                    <span style="color:#10b981;margin-left:8px">(<?= number_format($discount_percent, 0) ?>% discount)</span>
                                 <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <div style="padding:12px;background:#f3f4f6;border-radius:6px;border-left:4px solid #9ca3af">
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">
+                                <i class="fa-solid fa-user"></i> <strong>Customer Role/Group:</strong>
+                            </div>
+                            <div style="font-size:14px;color:#6b7280">
+                                Standard Customer (No special discount group)
                             </div>
                         </div>
                         <?php endif; ?>
@@ -6272,9 +6281,9 @@ add_action('template_redirect', function () {
         container.appendChild(row);
     }
     
-    // Real-time total calculation
+    // Real-time total calculation v2.1 - Updated 2026-01-21
     function calculateOrderTotal() {
-        console.log('calculateOrderTotal called'); // Debug log
+        console.log('=== calculateOrderTotal called v2.1 ==='); // Debug log
         let subtotal = 0;
         let assemblyTotal = 0;
         
@@ -6322,21 +6331,24 @@ add_action('template_redirect', function () {
         if (totalDisplay) totalDisplay.textContent = '$' + total.toFixed(2);
     }
     
-    // Use event delegation for real-time calculation (works with dynamically added elements)
+    // Use event delegation for real-time calculation v2.1 (works with dynamically added elements)
     document.addEventListener('input', function(e) {
         if (e.target.matches('input[name*="[quantity]"], input[name*="[price]"], input[name="shipping_cost"], input[name="tax_amount"], input[name*="fees["][name*="[amount]"]')) {
+            console.log('Input event triggered on:', e.target.name);
             calculateOrderTotal();
         }
     });
     
     document.addEventListener('change', function(e) {
         if (e.target.matches('input[name*="[assembly]"]')) {
+            console.log('Assembly checkbox changed:', e.target.name, e.target.checked);
             calculateOrderTotal();
         }
     });
     
     // Initial calculation on page load
     document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, running initial calculation');
         calculateOrderTotal();
     });
     

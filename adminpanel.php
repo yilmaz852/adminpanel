@@ -6001,7 +6001,9 @@ add_action('template_redirect', function () {
                     }
                     // If group name still empty but we have a slug, use the slug as fallback
                     if (empty($group_name) && !empty($group_slug)) {
-                        $group_name = ucfirst(str_replace('-', ' ', $group_slug));
+                        // Remove 'b2b_' prefix if present (e.g., 'b2b_dealer' → 'Dealer')
+                        $clean_slug = preg_replace('/^b2b[_-]/i', '', $group_slug);
+                        $group_name = ucwords(str_replace(['-', '_'], ' ', $clean_slug));
                     }
                 }
                 
@@ -6316,7 +6318,7 @@ add_action('template_redirect', function () {
     
     // Remove item button handler
     $(document).on('click', '.remove-item-btn', function() {
-        if (confirm('Are you sure you want to remove this product from the order?')) {
+        if (confirm('Are you sure you want to remove this product from the order?\n\nThe item will be marked for deletion now and removed when you click Save Order.')) {
             const itemRow = $(this).closest('tr.item-row');
             const qtyInput = itemRow.find('.item-qty');
             // Store original quantity before setting to 0
@@ -6326,6 +6328,10 @@ add_action('template_redirect', function () {
             itemRow.css('opacity', '0.5');
             itemRow.find('input').prop('disabled', true);
             $(this).html('<i class="fa-solid fa-undo"></i>').attr('title', 'Undo removal').removeClass('remove-item-btn').addClass('undo-removal-btn');
+            // Add a visual badge showing item will be removed on save
+            if (!itemRow.find('.pending-deletion-badge').length) {
+                itemRow.find('td:first').prepend('<span class="pending-deletion-badge" style="display:inline-block;background:#ef4444;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-right:8px">PENDING DELETION</span>');
+            }
             calcTotals();
         }
     });
@@ -6340,6 +6346,8 @@ add_action('template_redirect', function () {
         itemRow.css('opacity', '1');
         itemRow.find('input').prop('disabled', false);
         $(this).html('<i class="fa-solid fa-trash"></i>').attr('title', 'Remove this product').removeClass('undo-removal-btn').addClass('remove-item-btn');
+        // Remove pending deletion badge
+        itemRow.find('.pending-deletion-badge').remove();
         calcTotals();
     });
     
@@ -6476,14 +6484,19 @@ add_action('template_redirect', function () {
                                 div.appendChild(document.createElement('br'));
                                 
                                 const small = document.createElement('small');
-                                let priceText = 'SKU: ' + product.sku + ' | Price: $' + product.price.toFixed(2);
+                                small.innerHTML = 'SKU: ' + product.sku + ' | ';
+                                
+                                // Show discounted price prominently in green if applicable
                                 if (product.has_discount && product.regular_price !== product.price) {
-                                    priceText += ' (Regular: $' + product.regular_price.toFixed(2) + ')';
+                                    small.innerHTML += 'Price: <strong style="color:#10b981">$' + product.price.toFixed(2) + '</strong> ';
+                                    small.innerHTML += '<span style="color:#ef4444;text-decoration:line-through">$' + product.regular_price.toFixed(2) + '</span>';
+                                } else {
+                                    small.innerHTML += 'Price: $' + product.price.toFixed(2);
                                 }
+                                
                                 if (product.assembly_enabled) {
-                                    priceText += ' | Assembly: $' + product.assembly_price.toFixed(2);
+                                    small.innerHTML += ' | Assembly: $' + product.assembly_price.toFixed(2);
                                 }
-                                small.textContent = priceText;
                                 div.appendChild(small);
                                 
                                 div.onclick = function() { selectProduct(this); };

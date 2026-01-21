@@ -5712,15 +5712,15 @@ add_action('template_redirect', function () {
                                     <?php endif; ?>
                                 </td>
                                 <td style="padding:15px;text-align:center">
-                                    <input type="number" name="items[<?= $item_id ?>][price]" class="item-price" value="<?= esc_attr(number_format($item_price, 2, '.', '')) ?>" step="0.01" min="0" style="width:90px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
+                                    <input type="number" name="items[<?= $item_id ?>][price]" value="<?= esc_attr(number_format($item_price, 2, '.', '')) ?>" step="0.01" min="0" style="width:90px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
                                 </td>
                                 <td style="padding:15px;text-align:center">
-                                    <input type="number" name="items[<?= $item_id ?>][qty]" class="item-qty" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
+                                    <input type="number" name="items[<?= $item_id ?>][qty]" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
                                 </td>
                                 <td style="padding:15px;text-align:center">
                                     <?php if ($has_assembly): ?>
                                         <div>
-                                            <input type="checkbox" name="items[<?= $item_id ?>][assembly]" class="assembly-check" value="1" <?= checked($assembly_enabled, 1, false) ?> data-assembly-price="<?= esc_attr($assembly_price) ?>" style="width:20px;height:20px;cursor:pointer">
+                                            <input type="checkbox" name="items[<?= $item_id ?>][assembly]" value="1" <?= checked($assembly_enabled, 1, false) ?> data-assembly-price="<?= esc_attr($assembly_price) ?>" style="width:20px;height:20px;cursor:pointer">
                                         </div>
                                         <small style="color:#6b7280;font-size:11px">$<?= number_format($assembly_price, 2) ?>/item</small>
                                     <?php else: ?>
@@ -6118,14 +6118,14 @@ add_action('template_redirect', function () {
                     <div style="display:grid;gap:15px">
                         <div>
                             <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Shipping Cost</label>
-                            <input type="number" name="shipping_cost" id="shipping_cost" class="order-shipping" value="<?= esc_attr(number_format($order->get_shipping_total(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                            <input type="number" name="shipping_cost" value="<?= esc_attr(number_format($order->get_shipping_total(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                             <small style="color:#6b7280;margin-top:4px;display:block">
                                 <i class="fa-solid fa-info-circle"></i> Shipping method can be changed in WooCommerce settings
                             </small>
                         </div>
                         <div>
                             <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Tax Amount</label>
-                            <input type="number" name="tax_amount" id="tax_amount" class="order-tax" value="<?= esc_attr(number_format($order->get_total_tax(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                            <input type="number" name="tax_amount" value="<?= esc_attr(number_format($order->get_total_tax(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
                     </div>
                     
@@ -6153,13 +6153,13 @@ add_action('template_redirect', function () {
                         <div class="fee-row" style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end">
                             <div>
                                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
-                                <input type="text" name="fees[<?= $fee_id ?>][name]" class="fee-name" value="<?= esc_attr($fee->get_name()) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                <input type="text" name="fees[<?= $fee_id ?>][name]" value="<?= esc_attr($fee->get_name()) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
                             </div>
                             <div>
                                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
-                                <input type="number" name="fees[<?= $fee_id ?>][amount]" class="fee-amount" value="<?= esc_attr(number_format($fee->get_total(), 2, '.', '')) ?>" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                <input type="number" name="fees[<?= $fee_id ?>][amount]" value="<?= esc_attr(number_format($fee->get_total(), 2, '.', '')) ?>" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
                             </div>
-                            <button type="button" onclick="this.closest('.fee-row').remove(); calculateOrderTotal();" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
+                            <button type="button" onclick="this.closest('.fee-row').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
                         </div>
@@ -6268,87 +6268,86 @@ add_action('template_redirect', function () {
         row.innerHTML = `
             <div>
                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
-                <input type="text" name="fees[${feeId}][name]" class="fee-name" placeholder="e.g., Handling Fee" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                <input type="text" name="fees[${feeId}][name]" placeholder="e.g., Handling Fee" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
             </div>
             <div>
                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
-                <input type="number" name="fees[${feeId}][amount]" class="fee-amount" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                <input type="number" name="fees[${feeId}][amount]" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px" onchange="calculateOrderTotal()">
             </div>
             <button type="button" onclick="this.closest('.fee-row').remove();calculateOrderTotal()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
                 <i class="fa-solid fa-trash"></i>
             </button>
         `;
         container.appendChild(row);
-        calculateOrderTotal();
     }
     
-    // Real-time total calculation v3.0 - jQuery-based like new-order page
+    // Real-time total calculation v2.1 - Updated 2026-01-21
     function calculateOrderTotal() {
-        console.log('=== calculateOrderTotal called v3.0 ===');
+        console.log('=== calculateOrderTotal called v2.1 ==='); // Debug log
         let subtotal = 0;
         let assemblyTotal = 0;
         
-        // Calculate from items - using class selectors
-        jQuery('.item-qty').each(function(index) {
-            const qty = parseFloat(jQuery(this).val()) || 0;
-            const price = parseFloat(jQuery('.item-price').eq(index).val()) || 0;
-            const assemblyCheckbox = jQuery('.assembly-check').eq(index);
-            const assemblyPrice = parseFloat(assemblyCheckbox.attr('data-assembly-price') || 0);
+        // Calculate subtotal from existing items
+        document.querySelectorAll('input[name*="items["][name*="[quantity]"]').forEach((qtyInput, index) => {
+            const qty = parseFloat(qtyInput.value) || 0;
+            const priceInputs = document.querySelectorAll('input[name*="items["][name*="[price]"]');
+            const price = parseFloat(priceInputs[index]?.value) || 0;
+            const assemblyCheckboxes = document.querySelectorAll('input[name*="items["][name*="[assembly]"]');
+            const assemblyCheckbox = assemblyCheckboxes[index];
+            const assemblyPrice = parseFloat(assemblyCheckbox?.getAttribute('data-assembly-price') || 0);
             
             subtotal += qty * price;
-            if (assemblyCheckbox.is(':checked')) {
+            if (assemblyCheckbox?.checked) {
                 assemblyTotal += qty * assemblyPrice;
             }
         });
         
-        // Get shipping, tax, and fees
-        const shipping = parseFloat(jQuery('.order-shipping').val()) || 0;
-        const tax = parseFloat(jQuery('.order-tax').val()) || 0;
+        // Get other values
+        const shipping = parseFloat(document.querySelector('input[name="shipping_cost"]')?.value) || 0;
+        const tax = parseFloat(document.querySelector('input[name="tax_amount"]')?.value) || 0;
         
+        // Calculate fees
         let feesTotal = 0;
-        jQuery('.fee-amount').each(function() {
-            feesTotal += parseFloat(jQuery(this).val()) || 0;
+        document.querySelectorAll('input[name*="fees["][name*="[amount]"]').forEach(feeInput => {
+            feesTotal += parseFloat(feeInput.value) || 0;
         });
         
         // Calculate total
         const total = subtotal + assemblyTotal + feesTotal + shipping + tax;
         
         // Update display
-        jQuery('.order-total-subtotal').text('$' + subtotal.toFixed(2));
-        jQuery('.order-total-assembly').text('$' + assemblyTotal.toFixed(2));
-        jQuery('.order-total-fees').text('$' + feesTotal.toFixed(2));
-        jQuery('.order-total-shipping').text('$' + shipping.toFixed(2));
-        jQuery('.order-total-tax').text('$' + tax.toFixed(2));
-        jQuery('.order-total-total').text('$' + total.toFixed(2));
+        const subtotalDisplay = document.querySelector('.order-total-subtotal');
+        const assemblyDisplay = document.querySelector('.order-total-assembly');
+        const feesDisplay = document.querySelector('.order-total-fees');
+        const shippingDisplay = document.querySelector('.order-total-shipping');
+        const taxDisplay = document.querySelector('.order-total-tax');
+        const totalDisplay = document.querySelector('.order-total-total');
         
-        console.log('Totals updated:', {subtotal, assemblyTotal, feesTotal, shipping, tax, total});
+        if (subtotalDisplay) subtotalDisplay.textContent = '$' + subtotal.toFixed(2);
+        if (assemblyDisplay) assemblyDisplay.textContent = '$' + assemblyTotal.toFixed(2);
+        if (feesDisplay) feesDisplay.textContent = '$' + feesTotal.toFixed(2);
+        if (shippingDisplay) shippingDisplay.textContent = '$' + shipping.toFixed(2);
+        if (taxDisplay) taxDisplay.textContent = '$' + tax.toFixed(2);
+        if (totalDisplay) totalDisplay.textContent = '$' + total.toFixed(2);
     }
     
-    // Event binding - exactly like new-order page
-    jQuery(document).ready(function($) {
-        console.log('Document ready - binding events v3.0');
-        
-        // Bind to input events for real-time updates
-        $(document).on('input', '.item-qty, .item-price, .order-shipping, .order-tax, .fee-amount', function() {
-            console.log('Input event on:', $(this).attr('class'));
+    // Use event delegation for real-time calculation v2.1 (works with dynamically added elements)
+    document.addEventListener('input', function(e) {
+        if (e.target.matches('input[name*="[quantity]"], input[name*="[price]"], input[name="shipping_cost"], input[name="tax_amount"], input[name*="fees["][name*="[amount]"]')) {
+            console.log('Input event triggered on:', e.target.name);
             calculateOrderTotal();
-        });
-        
-        // Bind to change events for checkboxes
-        $(document).on('change', '.assembly-check', function() {
-            console.log('Assembly checkbox changed:', $(this).is(':checked'));
-            calculateOrderTotal();
-        });
-        
-        // Also bind to change and keyup for extra reliability (like new-order page)
-        $(document).on('change keyup', '.item-qty, .item-price', function() {
-            calculateOrderTotal();
-        });
-        
-        // Initial calculation
-        console.log('Running initial calculation');
-        calculateOrderTotal();
+        }
     });
+    
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('input[name*="[assembly]"]')) {
+            console.log('Assembly checkbox changed:', e.target.name, e.target.checked);
+            calculateOrderTotal();
+        }
+    });
+    
+    // Initial calculation on page load
+    document.addEventListener('DOMContentLoaded', function() {
         console.log('DOM loaded, running initial calculation');
         calculateOrderTotal();
     });

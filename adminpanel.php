@@ -5689,6 +5689,7 @@ add_action('template_redirect', function () {
                                     <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
                                 </th>
                                 <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
+                                <th style="padding:12px;text-align:center;width:80px;font-weight:600;color:#374151">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -5730,6 +5731,11 @@ add_action('template_redirect', function () {
                                 <td style="padding:15px;text-align:right;font-weight:600;color:#111827">
                                     <?= wc_price($item_total) ?>
                                 </td>
+                                <td style="padding:15px;text-align:center">
+                                    <button type="button" class="delete-item-btn" data-item-id="<?= $item_id ?>" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px" title="Delete this item">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -5737,6 +5743,7 @@ add_action('template_redirect', function () {
                             <tr style="background:#f9fafb;font-weight:700">
                                 <td colspan="4" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
                                 <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px"><?= wc_price($order_total) ?></td>
+                                <td></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -6149,6 +6156,10 @@ add_action('template_redirect', function () {
                         $existing_fees = $order->get_fees();
                         if (!empty($existing_fees)):
                             foreach ($existing_fees as $fee_id => $fee):
+                                // Skip Assembly Fee - it's managed separately through product assembly checkboxes
+                                if ($fee->get_name() === B2B_ASSEMBLY_FEE_NAME) {
+                                    continue;
+                                }
                         ?>
                         <div class="fee-row" style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end">
                             <div>
@@ -6293,6 +6304,17 @@ add_action('template_redirect', function () {
     $(document).on('click', '.remove-fee-row', function() {
         $(this).closest('.fee-row').remove();
         calcTotals();
+    });
+    
+    // Delete product item button
+    $(document).on('click', '.delete-item-btn', function() {
+        if (confirm('Are you sure you want to remove this item from the order?')) {
+            const $row = $(this).closest('tr');
+            $row.fadeOut(300, function() {
+                $row.remove();
+                calcTotals();
+            });
+        }
     });
 
     function calcTotals() {

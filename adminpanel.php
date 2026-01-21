@@ -5249,6 +5249,31 @@ add_action('template_redirect', function () {
     if ($_POST && isset($_POST['save_order'])) {
         check_admin_referer('b2b_save_order_' . $order_id, 'order_nonce');
         
+        // Process refund if requested
+        if (isset($_POST['process_refund'])) {
+            $refund_amount = floatval($_POST['refund_amount'] ?? 0);
+            $refund_reason = sanitize_text_field($_POST['refund_reason'] ?? '');
+            
+            if ($refund_amount > 0 && $order->get_payment_method() === 'nmi') {
+                try {
+                    $payment_gateway = $order->get_payment_gateway();
+                    if ($payment_gateway && method_exists($payment_gateway, 'process_refund')) {
+                        $result = $payment_gateway->process_refund($order_id, $refund_amount, $refund_reason);
+                        
+                        if (is_wp_error($result)) {
+                            $order->add_order_note(sprintf('Refund failed: %s', $result->get_error_message()), false, true);
+                        } else {
+                            $order->add_order_note(sprintf('Refund of %s processed successfully via NMI. Reason: %s', wc_price($refund_amount), $refund_reason ?: 'None provided'), false, true);
+                        }
+                    } else {
+                        $order->add_order_note('Refund failed: Payment gateway not available or does not support refunds', false, true);
+                    }
+                } catch (Exception $e) {
+                    $order->add_order_note(sprintf('Refund failed: %s', $e->getMessage()), false, true);
+                }
+            }
+        }
+        
         // Update billing address
         if (isset($_POST['billing'])) {
             $billing = $_POST['billing'];
@@ -5284,6 +5309,7 @@ add_action('template_redirect', function () {
             foreach ($_POST['items'] as $item_id => $item_data) {
                 $qty = intval($item_data['qty'] ?? 0);
                 $price = isset($item_data['price']) && $item_data['price'] !== '' ? floatval($item_data['price']) : null;
+                $assembly = isset($item_data['assembly']) ? 1 : 0;
                 
                 // Find the item in the order
                 $item_found = false;
@@ -5297,6 +5323,8 @@ add_action('template_redirect', function () {
                                 $order_item->set_subtotal($subtotal);
                                 $order_item->set_total($subtotal);
                             }
+                            // Update assembly meta
+                            $order_item->update_meta_data('_assembly_enabled', $assembly);
                             $order_item->save();
                         } else {
                             // Remove item if quantity is 0
@@ -5306,6 +5334,29 @@ add_action('template_redirect', function () {
                     }
                 }
             }
+        }
+        
+        // Add assembly fee if any items have assembly enabled
+        $assembly_fee_total = 0;
+        foreach ($order->get_items() as $item) {
+            if ($item->get_meta('_assembly_enabled')) {
+                $assembly_fee_total += 50 * $item->get_quantity(); // $50 per item
+            }
+        }
+        
+        // Remove existing assembly fee
+        foreach ($order->get_fees() as $fee_id => $fee) {
+            if ($fee->get_name() === 'Assembly Fee') {
+                $order->remove_item($fee_id);
+            }
+        }
+        
+        // Add new assembly fee if applicable
+        if ($assembly_fee_total > 0) {
+            $assembly_fee = new WC_Order_Item_Fee();
+            $assembly_fee->set_name('Assembly Fee');
+            $assembly_fee->set_total($assembly_fee_total);
+            $order->add_item($assembly_fee);
         }
         
         // Update shipping cost
@@ -5421,6 +5472,9 @@ add_action('template_redirect', function () {
                                 <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
                                 <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
                                 <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service ($50/item)">
+                                    <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
+                                </th>
                                 <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
                             </tr>
                         </thead>
@@ -5430,6 +5484,7 @@ add_action('template_redirect', function () {
                                 $item_total = $item->get_total();
                                 $qty = $item->get_quantity();
                                 $item_price = ($qty > 0) ? ($item->get_subtotal() / $qty) : 0;
+                                $assembly_enabled = $item->get_meta('_assembly_enabled');
                             ?>
                             <tr style="border-bottom:1px solid #e5e7eb">
                                 <td style="padding:15px">
@@ -5443,6 +5498,9 @@ add_action('template_redirect', function () {
                                 </td>
                                 <td style="padding:15px;text-align:center">
                                     <input type="number" name="items[<?= $item_id ?>][qty]" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
+                                </td>
+                                <td style="padding:15px;text-align:center">
+                                    <input type="checkbox" name="items[<?= $item_id ?>][assembly]" value="1" <?= checked($assembly_enabled, 1, false) ?> style="width:20px;height:20px;cursor:pointer">
                                 </td>
                                 <td style="padding:15px;text-align:right;font-weight:600;color:#111827">
                                     <?= wc_price($item_total) ?>
@@ -5621,6 +5679,64 @@ add_action('template_redirect', function () {
                     </div>
                 </div>
                 
+                <!-- Refund Section (NMI only) -->
+                <?php if ($order->is_paid() && $order->get_payment_method() === 'nmi'): 
+                    $total_refunded = $order->get_total_refunded();
+                    $max_refund = $order->get_total() - $total_refunded;
+                ?>
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-rotate-left" style="margin-right:8px;color:#ef4444"></i>
+                        Refund
+                    </h3>
+                    
+                    <?php if ($total_refunded > 0): ?>
+                    <div style="padding:12px;background:#fef2f2;border-left:4px solid #ef4444;border-radius:4px;margin-bottom:15px">
+                        <div style="font-size:13px;color:#991b1b">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            <strong>Total Refunded:</strong> <?= wc_price($total_refunded) ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($max_refund > 0): ?>
+                    <div style="display:grid;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">
+                                Refund Amount
+                                <span style="font-weight:400;color:#6b7280">(Max: <?= wc_price($max_refund) ?>)</span>
+                            </label>
+                            <input type="number" name="refund_amount" value="" step="0.01" min="0.01" max="<?= esc_attr($max_refund) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px" placeholder="0.00">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">
+                                Refund Reason <span style="font-weight:400;color:#6b7280">(Optional)</span>
+                            </label>
+                            <input type="text" name="refund_reason" value="" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px" placeholder="e.g., Customer request, defective item">
+                        </div>
+                        <div>
+                            <button type="submit" name="process_refund" value="1" class="button" style="width:100%;padding:12px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;transition:all 0.2s" onclick="return confirm('Are you sure you want to process this refund via NMI?')">
+                                <i class="fa-solid fa-rotate-left" style="margin-right:8px"></i>
+                                Process Refund via NMI
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top:12px;padding:10px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
+                        <small style="color:#92400e">
+                            <i class="fa-solid fa-exclamation-triangle"></i> 
+                            Refunds are processed immediately via NMI gateway and cannot be undone
+                        </small>
+                    </div>
+                    <?php else: ?>
+                    <div style="padding:15px;text-align:center;color:#6b7280">
+                        <i class="fa-solid fa-check-circle" style="font-size:24px;margin-bottom:8px;color:#10b981"></i>
+                        <div>Order has been fully refunded</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                
                 <!-- Shipping & Tax -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
                     <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
@@ -5632,6 +5748,9 @@ add_action('template_redirect', function () {
                         <div>
                             <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Shipping Cost</label>
                             <input type="number" name="shipping_cost" value="<?= esc_attr(number_format($order->get_shipping_total(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                            <small style="color:#6b7280;margin-top:4px;display:block">
+                                <i class="fa-solid fa-info-circle"></i> Shipping method can be changed in WooCommerce settings
+                            </small>
                         </div>
                         <div>
                             <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Tax Amount</label>

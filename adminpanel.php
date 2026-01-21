@@ -6308,12 +6308,50 @@ add_action('template_redirect', function () {
     
     // Delete product item button
     $(document).on('click', '.delete-item-btn', function() {
-        if (confirm('Are you sure you want to remove this item from the order?')) {
+        if (confirm('Are you sure you want to remove this item from the order? The item will be permanently deleted when you click "Save Order".')) {
             const $row = $(this).closest('tr');
-            $row.fadeOut(300, function() {
-                $row.remove();
+            const $qtyInput = $row.find('.item-qty');
+            
+            // Set quantity to 0 (backend will delete items with qty=0)
+            $qtyInput.val(0);
+            
+            // Hide the row visually but keep it in DOM for form submission
+            $row.css({
+                'opacity': '0.3',
+                'background-color': '#fee',
+                'text-decoration': 'line-through'
+            });
+            
+            // Disable all inputs in the row
+            $row.find('input, select').prop('disabled', true);
+            
+            // Change button to "Undo" button
+            $(this).html('<i class="fa fa-undo"></i>').css('background', '#10b981').attr('title', 'Undo deletion');
+            
+            // Add undo functionality
+            $(this).off('click').on('click', function() {
+                // Restore the row
+                $row.css({
+                    'opacity': '1',
+                    'background-color': '',
+                    'text-decoration': ''
+                });
+                $row.find('input, select').prop('disabled', false);
+                $qtyInput.val(1); // Restore to 1
+                
+                // Restore delete button
+                $(this).html('<i class="fa fa-trash"></i>').css('background', '#ef4444').attr('title', 'Delete this item');
+                
+                // Re-bind original delete functionality
+                const originalHandler = arguments.callee;
+                $(this).off('click').on('click', function() {
+                    $('.delete-item-btn').trigger('click');
+                });
+                
                 calcTotals();
             });
+            
+            calcTotals();
         }
     });
 

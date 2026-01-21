@@ -5417,16 +5417,44 @@ add_action('template_redirect', function () {
             $order->add_item($assembly_fee);
         }
         
-        // Update shipping cost
+        // Update shipping cost by removing old shipping and adding new
         if (isset($_POST['shipping_cost'])) {
             $shipping_cost = floatval($_POST['shipping_cost']);
-            $order->set_shipping_total($shipping_cost);
+            
+            // Remove existing shipping items
+            foreach ($order->get_shipping_methods() as $shipping_id => $shipping_item) {
+                $order->remove_item($shipping_id);
+            }
+            
+            // Add new shipping if cost > 0
+            if ($shipping_cost > 0) {
+                $shipping_item = new WC_Order_Item_Shipping();
+                $shipping_item->set_method_title('Custom Shipping');
+                $shipping_item->set_method_id('custom');
+                $shipping_item->set_total($shipping_cost);
+                $order->add_item($shipping_item);
+            }
         }
         
-        // Update tax
+        // Update tax by removing old tax items and adding new
         if (isset($_POST['tax_amount'])) {
             $tax_amount = floatval($_POST['tax_amount']);
-            $order->set_total_tax($tax_amount);
+            
+            // Remove existing tax items
+            foreach ($order->get_items('tax') as $tax_id => $tax_item) {
+                $order->remove_item($tax_id);
+            }
+            
+            // Add new tax if amount > 0
+            if ($tax_amount > 0) {
+                $tax_item = new WC_Order_Item_Tax();
+                $tax_item->set_rate_id(0);
+                $tax_item->set_label('Custom Tax');
+                $tax_item->set_compound(false);
+                $tax_item->set_tax_total($tax_amount);
+                $tax_item->set_shipping_tax_total(0);
+                $order->add_item($tax_item);
+            }
         }
         
         // Remove all existing fees (except assembly fee which was already handled)
@@ -6012,14 +6040,76 @@ add_action('template_redirect', function () {
             </div>
             <div>
                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
-                <input type="number" name="fees[${feeId}][amount]" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                <input type="number" name="fees[${feeId}][amount]" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px" onchange="calculateOrderTotal()">
             </div>
-            <button type="button" onclick="this.closest('.fee-row').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
+            <button type="button" onclick="this.closest('.fee-row').remove();calculateOrderTotal()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
                 <i class="fa-solid fa-trash"></i>
             </button>
         `;
         container.appendChild(row);
     }
+    
+    // Real-time total calculation
+    function calculateOrderTotal() {
+        let subtotal = 0;
+        let assemblyTotal = 0;
+        
+        // Calculate subtotal from items
+        document.querySelectorAll('input[name*="[quantity]"]').forEach((qtyInput, index) => {
+            const qty = parseFloat(qtyInput.value) || 0;
+            const priceInput = document.querySelectorAll('input[name*="[price]"]')[index];
+            const price = parseFloat(priceInput.value) || 0;
+            const assemblyCheckbox = document.querySelectorAll('input[name*="[assembly]"]')[index];
+            const assemblyPrice = parseFloat(assemblyCheckbox?.getAttribute('data-assembly-price') || 0);
+            
+            subtotal += qty * price;
+            if (assemblyCheckbox?.checked) {
+                assemblyTotal += qty * assemblyPrice;
+            }
+        });
+        
+        // Get other values
+        const shipping = parseFloat(document.querySelector('input[name="shipping_cost"]')?.value) || 0;
+        const tax = parseFloat(document.querySelector('input[name="tax_amount"]')?.value) || 0;
+        
+        // Calculate fees
+        let feesTotal = 0;
+        document.querySelectorAll('input[name*="[amount]"]').forEach(feeInput => {
+            if (feeInput.name.includes('fees[')) {
+                feesTotal += parseFloat(feeInput.value) || 0;
+            }
+        });
+        
+        // Calculate total
+        const total = subtotal + assemblyTotal + feesTotal + shipping + tax;
+        
+        // Update display
+        const subtotalDisplay = document.querySelector('.order-total-subtotal');
+        const assemblyDisplay = document.querySelector('.order-total-assembly');
+        const feesDisplay = document.querySelector('.order-total-fees');
+        const shippingDisplay = document.querySelector('.order-total-shipping');
+        const taxDisplay = document.querySelector('.order-total-tax');
+        const totalDisplay = document.querySelector('.order-total-total');
+        
+        if (subtotalDisplay) subtotalDisplay.textContent = '$' + subtotal.toFixed(2);
+        if (assemblyDisplay) assemblyDisplay.textContent = '$' + assemblyTotal.toFixed(2);
+        if (feesDisplay) feesDisplay.textContent = '$' + feesTotal.toFixed(2);
+        if (shippingDisplay) shippingDisplay.textContent = '$' + shipping.toFixed(2);
+        if (taxDisplay) taxDisplay.textContent = '$' + tax.toFixed(2);
+        if (totalDisplay) totalDisplay.textContent = '$' + total.toFixed(2);
+    }
+    
+    // Attach event listeners for real-time calculation
+    document.addEventListener('DOMContentLoaded', function() {
+        // Listen to all inputs that affect the total
+        document.querySelectorAll('input[name*="[quantity]"], input[name*="[price]"], input[name*="[assembly]"], input[name="shipping_cost"], input[name="tax_amount"], input[name*="[amount]"]').forEach(input => {
+            input.addEventListener('input', calculateOrderTotal);
+            input.addEventListener('change', calculateOrderTotal);
+        });
+        
+        // Initial calculation
+        calculateOrderTotal();
+    });
     </script>
     
     <?php b2b_adm_footer(); exit;

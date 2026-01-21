@@ -6312,8 +6312,10 @@ add_action('template_redirect', function () {
     $(document).on('click', '.remove-item-btn', function() {
         if (confirm('Are you sure you want to remove this product from the order?')) {
             const itemRow = $(this).closest('tr.item-row');
-            // Set quantity to 0 (server will remove it on save)
-            itemRow.find('.item-qty').val(0);
+            const qtyInput = itemRow.find('.item-qty');
+            // Store original quantity before setting to 0
+            qtyInput.data('original-qty', qtyInput.val());
+            qtyInput.val(0);
             // Add visual indicator that item is marked for deletion
             itemRow.css('opacity', '0.5');
             itemRow.find('input').prop('disabled', true);
@@ -6325,9 +6327,12 @@ add_action('template_redirect', function () {
     // Undo removal button handler
     $(document).on('click', '.undo-removal-btn', function() {
         const itemRow = $(this).closest('tr.item-row');
+        const qtyInput = itemRow.find('.item-qty');
+        // Restore original quantity
+        const originalQty = qtyInput.data('original-qty') || 1;
+        qtyInput.val(originalQty);
         itemRow.css('opacity', '1');
         itemRow.find('input').prop('disabled', false);
-        itemRow.find('.item-qty').val(1);
         $(this).html('<i class="fa-solid fa-trash"></i>').attr('title', 'Remove this product').removeClass('undo-removal-btn').addClass('remove-item-btn');
         calcTotals();
     });

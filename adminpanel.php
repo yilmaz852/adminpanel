@@ -5292,7 +5292,7 @@ add_action('template_redirect', function () {
                         $item_found = true;
                         if ($qty > 0) {
                             $order_item->set_quantity($qty);
-                            if ($price !== null && $price > 0) {
+                            if ($price !== null && $price >= 0) {
                                 $subtotal = $price * $qty;
                                 $order_item->set_subtotal($subtotal);
                                 $order_item->set_total($subtotal);

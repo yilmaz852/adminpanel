@@ -5248,6 +5248,7 @@ add_action('template_redirect', function () {
     // Assembly fee configuration
     if (!defined('B2B_ASSEMBLY_FEE_AMOUNT')) define('B2B_ASSEMBLY_FEE_AMOUNT', 50);
     if (!defined('B2B_ASSEMBLY_FEE_NAME')) define('B2B_ASSEMBLY_FEE_NAME', 'Assembly Fee');
+    if (!defined('B2B_ASSEMBLY_FALLBACK_TAX_RATE')) define('B2B_ASSEMBLY_FALLBACK_TAX_RATE', 0.08);
     
     // Handle form submission
     if ($_POST && (isset($_POST['save_order']) || isset($_POST['recalculate_only']))) {
@@ -5371,15 +5372,19 @@ add_action('template_redirect', function () {
                     
                     // Add tax if assembly tax is enabled and customer is not tax exempt
                     if ($assembly_tax_included && !$is_tax_exempt) {
+                        // Get product for tax class
+                        $product = wc_get_product($product_id);
+                        $tax_class = $product ? $product->get_tax_class() : '';
+                        
                         // Get tax rate from WooCommerce
-                        $tax_rates = WC_Tax::get_rates('', $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode());
+                        $tax_rates = WC_Tax::get_rates($tax_class, $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode());
                         if (!empty($tax_rates)) {
                             $tax_rate = reset($tax_rates);
                             $rate = floatval($tax_rate['rate']) / 100;
                             $item_assembly_cost *= (1 + $rate);
                         } else {
-                            // Fallback to 8% if no rate found
-                            $item_assembly_cost *= 1.08;
+                            // Fallback tax rate (configurable via B2B_ASSEMBLY_FALLBACK_TAX_RATE constant)
+                            $item_assembly_cost *= (1 + B2B_ASSEMBLY_FALLBACK_TAX_RATE);
                         }
                     }
                     
@@ -5531,14 +5536,6 @@ add_action('template_redirect', function () {
                             Toggle Assembly for All
                         </button>
                     </div>
-                    
-                    <script>
-                    function toggleAllAssembly() {
-                        const checkboxes = document.querySelectorAll('input[name*="[assembly]"]');
-                        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-                        checkboxes.forEach(cb => cb.checked = !allChecked);
-                    }
-                    </script>
                     
                     <table style="width:100%;border-collapse:collapse">
                         <thead>
@@ -5984,6 +5981,12 @@ add_action('template_redirect', function () {
             const billingValue = document.querySelector(`input[name="billing[${field}]"]`).value;
             document.getElementById(`shipping_${field}`).value = billingValue;
         });
+    }
+    
+    function toggleAllAssembly() {
+        const checkboxes = document.querySelectorAll('input[name*="[assembly]"]');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
     }
     
     let feeUniqueId = 0;

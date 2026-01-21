@@ -5255,7 +5255,7 @@ add_action('template_redirect', function () {
         
         // Process refund if requested
         if (isset($_POST['process_refund'])) {
-            $refund_amount = floatval($_POST['refund_amount'] ?? 0);
+            $refund_amount = filter_var($_POST['refund_amount'] ?? 0, FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
             $refund_reason = sanitize_text_field($_POST['refund_reason'] ?? '');
             
             if ($refund_amount > 0 && $order->get_payment_method() === 'nmi') {
@@ -5490,7 +5490,7 @@ add_action('template_redirect', function () {
                                 <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
                                 <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
                                 <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
-                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service ($<?= B2B_ASSEMBLY_FEE_AMOUNT ?>/item)">
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service ($<?= esc_attr(B2B_ASSEMBLY_FEE_AMOUNT) ?>/item)">
                                     <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
                                 </th>
                                 <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
@@ -5724,7 +5724,7 @@ add_action('template_redirect', function () {
                                 Refund Amount
                                 <span style="font-weight:400;color:#6b7280">(Max: <?= wc_price($max_refund) ?>)</span>
                             </label>
-                            <input type="number" name="refund_amount" value="" step="0.01" min="0.01" max="<?= esc_attr($max_refund) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px" placeholder="0.00">
+                            <input type="number" name="refund_amount" value="" step="0.01" min="0.01" max="<?= esc_attr(number_format($max_refund, 2, '.', '')) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px" placeholder="0.00">
                         </div>
                         <div>
                             <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">

@@ -5289,54 +5289,76 @@ add_action('wp_ajax_b2b_search_products', function() {
         return;
     }
     
+    // CRITICAL: Switch to customer user context to get their B2B pricing
+    // This makes WooCommerce automatically apply ALL discount rules for this customer
+    $old_user = get_current_user_id();
+    if ($customer_id > 0) {
+        wp_set_current_user($customer_id);
+    }
+    
     $args = [
         's' => $query,
         'limit' => 20,
-        'status' => 'publish'
+        'status' => 'publish',
+        'return' => 'ids'
     ];
     
-    $products = wc_get_products($args);
+    $product_ids = wc_get_products($args);
     $results = [];
     
-    // Get customer B2B discount if applicable
-    $discount_percent = 0;
-    if ($customer_id) {
-        $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
-        if ($group_slug) {
-            $groups = get_option('b2b_dynamic_groups', []);
-            foreach ($groups as $group) {
-                if ($group['slug'] === $group_slug && isset($group['discount_percent'])) {
-                    $discount_percent = floatval($group['discount_percent']);
-                    break;
-                }
-            }
-        }
-    }
-    
-    foreach ($products as $product) {
-        $regular_price = floatval($product->get_price());
-        $discounted_price = $regular_price;
+    foreach ($product_ids as $pid) {
+        // Clear cache to ensure fresh pricing
+        wp_cache_delete($pid, 'post_meta');
         
-        // Apply B2B discount if applicable
-        if ($discount_percent > 0) {
-            $discounted_price = $regular_price * (1 - ($discount_percent / 100));
+        $product = wc_get_product($pid);
+        if (!$product || $product->is_type('variable')) {
+            continue;
+        }
+        
+        // Get price HTML - this includes ALL B2B discounts applied automatically
+        $price_html = $product->get_price_html();
+        $clean_text = strip_tags(html_entity_decode($price_html));
+        
+        // Extract all prices from the HTML (for strikethrough regular + final)
+        preg_match_all('/[0-9]+(?:\.[0-9]+)?/', $clean_text, $matches);
+        $found_prices = $matches[0] ?? [];
+        
+        // Determine final (discounted) and regular prices
+        $regular_price = floatval($product->get_regular_price());
+        $final_price = floatval($product->get_price());
+        
+        // If HTML contains multiple prices, min is usually the sale/discounted price
+        if (!empty($found_prices)) {
+            $html_min = min($found_prices);
+            $html_max = max($found_prices);
+            // Use min from HTML if it's lower than product price
+            if ($html_min < $final_price && $html_min > 0) {
+                $final_price = $html_min;
+            }
+            // Use max from HTML as regular if higher than final
+            if ($html_max > $final_price) {
+                $regular_price = $html_max;
+            }
         }
         
         // Get assembly info
-        $assembly_price = floatval(get_post_meta($product->get_id(), '_assembly_price', true));
-        $assembly_enabled = $assembly_price > 0;
+        $assembly_price = floatval(get_post_meta($pid, '_assembly_price', true));
+        $assembly_enabled = get_post_meta($pid, '_assembly_enabled', true) === 'yes' || $assembly_price > 0;
         
         $results[] = [
-            'id' => $product->get_id(),
+            'id' => $pid,
             'name' => esc_html($product->get_name()),
             'sku' => esc_html($product->get_sku()),
-            'price' => $discounted_price,
+            'price' => $final_price,
             'regular_price' => $regular_price,
             'assembly_enabled' => $assembly_enabled,
             'assembly_price' => $assembly_price,
-            'has_discount' => $discount_percent > 0
+            'has_discount' => ($final_price < $regular_price && $regular_price > 0)
         ];
     }
+    
+    // Restore original user context
+    wp_set_current_user($old_user);
     
     wp_send_json_success($results);
 });

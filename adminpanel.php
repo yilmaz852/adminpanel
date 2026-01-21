@@ -5268,17 +5268,33 @@ add_action('wp_ajax_b2b_search_products', function() {
     
     // Get customer B2B discount if applicable
     $discount_percent = 0;
+    $debug_info = []; // For troubleshooting
     if ($customer_id) {
         $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
+        $debug_info['customer_id'] = $customer_id;
+        $debug_info['group_slug'] = $group_slug;
+        
         if ($group_slug) {
             $groups = get_option('b2b_dynamic_groups', []);
+            $debug_info['total_groups'] = count($groups);
+            
             foreach ($groups as $group) {
                 if ($group['slug'] === $group_slug && isset($group['discount_percent'])) {
                     $discount_percent = floatval($group['discount_percent']);
+                    $debug_info['matched_group'] = $group['name'] ?? 'Unknown';
+                    $debug_info['discount_percent'] = $discount_percent;
                     break;
                 }
             }
+            
+            if ($discount_percent === 0) {
+                $debug_info['warning'] = 'Group slug found but no matching discount in b2b_dynamic_groups';
+            }
+        } else {
+            $debug_info['warning'] = 'No b2b_group_slug found for customer';
         }
+    } else {
+        $debug_info['warning'] = 'No customer_id provided';
     }
     
     foreach ($products as $product) {
@@ -5306,7 +5322,8 @@ add_action('wp_ajax_b2b_search_products', function() {
         ];
     }
     
-    wp_send_json_success($results);
+    // Include debug info to help troubleshoot B2B discount issues
+    wp_send_json_success(['products' => $results, 'debug' => $debug_info]);
 });
 
 /* =====================================================
@@ -6316,39 +6333,16 @@ add_action('template_redirect', function () {
         calcTotals();
     }
     
-    // Remove item button handler
+    // Remove item button handler - IMMEDIATE DELETION FROM FORM
     $(document).on('click', '.remove-item-btn', function() {
-        if (confirm('Are you sure you want to remove this product from the order?\n\nThe item will be marked for deletion now and removed when you click Save Order.')) {
+        if (confirm('Are you sure you want to remove this product from the order?')) {
             const itemRow = $(this).closest('tr.item-row');
-            const qtyInput = itemRow.find('.item-qty');
-            // Store original quantity before setting to 0
-            qtyInput.data('original-qty', qtyInput.val());
-            qtyInput.val(0);
-            // Add visual indicator that item is marked for deletion
-            itemRow.css('opacity', '0.5');
-            itemRow.find('input').prop('disabled', true);
-            $(this).html('<i class="fa-solid fa-undo"></i>').attr('title', 'Undo removal').removeClass('remove-item-btn').addClass('undo-removal-btn');
-            // Add a visual badge showing item will be removed on save
-            if (!itemRow.find('.pending-deletion-badge').length) {
-                itemRow.find('td:first').prepend('<span class="pending-deletion-badge" style="display:inline-block;background:#ef4444;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-right:8px">PENDING DELETION</span>');
-            }
-            calcTotals();
+            // Fade out and remove the entire row immediately from DOM
+            itemRow.fadeOut(300, function() {
+                $(this).remove();
+                calcTotals(); // Recalculate totals after removal
+            });
         }
-    });
-    
-    // Undo removal button handler
-    $(document).on('click', '.undo-removal-btn', function() {
-        const itemRow = $(this).closest('tr.item-row');
-        const qtyInput = itemRow.find('.item-qty');
-        // Restore original quantity
-        const originalQty = qtyInput.data('original-qty') || 1;
-        qtyInput.val(originalQty);
-        itemRow.css('opacity', '1');
-        itemRow.find('input').prop('disabled', false);
-        $(this).html('<i class="fa-solid fa-trash"></i>').attr('title', 'Remove this product').removeClass('undo-removal-btn').addClass('remove-item-btn');
-        // Remove pending deletion badge
-        itemRow.find('.pending-deletion-badge').remove();
-        calcTotals();
     });
     
     let feeUniqueId = 0;
@@ -6465,34 +6459,45 @@ add_action('template_redirect', function () {
                 fetch(url.toString())
                     .then(r => r.json())
                     .then(data => {
-                        if (data.success && data.data.length > 0) {
-                            // Use DocumentFragment for efficient DOM building
-                            const fragment = document.createDocumentFragment();
-                            data.data.forEach(product => {
-                                const div = document.createElement('div');
-                                div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
-                                div.dataset.id = product.id;
-                                div.dataset.name = product.name;
-                                div.dataset.price = product.price;
-                                div.dataset.assemblyEnabled = product.assembly_enabled ? '1' : '0';
-                                div.dataset.assemblyPrice = product.assembly_price;
-                                
-                                const strong = document.createElement('strong');
-                                strong.textContent = product.name;
-                                div.appendChild(strong);
-                                
-                                div.appendChild(document.createElement('br'));
-                                
-                                const small = document.createElement('small');
-                                small.innerHTML = 'SKU: ' + product.sku + ' | ';
-                                
-                                // Show discounted price prominently in green if applicable
-                                if (product.has_discount && product.regular_price !== product.price) {
-                                    small.innerHTML += 'Price: <strong style="color:#10b981">$' + product.price.toFixed(2) + '</strong> ';
-                                    small.innerHTML += '<span style="color:#ef4444;text-decoration:line-through">$' + product.regular_price.toFixed(2) + '</span>';
-                                } else {
-                                    small.innerHTML += 'Price: $' + product.price.toFixed(2);
+                        if (data.success) {
+                            // Log debug info to help troubleshoot B2B discount issues
+                            if (data.data.debug) {
+                                console.log('=== B2B Discount Debug Info ===', data.data.debug);
+                                if (data.data.debug.warning) {
+                                    console.warn('B2B Discount Warning:', data.data.debug.warning);
                                 }
+                            }
+                            
+                            const products = data.data.products || data.data;
+                            if (products.length > 0) {
+                                // Use DocumentFragment for efficient DOM building
+                                const fragment = document.createDocumentFragment();
+                                products.forEach(product => {
+                                    const div = document.createElement('div');
+                                    div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
+                                    div.dataset.id = product.id;
+                                    div.dataset.name = product.name;
+                                    div.dataset.price = product.price;
+                                    div.dataset.assemblyEnabled = product.assembly_enabled ? '1' : '0';
+                                    div.dataset.assemblyPrice = product.assembly_price;
+                                    
+                                    const strong = document.createElement('strong');
+                                    strong.textContent = product.name;
+                                    div.appendChild(strong);
+                                    
+                                    div.appendChild(document.createElement('br'));
+                                    
+                                    const small = document.createElement('small');
+                                    small.innerHTML = 'SKU: ' + product.sku + ' | ';
+                                    
+                                    // Show discounted price prominently in green if applicable
+                                    if (product.has_discount && product.regular_price !== product.price) {
+                                        small.innerHTML += 'Price: <strong style="color:#10b981;font-size:14px">$' + product.price.toFixed(2) + '</strong> ';
+                                        small.innerHTML += '<span style="color:#ef4444;text-decoration:line-through;font-size:12px">$' + product.regular_price.toFixed(2) + '</span>';
+                                        console.log('Product with discount:', product.name, 'Regular:', product.regular_price, 'Discounted:', product.price);
+                                    } else {
+                                        small.innerHTML += 'Price: $' + product.price.toFixed(2);
+                                    }
                                 
                                 if (product.assembly_enabled) {
                                     small.innerHTML += ' | Assembly: $' + product.assembly_price.toFixed(2);

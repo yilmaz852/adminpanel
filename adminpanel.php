@@ -5245,6 +5245,10 @@ add_action('template_redirect', function () {
     $order = wc_get_order($order_id);
     if (!$order) wp_die('Order not found');
     
+    // Assembly fee configuration
+    define('B2B_ASSEMBLY_FEE_AMOUNT', 50);
+    define('B2B_ASSEMBLY_FEE_NAME', 'Assembly Fee');
+    
     // Handle form submission
     if ($_POST && isset($_POST['save_order'])) {
         check_admin_referer('b2b_save_order_' . $order_id, 'order_nonce');
@@ -5256,7 +5260,9 @@ add_action('template_redirect', function () {
             
             if ($refund_amount > 0 && $order->get_payment_method() === 'nmi') {
                 try {
-                    $payment_gateway = $order->get_payment_gateway();
+                    $gateways = WC()->payment_gateways()->payment_gateways();
+                    $payment_gateway = isset($gateways[$order->get_payment_method()]) ? $gateways[$order->get_payment_method()] : null;
+                    
                     if ($payment_gateway && method_exists($payment_gateway, 'process_refund')) {
                         $result = $payment_gateway->process_refund($order_id, $refund_amount, $refund_reason);
                         
@@ -5340,13 +5346,13 @@ add_action('template_redirect', function () {
         $assembly_fee_total = 0;
         foreach ($order->get_items() as $item) {
             if ($item->get_meta('_assembly_enabled')) {
-                $assembly_fee_total += 50 * $item->get_quantity(); // $50 per item
+                $assembly_fee_total += B2B_ASSEMBLY_FEE_AMOUNT * $item->get_quantity();
             }
         }
         
         // Remove existing assembly fee
         foreach ($order->get_fees() as $fee_id => $fee) {
-            if ($fee->get_name() === 'Assembly Fee') {
+            if ($fee->get_name() === B2B_ASSEMBLY_FEE_NAME) {
                 $order->remove_item($fee_id);
             }
         }
@@ -5354,7 +5360,7 @@ add_action('template_redirect', function () {
         // Add new assembly fee if applicable
         if ($assembly_fee_total > 0) {
             $assembly_fee = new WC_Order_Item_Fee();
-            $assembly_fee->set_name('Assembly Fee');
+            $assembly_fee->set_name(B2B_ASSEMBLY_FEE_NAME);
             $assembly_fee->set_total($assembly_fee_total);
             $order->add_item($assembly_fee);
         }
@@ -5472,7 +5478,7 @@ add_action('template_redirect', function () {
                                 <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
                                 <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
                                 <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
-                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service ($50/item)">
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service ($<?= B2B_ASSEMBLY_FEE_AMOUNT ?>/item)">
                                     <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
                                 </th>
                                 <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>

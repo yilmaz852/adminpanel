@@ -5331,7 +5331,7 @@ add_action('template_redirect', function () {
                 $fee_name = sanitize_text_field($fee_data['name'] ?? '');
                 $fee_amount = isset($fee_data['amount']) && $fee_data['amount'] !== '' ? floatval($fee_data['amount']) : 0;
                 
-                if ($fee_name && abs($fee_amount) > 0.01) {
+                if ($fee_name && $fee_amount !== 0.0) {
                     $fee = new WC_Order_Item_Fee();
                     $fee->set_name($fee_name);
                     $fee->set_total($fee_amount);
@@ -5683,7 +5683,7 @@ add_action('template_redirect', function () {
                     <div style="margin-top:12px;padding:10px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
                         <small style="color:#92400e">
                             <i class="fa-solid fa-info-circle"></i> 
-                            Add custom fees like handling, rush order, etc.
+                            Add custom fees (positive) or discounts (negative amounts)
                         </small>
                     </div>
                 </div>
@@ -5756,8 +5756,9 @@ add_action('template_redirect', function () {
         });
     }
     
+    let feeUniqueId = 0;
     function addFeeRow() {
-        const feeId = 'new_' + Date.now();
+        const feeId = 'new_' + Date.now() + '_' + (++feeUniqueId);
         const container = document.getElementById('fees-container');
         const row = document.createElement('div');
         row.className = 'fee-row';

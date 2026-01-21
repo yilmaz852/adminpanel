@@ -5851,6 +5851,7 @@ add_action('template_redirect', function () {
                         </tbody>
                         <tfoot>
                             <tr style="background:#f9fafb;font-weight:700">
+                                <!-- Colspan: Product(1) + Price(1) + Qty(1) + Assembly(1) + Total(1) = 5 columns before Action column -->
                                 <td colspan="5" style="padding:15px;text-align:right;color:#111827">Subtotal (Items):</td>
                                 <td style="padding:15px;text-align:right;color:#6366f1;font-size:16px" class="order-subtotal-footer">$0.00</td>
                             </tr>
@@ -6311,11 +6312,12 @@ add_action('template_redirect', function () {
         container.appendChild(row);
     }
     
-    // Real-time total calculation - Fixed to trigger on ALL changes
-    $(document).on('input change', '.item-qty, .item-price, .order-shipping, .order-tax, .fee-amount', function() {
+    // Real-time total calculation - Triggers on input changes
+    $(document).on('input', '.item-qty, .item-price, .order-shipping, .order-tax, .fee-amount', function() {
         calcTotals();
     });
     
+    // Trigger on checkbox changes (assembly checkboxes)
     $(document).on('change', '.assembly-check', function() {
         calcTotals();
     });

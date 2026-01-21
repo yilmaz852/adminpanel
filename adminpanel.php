@@ -5999,6 +5999,10 @@ add_action('template_redirect', function () {
                             break;
                         }
                     }
+                    // If group name still empty but we have a slug, use the slug as fallback
+                    if (empty($group_name) && !empty($group_slug)) {
+                        $group_name = ucfirst(str_replace('-', ' ', $group_slug));
+                    }
                 }
                 
                 if ($customer_id > 0):
@@ -6189,6 +6193,8 @@ add_action('template_redirect', function () {
                         $existing_fees = $order->get_fees();
                         if (!empty($existing_fees)):
                             foreach ($existing_fees as $fee_id => $fee):
+                                // Skip Assembly Fee - it's calculated automatically from checked items
+                                if ($fee->get_name() === B2B_ASSEMBLY_FEE_NAME) continue;
                         ?>
                         <div class="fee-row" style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end">
                             <div>

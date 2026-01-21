@@ -1390,6 +1390,38 @@ add_action('wp_ajax_b2b_adm_wh_update', function(){
     wp_send_json_success(['new_state' => ($new === '1')]);
 });
 
+// AJAX handler to delete order item
+add_action('wp_ajax_b2b_delete_order_item', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $item_id = intval($_POST['item_id'] ?? 0);
+    $nonce = $_POST['nonce'] ?? '';
+    
+    // Verify nonce
+    if (!wp_verify_nonce($nonce, 'b2b_delete_order_item_' . $order_id)) {
+        wp_send_json_error('Invalid nonce');
+        return;
+    }
+    
+    // Get order
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        wp_send_json_error('Order not found');
+        return;
+    }
+    
+    // Remove the item
+    $order->remove_item($item_id);
+    $order->calculate_totals();
+    $order->save();
+    
+    wp_send_json_success('Item deleted successfully');
+});
+
 // D. Get Order Edit Data
 add_action('wp_ajax_b2b_adm_get_order_edit_data', function(){
     if (!current_user_can('manage_options')) wp_die();
@@ -6307,52 +6339,47 @@ add_action('template_redirect', function () {
     });
     
     // Delete product item button
+    // Delete item button - removes item from order immediately via AJAX
     $(document).on('click', '.delete-item-btn', function() {
-        if (confirm('Are you sure you want to remove this item from the order? The item will be permanently deleted when you click "Save Order".')) {
-            const $row = $(this).closest('tr');
-            const $qtyInput = $row.find('.item-qty');
-            
-            // Set quantity to 0 (backend will delete items with qty=0)
-            $qtyInput.val(0);
-            
-            // Hide the row visually but keep it in DOM for form submission
-            $row.css({
-                'opacity': '0.3',
-                'background-color': '#fee',
-                'text-decoration': 'line-through'
-            });
-            
-            // Disable all inputs in the row
-            $row.find('input, select').prop('disabled', true);
-            
-            // Change button to "Undo" button
-            $(this).html('<i class="fa fa-undo"></i>').css('background', '#10b981').attr('title', 'Undo deletion');
-            
-            // Add undo functionality
-            $(this).off('click').on('click', function() {
-                // Restore the row
-                $row.css({
-                    'opacity': '1',
-                    'background-color': '',
-                    'text-decoration': ''
-                });
-                $row.find('input, select').prop('disabled', false);
-                $qtyInput.val(1); // Restore to 1
-                
-                // Restore delete button
-                $(this).html('<i class="fa fa-trash"></i>').css('background', '#ef4444').attr('title', 'Delete this item');
-                
-                // Re-bind original delete functionality
-                const originalHandler = arguments.callee;
-                $(this).off('click').on('click', function() {
-                    $('.delete-item-btn').trigger('click');
-                });
-                
-                calcTotals();
-            });
-            
-            calcTotals();
+        if (!confirm('Are you sure you want to permanently remove this item from the order?')) {
+            return;
         }
+        
+        const $btn = $(this);
+        const $row = $btn.closest('tr');
+        const itemId = $btn.data('item-id');
+        const orderId = <?= $order_id ?>;
+        
+        // Disable button during AJAX
+        $btn.prop('disabled', true).css('opacity', '0.5');
+        
+        // Send AJAX request to delete item
+        $.ajax({
+            url: '<?= admin_url('admin-ajax.php') ?>',
+            type: 'POST',
+            data: {
+                action: 'b2b_delete_order_item',
+                order_id: orderId,
+                item_id: itemId,
+                nonce: '<?= wp_create_nonce('b2b_delete_order_item_' . $order_id) ?>'
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Remove row with animation
+                    $row.fadeOut(300, function() {
+                        $row.remove();
+                        calcTotals();
+                    });
+                } else {
+                    alert('Error deleting item: ' + (response.data || 'Unknown error'));
+                    $btn.prop('disabled', false).css('opacity', '1');
+                }
+            },
+            error: function() {
+                alert('Error deleting item. Please try again.');
+                $btn.prop('disabled', false).css('opacity', '1');
+            }
+        });
     });
 
     function calcTotals() {

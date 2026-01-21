@@ -5279,10 +5279,11 @@ add_action('template_redirect', function () {
             $order->set_shipping_country(sanitize_text_field($shipping['country'] ?? ''));
         }
         
-        // Update item quantities
+        // Update item quantities and prices
         if (isset($_POST['items']) && is_array($_POST['items'])) {
             foreach ($_POST['items'] as $item_id => $item_data) {
                 $qty = intval($item_data['qty'] ?? 0);
+                $price = isset($item_data['price']) ? floatval($item_data['price']) : 0;
                 
                 // Find the item in the order
                 $item_found = false;
@@ -5291,6 +5292,11 @@ add_action('template_redirect', function () {
                         $item_found = true;
                         if ($qty > 0) {
                             $order_item->set_quantity($qty);
+                            if ($price >= 0) {
+                                $subtotal = $price * $qty;
+                                $order_item->set_subtotal($subtotal);
+                                $order_item->set_total($subtotal);
+                            }
                             $order_item->save();
                         } else {
                             // Remove item if quantity is 0
@@ -5298,6 +5304,38 @@ add_action('template_redirect', function () {
                         }
                         break;
                     }
+                }
+            }
+        }
+        
+        // Update shipping cost
+        if (isset($_POST['shipping_cost'])) {
+            $shipping_cost = floatval($_POST['shipping_cost']);
+            $order->set_shipping_total($shipping_cost);
+        }
+        
+        // Update tax
+        if (isset($_POST['tax_amount'])) {
+            $tax_amount = floatval($_POST['tax_amount']);
+            $order->set_total_tax($tax_amount);
+        }
+        
+        // Remove existing fees
+        foreach ($order->get_fees() as $fee_id => $fee) {
+            $order->remove_item($fee_id);
+        }
+        
+        // Add custom fees
+        if (isset($_POST['fees']) && is_array($_POST['fees'])) {
+            foreach ($_POST['fees'] as $fee_data) {
+                $fee_name = sanitize_text_field($fee_data['name'] ?? '');
+                $fee_amount = floatval($fee_data['amount'] ?? 0);
+                
+                if ($fee_name && $fee_amount != 0) {
+                    $fee = new WC_Order_Item_Fee();
+                    $fee->set_name($fee_name);
+                    $fee->set_total($fee_amount);
+                    $order->add_item($fee);
                 }
             }
         }
@@ -5400,8 +5438,8 @@ add_action('template_redirect', function () {
                                     <small style="color:#6b7280">SKU: <?= esc_html($product->get_sku()) ?></small>
                                     <?php endif; ?>
                                 </td>
-                                <td style="padding:15px;text-align:center;color:#374151">
-                                    <?= wc_price($item_price) ?>
+                                <td style="padding:15px;text-align:center">
+                                    <input type="number" name="items[<?= $item_id ?>][price]" value="<?= esc_attr(number_format($item_price, 2, '.', '')) ?>" step="0.01" min="0" style="width:90px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
                                 </td>
                                 <td style="padding:15px;text-align:center">
                                     <input type="number" name="items[<?= $item_id ?>][qty]" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
@@ -5423,7 +5461,7 @@ add_action('template_redirect', function () {
                     <div style="margin-top:15px;padding:12px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
                         <small style="color:#92400e">
                             <i class="fa-solid fa-info-circle"></i> 
-                            <strong>Note:</strong> Set quantity to 0 to remove an item from the order. Order totals will be recalculated automatically.
+                            <strong>Note:</strong> You can edit item prices and quantities. Set quantity to 0 to remove an item. Order totals will be recalculated automatically.
                         </small>
                     </div>
                 </div>
@@ -5558,6 +5596,130 @@ add_action('template_redirect', function () {
                     </select>
                 </div>
                 
+                <!-- Payment Info -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-credit-card" style="margin-right:8px;color:#8b5cf6"></i>
+                        Payment Info
+                    </h3>
+                    
+                    <div style="display:grid;gap:12px">
+                        <div>
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Payment Method</div>
+                            <div style="font-weight:600;color:#111827"><?= $order->get_payment_method_title() ?: 'N/A' ?></div>
+                        </div>
+                        <?php if ($order->get_transaction_id()): ?>
+                        <div>
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Transaction ID</div>
+                            <div style="font-weight:600;color:#111827;font-family:monospace;font-size:12px"><?= esc_html($order->get_transaction_id()) ?></div>
+                        </div>
+                        <?php endif; ?>
+                        <div>
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Date Paid</div>
+                            <div style="font-weight:600;color:#111827"><?= $order->get_date_paid() ? $order->get_date_paid()->date_i18n('F j, Y g:i A') : 'Not paid' ?></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Shipping & Tax -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-dollar-sign" style="margin-right:8px;color:#10b981"></i>
+                        Shipping & Tax
+                    </h3>
+                    
+                    <div style="display:grid;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Shipping Cost</label>
+                            <input type="number" name="shipping_cost" value="<?= esc_attr(number_format($order->get_shipping_total(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Tax Amount</label>
+                            <input type="number" name="tax_amount" value="<?= esc_attr(number_format($order->get_total_tax(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top:12px;padding:10px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:4px">
+                        <small style="color:#065f46">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Manual adjustments to shipping and tax
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Custom Fees -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-receipt" style="margin-right:8px;color:#f59e0b"></i>
+                        Custom Fees
+                    </h3>
+                    
+                    <div id="fees-container">
+                        <?php
+                        $existing_fees = $order->get_fees();
+                        if (!empty($existing_fees)):
+                            foreach ($existing_fees as $fee_id => $fee):
+                        ?>
+                        <div class="fee-row" style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end">
+                            <div>
+                                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
+                                <input type="text" name="fees[<?= $fee_id ?>][name]" value="<?= esc_attr($fee->get_name()) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                            </div>
+                            <div>
+                                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
+                                <input type="number" name="fees[<?= $fee_id ?>][amount]" value="<?= esc_attr(number_format($fee->get_total(), 2, '.', '')) ?>" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                            </div>
+                            <button type="button" onclick="this.closest('.fee-row').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                        <?php endforeach; endif; ?>
+                    </div>
+                    
+                    <button type="button" onclick="addFeeRow()" class="button secondary" style="width:100%;padding:10px;border-radius:6px;margin-top:10px">
+                        <i class="fa-solid fa-plus"></i> Add Fee
+                    </button>
+                    
+                    <div style="margin-top:12px;padding:10px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
+                        <small style="color:#92400e">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Add custom fees like handling, rush order, etc.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Order Notes History -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-comments" style="margin-right:8px;color:#3b82f6"></i>
+                        Order Notes History
+                    </h3>
+                    
+                    <?php
+                    $notes = wc_get_order_notes(['order_id' => $order_id, 'limit' => 10]);
+                    if (!empty($notes)):
+                    ?>
+                    <div style="max-height:400px;overflow-y:auto">
+                        <?php foreach ($notes as $note): ?>
+                        <div style="padding:12px;background:#f9fafb;border-left:3px solid <?= $note->customer_note ? '#10b981' : '#6b7280' ?>;border-radius:4px;margin-bottom:10px">
+                            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+                                <div style="font-size:12px;color:#6b7280">
+                                    <?= $note->customer_note ? '<i class="fa-solid fa-user"></i> Customer Note' : '<i class="fa-solid fa-lock"></i> Private Note' ?>
+                                </div>
+                                <div style="font-size:11px;color:#9ca3af"><?= date_i18n('M j, Y g:i A', strtotime($note->date_created)) ?></div>
+                            </div>
+                            <div style="color:#111827;font-size:14px"><?= wp_kses_post(wpautop($note->content)) ?></div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php else: ?>
+                    <div style="padding:20px;text-align:center;color:#6b7280">
+                        <i class="fa-solid fa-inbox" style="font-size:32px;margin-bottom:10px;opacity:0.3"></i>
+                        <div>No notes yet</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                
                 <!-- Customer Note -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
                     <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
@@ -5592,6 +5754,29 @@ add_action('template_redirect', function () {
             const billingValue = document.querySelector(`input[name="billing[${field}]"]`).value;
             document.getElementById(`shipping_${field}`).value = billingValue;
         });
+    }
+    
+    let feeCounter = <?= count($order->get_fees()) ?>;
+    function addFeeRow() {
+        feeCounter++;
+        const container = document.getElementById('fees-container');
+        const row = document.createElement('div');
+        row.className = 'fee-row';
+        row.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end';
+        row.innerHTML = `
+            <div>
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
+                <input type="text" name="fees[new_${feeCounter}][name]" placeholder="e.g., Handling Fee" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
+                <input type="number" name="fees[new_${feeCounter}][amount]" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+            </div>
+            <button type="button" onclick="this.closest('.fee-row').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        `;
+        container.appendChild(row);
     }
     </script>
     

@@ -5998,7 +5998,7 @@ add_action('template_redirect', function () {
                 if ($group_slug) {
                     $groups = get_option('b2b_dynamic_groups', []);
                     foreach ($groups as $group) {
-                        if ($group['slug'] === $group_slug) {
+                        if (isset($group['slug']) && $group['slug'] === $group_slug) {
                             $group_name = $group['name'] ?? $group_slug;
                             $discount_percent = floatval($group['discount_percent'] ?? 0);
                             break;
@@ -6274,6 +6274,7 @@ add_action('template_redirect', function () {
     
     // Real-time total calculation
     function calculateOrderTotal() {
+        console.log('calculateOrderTotal called'); // Debug log
         let subtotal = 0;
         let assemblyTotal = 0;
         
@@ -6321,31 +6322,22 @@ add_action('template_redirect', function () {
         if (totalDisplay) totalDisplay.textContent = '$' + total.toFixed(2);
     }
     
-    // Attach event listeners for real-time calculation
+    // Use event delegation for real-time calculation (works with dynamically added elements)
+    document.addEventListener('input', function(e) {
+        if (e.target.matches('input[name*="[quantity]"], input[name*="[price]"], input[name="shipping_cost"], input[name="tax_amount"], input[name*="fees["][name*="[amount]"]')) {
+            calculateOrderTotal();
+        }
+    });
+    
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('input[name*="[assembly]"]')) {
+            calculateOrderTotal();
+        }
+    });
+    
+    // Initial calculation on page load
     document.addEventListener('DOMContentLoaded', function() {
-        // Listen to all inputs that affect the total
-        document.querySelectorAll('input[name*="[quantity]"], input[name*="[price]"], input[name*="[assembly]"], input[name="shipping_cost"], input[name="tax_amount"]').forEach(input => {
-            input.addEventListener('input', calculateOrderTotal);
-            input.addEventListener('change', calculateOrderTotal);
-        });
-        
-        // Initial calculation
         calculateOrderTotal();
-        
-        // Re-attach when fees are added
-        const originalAddFeeRow = window.addFeeRow;
-        window.addFeeRow = function() {
-            originalAddFeeRow();
-            setTimeout(() => {
-                document.querySelectorAll('input[name*="fees["][name*="[amount]"]').forEach(input => {
-                    input.removeEventListener('input', calculateOrderTotal);
-                    input.removeEventListener('change', calculateOrderTotal);
-                    input.addEventListener('input', calculateOrderTotal);
-                    input.addEventListener('change', calculateOrderTotal);
-                });
-                calculateOrderTotal();
-            }, 50);
-        };
     });
     
     // Product search functionality

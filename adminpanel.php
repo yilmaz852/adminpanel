@@ -5283,7 +5283,7 @@ add_action('template_redirect', function () {
         if (isset($_POST['items']) && is_array($_POST['items'])) {
             foreach ($_POST['items'] as $item_id => $item_data) {
                 $qty = intval($item_data['qty'] ?? 0);
-                $price = isset($item_data['price']) ? floatval($item_data['price']) : 0;
+                $price = isset($item_data['price']) && $item_data['price'] !== '' ? floatval($item_data['price']) : null;
                 
                 // Find the item in the order
                 $item_found = false;
@@ -5292,7 +5292,7 @@ add_action('template_redirect', function () {
                         $item_found = true;
                         if ($qty > 0) {
                             $order_item->set_quantity($qty);
-                            if ($price >= 0) {
+                            if ($price !== null && $price > 0) {
                                 $subtotal = $price * $qty;
                                 $order_item->set_subtotal($subtotal);
                                 $order_item->set_total($subtotal);
@@ -5329,9 +5329,9 @@ add_action('template_redirect', function () {
         if (isset($_POST['fees']) && is_array($_POST['fees'])) {
             foreach ($_POST['fees'] as $fee_data) {
                 $fee_name = sanitize_text_field($fee_data['name'] ?? '');
-                $fee_amount = floatval($fee_data['amount'] ?? 0);
+                $fee_amount = isset($fee_data['amount']) && $fee_data['amount'] !== '' ? floatval($fee_data['amount']) : 0;
                 
-                if ($fee_name && $fee_amount != 0) {
+                if ($fee_name && abs($fee_amount) > 0.01) {
                     $fee = new WC_Order_Item_Fee();
                     $fee->set_name($fee_name);
                     $fee->set_total($fee_amount);
@@ -5756,9 +5756,8 @@ add_action('template_redirect', function () {
         });
     }
     
-    let feeCounter = <?= count($order->get_fees()) ?>;
     function addFeeRow() {
-        feeCounter++;
+        const feeId = 'new_' + Date.now();
         const container = document.getElementById('fees-container');
         const row = document.createElement('div');
         row.className = 'fee-row';
@@ -5766,11 +5765,11 @@ add_action('template_redirect', function () {
         row.innerHTML = `
             <div>
                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
-                <input type="text" name="fees[new_${feeCounter}][name]" placeholder="e.g., Handling Fee" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                <input type="text" name="fees[${feeId}][name]" placeholder="e.g., Handling Fee" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
             </div>
             <div>
                 <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
-                <input type="number" name="fees[new_${feeCounter}][amount]" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                <input type="number" name="fees[${feeId}][amount]" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
             </div>
             <button type="button" onclick="this.closest('.fee-row').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
                 <i class="fa-solid fa-trash"></i>

@@ -5608,9 +5608,9 @@ add_action('template_redirect', function () {
         
         // Redirect based on action
         if ($recalculate_only) {
-            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&recalculated=1'));
+            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . intval($order_id) . '&recalculated=1'));
         } else {
-            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&updated=1'));
+            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . intval($order_id) . '&updated=1'));
         }
         exit;
     }
@@ -6281,6 +6281,7 @@ add_action('template_redirect', function () {
     function toggleCollapse(contentId, iconId) {
         const content = document.getElementById(contentId);
         const icon = document.getElementById(iconId);
+        if (!content || !icon) return;
         if (content.style.display === 'none') {
             content.style.display = 'block';
             icon.classList.remove('fa-chevron-down');
@@ -6313,11 +6314,22 @@ add_action('template_redirect', function () {
             const itemRow = $(this).closest('tr.item-row');
             // Set quantity to 0 (server will remove it on save)
             itemRow.find('.item-qty').val(0);
-            // Hide the row visually
-            itemRow.fadeOut(300, function() {
-                calcTotals();
-            });
+            // Add visual indicator that item is marked for deletion
+            itemRow.css('opacity', '0.5');
+            itemRow.find('input').prop('disabled', true);
+            $(this).html('<i class="fa-solid fa-undo"></i>').attr('title', 'Undo removal').removeClass('remove-item-btn').addClass('undo-removal-btn');
+            calcTotals();
         }
+    });
+    
+    // Undo removal button handler
+    $(document).on('click', '.undo-removal-btn', function() {
+        const itemRow = $(this).closest('tr.item-row');
+        itemRow.css('opacity', '1');
+        itemRow.find('input').prop('disabled', false);
+        itemRow.find('.item-qty').val(1);
+        $(this).html('<i class="fa-solid fa-trash"></i>').attr('title', 'Remove this product').removeClass('undo-removal-btn').addClass('remove-item-btn');
+        calcTotals();
     });
     
     let feeUniqueId = 0;

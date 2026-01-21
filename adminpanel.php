@@ -5774,7 +5774,9 @@ add_action('template_redirect', function () {
                         <tfoot>
                             <tr style="background:#f9fafb;font-weight:700">
                                 <td colspan="4" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
-                                <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px"><?= wc_price($order_total) ?></td>
+                                <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px">
+                                    <span class="order-footer-total">$<?= number_format($order_total, 2) ?></span>
+                                </td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -6043,6 +6045,13 @@ add_action('template_redirect', function () {
                             break;
                         }
                     }
+                    
+                    // If no group found, clean the slug for display
+                    if (empty($group_name)) {
+                        // Remove b2b_ prefix if present
+                        $clean_slug = preg_replace('/^b2b[_-]/i', '', $group_slug);
+                        $group_name = ucwords(str_replace(['-', '_'], ' ', $clean_slug));
+                    }
                 }
                 
                 if ($customer_id > 0):
@@ -6299,6 +6308,8 @@ add_action('template_redirect', function () {
         const checkboxes = document.querySelectorAll('input[name*="[assembly]"]');
         const allChecked = Array.from(checkboxes).every(cb => cb.checked);
         checkboxes.forEach(cb => cb.checked = !allChecked);
+        // Trigger calculation after toggle to update subtotals and Order Summary
+        calcTotals();
     }
     
     let feeUniqueId = 0;
@@ -6408,13 +6419,19 @@ add_action('template_redirect', function () {
         let shipping = parseFloat($('.order-shipping').val()) || 0;
         let tax = parseFloat($('.order-tax').val()) || 0;
         
+        // Calculate grand total
+        let grandTotal = subtotal + totalAssembly + feesTotal + shipping + tax;
+        
         // Update displays
         $('.order-total-subtotal').text('$' + subtotal.toFixed(2));
         $('.order-total-assembly').text('$' + totalAssembly.toFixed(2));
         $('.order-total-fees').text('$' + feesTotal.toFixed(2));
         $('.order-total-shipping').text('$' + shipping.toFixed(2));
         $('.order-total-tax').text('$' + tax.toFixed(2));
-        $('.order-total-total').text('$' + (subtotal + totalAssembly + feesTotal + shipping + tax).toFixed(2));
+        $('.order-total-total').text('$' + grandTotal.toFixed(2));
+        
+        // Update Order Total footer in items table
+        $('.order-footer-total').text('$' + grandTotal.toFixed(2));
     }
     
     // Initial calculation on page load
@@ -6476,14 +6493,20 @@ add_action('template_redirect', function () {
                                 div.appendChild(document.createElement('br'));
                                 
                                 const small = document.createElement('small');
-                                let priceText = 'SKU: ' + product.sku + ' | Price: $' + product.price.toFixed(2);
+                                let priceHTML = 'SKU: ' + product.sku + ' | ';
+                                
+                                // Show discounted price prominently if applicable
                                 if (product.has_discount && product.regular_price !== product.price) {
-                                    priceText += ' (Regular: $' + product.regular_price.toFixed(2) + ')';
+                                    priceHTML += 'Price: <span style="color:#10b981;font-weight:bold;font-size:14px">$' + product.price.toFixed(2) + '</span> ';
+                                    priceHTML += '<span style="color:#ef4444;text-decoration:line-through">$' + product.regular_price.toFixed(2) + '</span>';
+                                } else {
+                                    priceHTML += 'Price: $' + product.price.toFixed(2);
                                 }
+                                
                                 if (product.assembly_enabled) {
-                                    priceText += ' | Assembly: $' + product.assembly_price.toFixed(2);
+                                    priceHTML += ' | Assembly: $' + product.assembly_price.toFixed(2);
                                 }
-                                small.textContent = priceText;
+                                small.innerHTML = priceHTML;
                                 div.appendChild(small);
                                 
                                 div.onclick = function() { selectProduct(this); };

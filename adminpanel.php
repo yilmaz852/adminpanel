@@ -5316,29 +5316,26 @@ add_action('wp_ajax_b2b_search_products', function() {
         }
         
         // Get price HTML - this includes ALL B2B discounts applied automatically
+        // This approach matches sales-panel/new-order exactly (lines 16310-16315)
         $price_html = $product->get_price_html();
         $clean_text = strip_tags(html_entity_decode($price_html));
         
-        // Extract all prices from the HTML (for strikethrough regular + final)
+        // Extract all prices from the HTML (same regex as sales-panel)
         preg_match_all('/[0-9]+(?:\.[0-9]+)?/', $clean_text, $matches);
         $found_prices = $matches[0] ?? [];
         
-        // Determine final (discounted) and regular prices
-        $regular_price = floatval($product->get_regular_price());
-        $final_price = floatval($product->get_price());
+        // Use sales-panel logic: min from HTML is final price
+        $final_price = !empty($found_prices) ? floatval(min($found_prices)) : floatval($product->get_price());
         
-        // If HTML contains multiple prices, min is usually the sale/discounted price
-        if (!empty($found_prices)) {
-            $html_min = min($found_prices);
-            $html_max = max($found_prices);
-            // Use min from HTML if it's lower than product price
-            if ($html_min < $final_price && $html_min > 0) {
-                $final_price = $html_min;
-            }
-            // Use max from HTML as regular if higher than final
-            if ($html_max > $final_price) {
-                $regular_price = $html_max;
-            }
+        // Additional safety check (same as sales-panel line 16315)
+        if ($product->get_price() > 0 && $product->get_price() < $final_price) {
+            $final_price = $product->get_price();
+        }
+        
+        // Regular price for comparison (if there are multiple prices, max is regular)
+        $regular_price = floatval($product->get_regular_price());
+        if (!empty($found_prices) && count($found_prices) > 1) {
+            $regular_price = floatval(max($found_prices));
         }
         
         // Get assembly info

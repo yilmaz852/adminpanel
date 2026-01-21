@@ -5610,7 +5610,7 @@ add_action('template_redirect', function () {
         if ($recalculate_only) {
             wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&recalculated=1'));
         } else {
-            wp_redirect(home_url('/b2b-panel/orders?updated=1'));
+            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&updated=1'));
         }
         exit;
     }
@@ -5659,6 +5659,13 @@ add_action('template_redirect', function () {
     </div>
     <?php endif; ?>
     
+    <?php if (isset($_GET['updated'])): ?>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:15px;margin-bottom:25px">
+        <i class="fa-solid fa-check-circle" style="color:#10b981;margin-right:8px"></i>
+        <strong style="color:#10b981">Order updated successfully!</strong>
+    </div>
+    <?php endif; ?>
+    
     <form method="POST" action="">
         <?php wp_nonce_field('b2b_save_order_' . $order_id, 'order_nonce'); ?>
         
@@ -5666,11 +5673,15 @@ add_action('template_redirect', function () {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:25px;margin-bottom:25px">
             <!-- Billing Address -->
             <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
-                <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
-                    <i class="fa-solid fa-user" style="margin-right:8px;color:#10b981"></i>
-                    Billing Address
+                <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleCollapse('billing-address-content', 'billing-address-icon')">
+                    <span>
+                        <i class="fa-solid fa-user" style="margin-right:8px;color:#10b981"></i>
+                        Billing Address
+                    </span>
+                    <i id="billing-address-icon" class="fa-solid fa-chevron-down" style="color:#6b7280;font-size:14px"></i>
                 </h3>
                 
+                <div id="billing-address-content" style="display:none">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
                     <div>
                         <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
@@ -5717,20 +5728,25 @@ add_action('template_redirect', function () {
                         <input type="text" name="billing[phone]" value="<?= esc_attr($order->get_billing_phone()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                     </div>
                 </div>
+                </div>
             </div>
             
             <!-- Shipping Address -->
             <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #f3f4f6">
-                    <h3 style="margin:0;font-size:18px;font-weight:600;color:#111827">
-                        <i class="fa-solid fa-truck" style="margin-right:8px;color:#3b82f6"></i>
-                        Shipping Address
+                    <h3 style="margin:0;font-size:18px;font-weight:600;color:#111827;cursor:pointer;flex:1;display:flex;justify-content:space-between;align-items:center" onclick="toggleCollapse('shipping-address-content', 'shipping-address-icon')">
+                        <span>
+                            <i class="fa-solid fa-truck" style="margin-right:8px;color:#3b82f6"></i>
+                            Shipping Address
+                        </span>
+                        <i id="shipping-address-icon" class="fa-solid fa-chevron-down" style="color:#6b7280;font-size:14px"></i>
                     </h3>
-                    <button type="button" onclick="copyBillingToShipping()" class="button secondary" style="padding:8px 16px;font-size:13px;border-radius:6px">
+                    <button type="button" onclick="copyBillingToShipping()" class="button secondary" style="padding:8px 16px;font-size:13px;border-radius:6px;margin-left:10px">
                         <i class="fa-solid fa-copy"></i> Copy from Billing
                     </button>
                 </div>
                 
+                <div id="shipping-address-content" style="display:none">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
                     <div>
                         <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
@@ -5768,6 +5784,7 @@ add_action('template_redirect', function () {
                         <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
                         <input type="text" name="shipping[country]" id="shipping_country" value="<?= esc_attr($order->get_shipping_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                     </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -5864,54 +5881,11 @@ add_action('template_redirect', function () {
                             <strong>Note:</strong> You can edit item prices and quantities. Click the <i class="fa-solid fa-trash"></i> button to remove an item. Order totals update in real-time.
                         </small>
                     </div>
-                    
-                    <!-- Order Totals Display -->
-                    <div class="order-totals" style="background:#f9fafb;padding:20px;border-radius:8px;margin-top:20px;border:2px solid #e5e7eb">
-                        <h4 style="margin:0 0 15px 0;font-size:16px;font-weight:600;color:#111827">
-                            <i class="fa-solid fa-calculator" style="margin-right:8px;color:#6366f1"></i>
-                            Order Summary
-                        </h4>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Subtotal:</span>
-                            <span class="order-total-subtotal" style="font-weight:600;color:#111827">$0.00</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Assembly Fee:</span>
-                            <span class="order-total-assembly" style="font-weight:600;color:#111827">$0.00</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Custom Fees:</span>
-                            <span class="order-total-fees" style="font-weight:600;color:#111827">$0.00</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Shipping:</span>
-                            <span class="order-total-shipping" style="font-weight:600;color:#111827">$0.00</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:2px solid #d1d5db">
-                            <span style="color:#6b7280">Tax:</span>
-                            <span class="order-total-tax" style="font-weight:600;color:#111827">$0.00</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;padding:15px 10px 10px 10px;margin-top:5px">
-                            <span style="font-weight:700;font-size:18px;color:#111827">Grand Total:</span>
-                            <span class="order-total-total" style="font-weight:700;font-size:20px;color:#10b981">$0.00</span>
-                        </div>
-                        
-                        <!-- Recalculate Button Below Order Total -->
-                        <div style="margin-top:15px;padding-top:15px;border-top:1px solid #d1d5db">
-                            <button type="submit" name="recalculate_only" class="button secondary" style="width:100%;padding:12px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;transition:all 0.2s">
-                                <i class="fa-solid fa-calculator" style="margin-right:8px"></i>
-                                Recalculate Totals
-                            </button>
-                            <small style="display:block;margin-top:8px;color:#6b7280;text-align:center">
-                                <i class="fa-solid fa-info-circle"></i> Click to save and recalculate with server-side verification
-                            </small>
-                        </div>
-                    </div>
                 </div>
                 
-                <!-- Add Product Section -->
+                <!-- Add Product Section (Moved here - below items table) -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
-                    <div style="margin-top:20px;padding:20px;background:#f0fdf4;border:1px solid #10b981;border-radius:8px">
+                    <div style="padding:20px;background:#f0fdf4;border:1px solid #10b981;border-radius:8px">
                         <h4 style="margin:0 0 15px 0;color:#065f46">
                             <i class="fa-solid fa-plus-circle"></i> Add Product to Order
                         </h4>
@@ -5955,6 +5929,51 @@ add_action('template_redirect', function () {
                             <i class="fa-solid fa-info-circle"></i> 
                             Search and select products to add to this order. You can add multiple products.
                         </small>
+                    </div>
+                </div>
+                
+                <!-- Order Totals Display (Full Width) -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <div class="order-totals" style="background:#f9fafb;padding:20px;border-radius:8px;margin-top:20px;border:2px solid #e5e7eb">
+                        <h4 style="margin:0 0 15px 0;font-size:16px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px;color:#6366f1"></i>
+                            Order Summary
+                        </h4>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Subtotal:</span>
+                            <span class="order-total-subtotal" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Assembly Fee:</span>
+                            <span class="order-total-assembly" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Custom Fees:</span>
+                            <span class="order-total-fees" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Shipping:</span>
+                            <span class="order-total-shipping" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:2px solid #d1d5db">
+                            <span style="color:#6b7280">Tax:</span>
+                            <span class="order-total-tax" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:15px 10px 10px 10px;margin-top:5px">
+                            <span style="font-weight:700;font-size:18px;color:#111827">Grand Total:</span>
+                            <span class="order-total-total" style="font-weight:700;font-size:20px;color:#10b981">$0.00</span>
+                        </div>
+                        
+                        <!-- Recalculate Button Below Order Total -->
+                        <div style="margin-top:15px;padding-top:15px;border-top:1px solid #d1d5db">
+                            <button type="submit" name="recalculate_only" class="button secondary" style="width:100%;padding:12px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                                <i class="fa-solid fa-calculator" style="margin-right:8px"></i>
+                                Recalculate Totals
+                            </button>
+                            <small style="display:block;margin-top:8px;color:#6b7280;text-align:center">
+                                <i class="fa-solid fa-info-circle"></i> Click to save and recalculate with server-side verification
+                            </small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -6259,6 +6278,20 @@ add_action('template_redirect', function () {
     </form>
     
     <script>
+    function toggleCollapse(contentId, iconId) {
+        const content = document.getElementById(contentId);
+        const icon = document.getElementById(iconId);
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+        } else {
+            content.style.display = 'none';
+            icon.classList.remove('fa-chevron-up');
+            icon.classList.add('fa-chevron-down');
+        }
+    }
+    
     function copyBillingToShipping() {
         const fields = ['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'postcode', 'state', 'country'];
         fields.forEach(field => {
@@ -6278,12 +6311,10 @@ add_action('template_redirect', function () {
     $(document).on('click', '.remove-item-btn', function() {
         if (confirm('Are you sure you want to remove this product from the order?')) {
             const itemRow = $(this).closest('tr.item-row');
-            const itemId = $(this).data('item-id');
             // Set quantity to 0 (server will remove it on save)
             itemRow.find('.item-qty').val(0);
             // Hide the row visually
             itemRow.fadeOut(300, function() {
-                $(this).remove();
                 calcTotals();
             });
         }

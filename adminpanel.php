@@ -5246,8 +5246,8 @@ add_action('template_redirect', function () {
     if (!$order) wp_die('Order not found');
     
     // Assembly fee configuration
-    define('B2B_ASSEMBLY_FEE_AMOUNT', 50);
-    define('B2B_ASSEMBLY_FEE_NAME', 'Assembly Fee');
+    if (!defined('B2B_ASSEMBLY_FEE_AMOUNT')) define('B2B_ASSEMBLY_FEE_AMOUNT', 50);
+    if (!defined('B2B_ASSEMBLY_FEE_NAME')) define('B2B_ASSEMBLY_FEE_NAME', 'Assembly Fee');
     
     // Handle form submission
     if ($_POST && isset($_POST['save_order'])) {
@@ -5259,23 +5259,33 @@ add_action('template_redirect', function () {
             $refund_reason = sanitize_text_field($_POST['refund_reason'] ?? '');
             
             if ($refund_amount > 0 && $order->get_payment_method() === 'nmi') {
-                try {
-                    $gateways = WC()->payment_gateways()->payment_gateways();
-                    $payment_gateway = isset($gateways[$order->get_payment_method()]) ? $gateways[$order->get_payment_method()] : null;
-                    
-                    if ($payment_gateway && method_exists($payment_gateway, 'process_refund')) {
-                        $result = $payment_gateway->process_refund($order_id, $refund_amount, $refund_reason);
+                // Validate refund amount doesn't exceed maximum refundable
+                $total_refunded = $order->get_total_refunded();
+                $max_refund = $order->get_total() - $total_refunded;
+                
+                if ($refund_amount > $max_refund) {
+                    $order->add_order_note(sprintf('Refund failed: Amount %s exceeds maximum refundable %s', wc_price($refund_amount), wc_price($max_refund)), false, true);
+                } else {
+                    try {
+                        $gateways = WC()->payment_gateways()->payment_gateways();
+                        $payment_gateway = isset($gateways[$order->get_payment_method()]) ? $gateways[$order->get_payment_method()] : null;
                         
-                        if (is_wp_error($result)) {
-                            $order->add_order_note(sprintf('Refund failed: %s', $result->get_error_message()), false, true);
+                        if ($payment_gateway && method_exists($payment_gateway, 'process_refund')) {
+                            $result = $payment_gateway->process_refund($order_id, $refund_amount, $refund_reason);
+                            
+                            if (is_wp_error($result)) {
+                                $order->add_order_note(sprintf('Refund failed: %s', $result->get_error_message()), false, true);
+                            } elseif ($result === true) {
+                                $order->add_order_note(sprintf('Refund of %s processed successfully via NMI. Reason: %s', wc_price($refund_amount), $refund_reason ?: 'None provided'), false, true);
+                            } else {
+                                $order->add_order_note('Refund failed: Payment gateway returned unsuccessful result', false, true);
+                            }
                         } else {
-                            $order->add_order_note(sprintf('Refund of %s processed successfully via NMI. Reason: %s', wc_price($refund_amount), $refund_reason ?: 'None provided'), false, true);
+                            $order->add_order_note('Refund failed: Payment gateway not available or does not support refunds', false, true);
                         }
-                    } else {
-                        $order->add_order_note('Refund failed: Payment gateway not available or does not support refunds', false, true);
+                    } catch (Exception $e) {
+                        $order->add_order_note(sprintf('Refund failed: %s', $e->getMessage()), false, true);
                     }
-                } catch (Exception $e) {
-                    $order->add_order_note(sprintf('Refund failed: %s', $e->getMessage()), false, true);
                 }
             }
         }

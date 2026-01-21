@@ -5361,6 +5361,9 @@ add_action('template_redirect', function () {
         $customer_id = $order->get_customer_id();
         $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
         
+        // Cache tax rates to avoid repeated API calls
+        $tax_rates_cache = [];
+        
         foreach ($order->get_items() as $item) {
             if ($item->get_meta('_assembly_enabled')) {
                 $product_id = $item->get_product_id();
@@ -5376,16 +5379,22 @@ add_action('template_redirect', function () {
                         $product = wc_get_product($product_id);
                         $tax_class = $product ? $product->get_tax_class() : '';
                         
-                        // Get tax rate from WooCommerce
-                        $tax_rates = WC_Tax::get_rates($tax_class, $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode());
-                        if (!empty($tax_rates)) {
-                            $tax_rate = reset($tax_rates);
-                            $rate = floatval($tax_rate['rate']) / 100;
-                            $item_assembly_cost *= (1 + $rate);
-                        } else {
-                            // Fallback tax rate (configurable via B2B_ASSEMBLY_FALLBACK_TAX_RATE constant)
-                            $item_assembly_cost *= (1 + B2B_ASSEMBLY_FALLBACK_TAX_RATE);
+                        // Create cache key for this tax configuration
+                        $cache_key = $tax_class . '|' . $order->get_shipping_country() . '|' . $order->get_shipping_state() . '|' . $order->get_shipping_postcode();
+                        
+                        // Get tax rate from cache or API
+                        if (!isset($tax_rates_cache[$cache_key])) {
+                            $tax_rates = WC_Tax::get_rates($tax_class, $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode());
+                            if (!empty($tax_rates)) {
+                                $tax_rate = reset($tax_rates);
+                                $tax_rates_cache[$cache_key] = floatval($tax_rate['rate']) / 100;
+                            } else {
+                                // Fallback tax rate (configurable via B2B_ASSEMBLY_FALLBACK_TAX_RATE constant)
+                                $tax_rates_cache[$cache_key] = B2B_ASSEMBLY_FALLBACK_TAX_RATE;
+                            }
                         }
+                        
+                        $item_assembly_cost *= (1 + $tax_rates_cache[$cache_key]);
                     }
                     
                     $assembly_fee_total += $item_assembly_cost;

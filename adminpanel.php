@@ -5387,9 +5387,11 @@ add_action('template_redirect', function () {
             $order->set_total_tax($tax_amount);
         }
         
-        // Remove existing fees
+        // Remove all existing fees (except assembly fee which was already handled)
         foreach ($order->get_fees() as $fee_id => $fee) {
-            $order->remove_item($fee_id);
+            if ($fee->get_name() !== B2B_ASSEMBLY_FEE_NAME) {
+                $order->remove_item($fee_id);
+            }
         }
         
         // Add custom fees
@@ -5526,7 +5528,7 @@ add_action('template_redirect', function () {
                         </tbody>
                         <tfoot>
                             <tr style="background:#f9fafb;font-weight:700">
-                                <td colspan="3" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
+                                <td colspan="4" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
                                 <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px"><?= wc_price($order_total) ?></td>
                             </tr>
                         </tfoot>

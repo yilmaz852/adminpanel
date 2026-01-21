@@ -5237,6 +5237,18 @@ add_action('template_redirect', function () {
 ===================================================== */
 // AJAX handler for product search
 add_action('wp_ajax_b2b_search_products', function() {
+    // Security: Check user capabilities
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+        return;
+    }
+    
+    // Security: Verify nonce
+    if (!isset($_GET['nonce']) || !wp_verify_nonce($_GET['nonce'], 'b2b_product_search')) {
+        wp_send_json_error(['message' => 'Invalid nonce']);
+        return;
+    }
+    
     $query = sanitize_text_field($_GET['q'] ?? '');
     
     if (strlen($query) < 2) {
@@ -5256,9 +5268,9 @@ add_action('wp_ajax_b2b_search_products', function() {
     foreach ($products as $product) {
         $results[] = [
             'id' => $product->get_id(),
-            'name' => $product->get_name(),
-            'sku' => $product->get_sku(),
-            'price' => $product->get_price()
+            'name' => esc_html($product->get_name()),
+            'sku' => esc_html($product->get_sku()),
+            'price' => floatval($product->get_price())
         ];
     }
     
@@ -5525,17 +5537,16 @@ add_action('template_redirect', function () {
         
         // Add new products to order
         if (isset($_POST['new_products']) && is_array($_POST['new_products'])) {
-            $new_products = $_POST['new_products'];
-            $new_prices = $_POST['new_product_prices'] ?? [];
-            $new_quantities = $_POST['new_product_quantities'] ?? [];
+            $new_products = array_map('intval', $_POST['new_products']);
+            $new_prices = isset($_POST['new_product_prices']) ? array_map('floatval', $_POST['new_product_prices']) : [];
+            $new_quantities = isset($_POST['new_product_quantities']) ? array_map('intval', $_POST['new_product_quantities']) : [];
             
             foreach ($new_products as $idx => $product_id) {
-                $product_id = intval($product_id);
                 if ($product_id > 0) {
                     $product = wc_get_product($product_id);
                     if ($product) {
-                        $qty = intval($new_quantities[$idx] ?? 1);
-                        $price = floatval($new_prices[$idx] ?? $product->get_price());
+                        $qty = isset($new_quantities[$idx]) ? $new_quantities[$idx] : 1;
+                        $price = isset($new_prices[$idx]) ? $new_prices[$idx] : floatval($product->get_price());
                         
                         if ($qty > 0 && $price >= 0) {
                             $item_id = $order->add_product($product, $qty);
@@ -6214,6 +6225,7 @@ add_action('template_redirect', function () {
     
     // Product search functionality
     const ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
+    const searchNonce = '<?= wp_create_nonce('b2b_product_search') ?>';
     
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('.product-search').forEach(initProductSearch);
@@ -6221,10 +6233,12 @@ add_action('template_redirect', function () {
     
     function initProductSearch(input) {
         let timeout = null;
+        const row = input.closest('.add-product-row');
+        const resultsDiv = row.querySelector('.product-results');
+        
         input.addEventListener('input', function() {
             clearTimeout(timeout);
             const query = this.value;
-            const resultsDiv = this.nextElementSibling.nextElementSibling;
             
             if (query.length < 2) {
                 resultsDiv.style.display = 'none';
@@ -6232,18 +6246,23 @@ add_action('template_redirect', function () {
             }
             
             timeout = setTimeout(() => {
-                // AJAX search for products
-                fetch(ajaxUrl + '?action=b2b_search_products&q=' + encodeURIComponent(query))
+                // AJAX search for products with nonce
+                fetch(ajaxUrl + '?action=b2b_search_products&nonce=' + searchNonce + '&q=' + encodeURIComponent(query))
                     .then(r => r.json())
                     .then(data => {
                         if (data.success && data.data.length > 0) {
                             let html = '';
                             data.data.forEach(product => {
-                                const escapedName = product.name.replace(/'/g, "\\'");
-                                html += `<div style="padding:8px;cursor:pointer;border-bottom:1px solid #eee" onclick="selectProduct(this, ${product.id}, '${escapedName}', ${product.price})" data-id="${product.id}">
-                                    <strong>${product.name}</strong><br>
-                                    <small>SKU: ${product.sku} | Price: $${product.price}</small>
-                                </div>`;
+                                const div = document.createElement('div');
+                                div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
+                                div.dataset.id = product.id;
+                                div.dataset.name = product.name;
+                                div.dataset.price = product.price;
+                                div.innerHTML = `<strong>${product.name}</strong><br><small>SKU: ${product.sku} | Price: $${product.price}</small>`;
+                                div.onclick = function() {
+                                    selectProduct(this);
+                                };
+                                html += div.outerHTML;
                             });
                             resultsDiv.innerHTML = html;
                             resultsDiv.style.display = 'block';
@@ -6251,21 +6270,29 @@ add_action('template_redirect', function () {
                             resultsDiv.innerHTML = '<div style="padding:8px;color:#6b7280">No products found</div>';
                             resultsDiv.style.display = 'block';
                         }
+                    })
+                    .catch(error => {
+                        console.error('Product search error:', error);
+                        resultsDiv.innerHTML = '<div style="padding:8px;color:#ef4444">Error searching products</div>';
+                        resultsDiv.style.display = 'block';
                     });
             }, 300);
         });
         
         // Close dropdown when clicking outside
         document.addEventListener('click', function(e) {
-            if (!input.closest('.add-product-row').contains(e.target)) {
-                const resultsDiv = input.nextElementSibling.nextElementSibling;
+            if (!row.contains(e.target)) {
                 resultsDiv.style.display = 'none';
             }
         });
     }
     
-    function selectProduct(element, productId, productName, productPrice) {
+    function selectProduct(element) {
         const row = element.closest('.add-product-row');
+        const productId = element.dataset.id;
+        const productName = element.dataset.name;
+        const productPrice = element.dataset.price;
+        
         row.querySelector('.product-search').value = productName;
         row.querySelector('.product-id').value = productId;
         row.querySelector('input[name="new_product_prices[]"]').value = productPrice;
@@ -6276,13 +6303,19 @@ add_action('template_redirect', function () {
         const container = document.getElementById('add-product-container');
         const newRow = container.querySelector('.add-product-row').cloneNode(true);
         
-        // Clear inputs
-        newRow.querySelectorAll('input').forEach(input => {
-            if (input.type !== 'number' || input.name === 'new_product_quantities[]') {
-                if (input.name === 'new_product_quantities[]') input.value = '1';
-                else input.value = '';
-            }
-        });
+        // Clear all inputs properly
+        const searchInput = newRow.querySelector('.product-search');
+        const productIdInput = newRow.querySelector('.product-id');
+        const priceInput = newRow.querySelector('input[name="new_product_prices[]"]');
+        const qtyInput = newRow.querySelector('input[name="new_product_quantities[]"]');
+        const resultsDiv = newRow.querySelector('.product-results');
+        
+        searchInput.value = '';
+        productIdInput.value = '';
+        priceInput.value = '';
+        qtyInput.value = '1';
+        resultsDiv.innerHTML = '';
+        resultsDiv.style.display = 'none';
         
         // Change + button to remove button
         const btn = newRow.querySelector('button');
@@ -6292,7 +6325,7 @@ add_action('template_redirect', function () {
         
         // Init search for new row
         container.appendChild(newRow);
-        initProductSearch(newRow.querySelector('.product-search'));
+        initProductSearch(searchInput);
     }
     </script>
     

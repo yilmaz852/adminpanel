@@ -5250,11 +5250,14 @@ add_action('template_redirect', function () {
     if (!defined('B2B_ASSEMBLY_FEE_NAME')) define('B2B_ASSEMBLY_FEE_NAME', 'Assembly Fee');
     
     // Handle form submission
-    if ($_POST && isset($_POST['save_order'])) {
+    if ($_POST && (isset($_POST['save_order']) || isset($_POST['recalculate_only']))) {
         check_admin_referer('b2b_save_order_' . $order_id, 'order_nonce');
         
-        // Process refund if requested
-        if (isset($_POST['process_refund'])) {
+        // Check if this is just a recalculate request
+        $recalculate_only = isset($_POST['recalculate_only']);
+        
+        // Process refund if requested (only for full save)
+        if (!$recalculate_only && isset($_POST['process_refund'])) {
             $refund_amount = filter_var($_POST['refund_amount'] ?? 0, FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
             $refund_reason = sanitize_text_field($_POST['refund_reason'] ?? '');
             
@@ -5354,9 +5357,34 @@ add_action('template_redirect', function () {
         
         // Add assembly fee if any items have assembly enabled
         $assembly_fee_total = 0;
+        $customer_id = $order->get_customer_id();
+        $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
+        
         foreach ($order->get_items() as $item) {
             if ($item->get_meta('_assembly_enabled')) {
-                $assembly_fee_total += B2B_ASSEMBLY_FEE_AMOUNT * $item->get_quantity();
+                $product_id = $item->get_product_id();
+                $assembly_price = floatval(get_post_meta($product_id, '_assembly_price', true));
+                $assembly_tax_included = get_post_meta($product_id, '_assembly_tax', true) === 'yes';
+                
+                if ($assembly_price > 0) {
+                    $item_assembly_cost = $assembly_price * $item->get_quantity();
+                    
+                    // Add tax if assembly tax is enabled and customer is not tax exempt
+                    if ($assembly_tax_included && !$is_tax_exempt) {
+                        // Get tax rate from WooCommerce
+                        $tax_rates = WC_Tax::get_rates('', $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode());
+                        if (!empty($tax_rates)) {
+                            $tax_rate = reset($tax_rates);
+                            $rate = floatval($tax_rate['rate']) / 100;
+                            $item_assembly_cost *= (1 + $rate);
+                        } else {
+                            // Fallback to 8% if no rate found
+                            $item_assembly_cost *= 1.08;
+                        }
+                    }
+                    
+                    $assembly_fee_total += $item_assembly_cost;
+                }
             }
         }
         
@@ -5426,11 +5454,17 @@ add_action('template_redirect', function () {
         // Save order
         $order->save();
         
-        // Add admin note
-        $order->add_order_note('Order details updated via B2B Admin Panel', false, true);
+        // Add admin note (only for full save)
+        if (!$recalculate_only) {
+            $order->add_order_note('Order details updated via B2B Admin Panel', false, true);
+        }
         
-        // Redirect back to orders page with success message
-        wp_redirect(home_url('/b2b-panel/orders?updated=1'));
+        // Redirect based on action
+        if ($recalculate_only) {
+            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&recalculated=1'));
+        } else {
+            wp_redirect(home_url('/b2b-panel/orders?updated=1'));
+        }
         exit;
     }
     
@@ -5471,6 +5505,13 @@ add_action('template_redirect', function () {
         </div>
     </div>
     
+    <?php if (isset($_GET['recalculated'])): ?>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:15px;margin-bottom:25px">
+        <i class="fa-solid fa-check-circle" style="color:#10b981;margin-right:8px"></i>
+        <strong style="color:#10b981">Order totals recalculated successfully!</strong>
+    </div>
+    <?php endif; ?>
+    
     <form method="POST" action="">
         <?php wp_nonce_field('b2b_save_order_' . $order_id, 'order_nonce'); ?>
         
@@ -5484,13 +5525,28 @@ add_action('template_redirect', function () {
                         Order Items
                     </h3>
                     
+                    <div style="margin-bottom:15px">
+                        <button type="button" onclick="toggleAllAssembly()" class="button secondary" style="padding:10px 18px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-wrench" style="margin-right:6px"></i>
+                            Toggle Assembly for All
+                        </button>
+                    </div>
+                    
+                    <script>
+                    function toggleAllAssembly() {
+                        const checkboxes = document.querySelectorAll('input[name*="[assembly]"]');
+                        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                        checkboxes.forEach(cb => cb.checked = !allChecked);
+                    }
+                    </script>
+                    
                     <table style="width:100%;border-collapse:collapse">
                         <thead>
                             <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
                                 <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
                                 <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
                                 <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
-                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service ($<?= esc_attr(B2B_ASSEMBLY_FEE_AMOUNT) ?>/item)">
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service (per product pricing)">
                                     <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
                                 </th>
                                 <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
@@ -5503,6 +5559,11 @@ add_action('template_redirect', function () {
                                 $qty = $item->get_quantity();
                                 $item_price = ($qty > 0) ? ($item->get_subtotal() / $qty) : 0;
                                 $assembly_enabled = $item->get_meta('_assembly_enabled');
+                                
+                                // Get product assembly price
+                                $product_id = $item->get_product_id();
+                                $assembly_price = floatval(get_post_meta($product_id, '_assembly_price', true));
+                                $has_assembly = $assembly_price > 0;
                             ?>
                             <tr style="border-bottom:1px solid #e5e7eb">
                                 <td style="padding:15px">
@@ -5518,7 +5579,14 @@ add_action('template_redirect', function () {
                                     <input type="number" name="items[<?= $item_id ?>][qty]" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
                                 </td>
                                 <td style="padding:15px;text-align:center">
-                                    <input type="checkbox" name="items[<?= $item_id ?>][assembly]" value="1" <?= checked($assembly_enabled, 1, false) ?> style="width:20px;height:20px;cursor:pointer">
+                                    <?php if ($has_assembly): ?>
+                                        <div>
+                                            <input type="checkbox" name="items[<?= $item_id ?>][assembly]" value="1" <?= checked($assembly_enabled, 1, false) ?> style="width:20px;height:20px;cursor:pointer">
+                                        </div>
+                                        <small style="color:#6b7280;font-size:11px">$<?= number_format($assembly_price, 2) ?>/item</small>
+                                    <?php else: ?>
+                                        <span style="color:#9ca3af">N/A</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td style="padding:15px;text-align:right;font-weight:600;color:#111827">
                                     <?= wc_price($item_total) ?>
@@ -5697,6 +5765,25 @@ add_action('template_redirect', function () {
                     </div>
                 </div>
                 
+                <!-- Tax Exemption Status -->
+                <?php 
+                $customer_id = $order->get_customer_id();
+                $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
+                if ($customer_id > 0):
+                ?>
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-shield-halved" style="margin-right:8px;color:#8b5cf6"></i>
+                        Tax Exemption Status
+                    </h3>
+                    
+                    <div style="padding:12px;background:<?= $is_tax_exempt ? '#f0fdf4' : '#fef3c7' ?>;border-radius:6px;border-left:4px solid <?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>">
+                        <i class="fa-solid fa-<?= $is_tax_exempt ? 'check-circle' : 'info-circle' ?>" style="color:<?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>;margin-right:8px"></i>
+                        Customer is <?= $is_tax_exempt ? '<strong style="color:#10b981">TAX EXEMPT</strong>' : '<strong>NOT tax exempt</strong>' ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
                 <!-- Refund Section (NMI only) -->
                 <?php if ($order->is_paid() && $order->get_payment_method() === 'nmi'): 
                     $total_refunded = $order->get_total_refunded();
@@ -5869,14 +5956,20 @@ add_action('template_redirect', function () {
                 
                 <!-- Save Button -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
-                    <button type="submit" name="save_order" class="button primary" style="width:100%;padding:15px;background:#10b981;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
-                        <i class="fa-solid fa-save" style="margin-right:8px"></i>
-                        Save Changes
-                    </button>
-                    <div style="margin-top:15px;padding:12px;background:#dbeafe;border-left:4px solid #3b82f6;border-radius:4px">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                        <button type="submit" name="recalculate_only" class="button secondary" style="padding:15px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px"></i>
+                            Recalculate Totals
+                        </button>
+                        <button type="submit" name="save_order" class="button primary" style="padding:15px;background:#10b981;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-save" style="margin-right:8px"></i>
+                            Save Changes
+                        </button>
+                    </div>
+                    <div style="padding:12px;background:#dbeafe;border-left:4px solid #3b82f6;border-radius:4px">
                         <small style="color:#1e40af">
                             <i class="fa-solid fa-info-circle"></i> 
-                            All changes will be saved and order totals will be recalculated.
+                            Use <strong>Recalculate</strong> to preview totals, or <strong>Save Changes</strong> to save all modifications.
                         </small>
                     </div>
                 </div>

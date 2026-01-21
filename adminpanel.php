@@ -5233,6 +5233,39 @@ add_action('template_redirect', function () {
 });
 
 /* =====================================================
+   8A. AJAX HANDLER: PRODUCT SEARCH
+===================================================== */
+// AJAX handler for product search
+add_action('wp_ajax_b2b_search_products', function() {
+    $query = sanitize_text_field($_GET['q'] ?? '');
+    
+    if (strlen($query) < 2) {
+        wp_send_json_success([]);
+        return;
+    }
+    
+    $args = [
+        's' => $query,
+        'limit' => 20,
+        'status' => 'publish'
+    ];
+    
+    $products = wc_get_products($args);
+    $results = [];
+    
+    foreach ($products as $product) {
+        $results[] = [
+            'id' => $product->get_id(),
+            'name' => $product->get_name(),
+            'sku' => $product->get_sku(),
+            'price' => $product->get_price()
+        ];
+    }
+    
+    wp_send_json_success($results);
+});
+
+/* =====================================================
    8B. PAGE: ORDER EDIT (FULL PAGE EDITOR)
 ===================================================== */
 add_action('template_redirect', function () {
@@ -5490,6 +5523,35 @@ add_action('template_redirect', function () {
             $order->set_customer_note(sanitize_textarea_field($_POST['customer_note']));
         }
         
+        // Add new products to order
+        if (isset($_POST['new_products']) && is_array($_POST['new_products'])) {
+            $new_products = $_POST['new_products'];
+            $new_prices = $_POST['new_product_prices'] ?? [];
+            $new_quantities = $_POST['new_product_quantities'] ?? [];
+            
+            foreach ($new_products as $idx => $product_id) {
+                $product_id = intval($product_id);
+                if ($product_id > 0) {
+                    $product = wc_get_product($product_id);
+                    if ($product) {
+                        $qty = intval($new_quantities[$idx] ?? 1);
+                        $price = floatval($new_prices[$idx] ?? $product->get_price());
+                        
+                        if ($qty > 0 && $price >= 0) {
+                            $item_id = $order->add_product($product, $qty);
+                            if ($item_id) {
+                                $item = $order->get_item($item_id);
+                                $subtotal = $price * $qty;
+                                $item->set_subtotal($subtotal);
+                                $item->set_total($subtotal);
+                                $item->save();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         // Recalculate totals
         $order->calculate_totals();
         
@@ -5640,6 +5702,45 @@ add_action('template_redirect', function () {
                         <small style="color:#92400e">
                             <i class="fa-solid fa-info-circle"></i> 
                             <strong>Note:</strong> You can edit item prices and quantities. Set quantity to 0 to remove an item. Order totals will be recalculated automatically.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Add Product Section -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <div style="margin-top:20px;padding:20px;background:#f0fdf4;border:1px solid #10b981;border-radius:8px">
+                        <h4 style="margin:0 0 15px 0;color:#065f46">
+                            <i class="fa-solid fa-plus-circle"></i> Add Product to Order
+                        </h4>
+                        
+                        <div id="add-product-container">
+                            <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;margin-bottom:10px" class="add-product-row">
+                                <div style="position:relative">
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Product Search</label>
+                                    <input type="text" class="product-search" placeholder="Search products..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                    <input type="hidden" class="product-id" name="new_products[]" value="">
+                                    <div class="product-results" style="display:none;position:absolute;background:white;border:1px solid #d1d5db;border-radius:4px;max-height:200px;overflow-y:auto;z-index:10;width:300px"></div>
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Price</label>
+                                    <input type="number" name="new_product_prices[]" placeholder="0.00" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Quantity</label>
+                                    <input type="number" name="new_product_quantities[]" value="1" min="1" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">&nbsp;</label>
+                                    <button type="button" onclick="addProductRow()" class="button secondary" style="padding:8px 12px;background:#10b981;color:white;border:none;border-radius:4px;cursor:pointer">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <small style="color:#065f46">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Search and select products to add to this order. You can add multiple products.
                         </small>
                     </div>
                 </div>
@@ -6110,6 +6211,89 @@ add_action('template_redirect', function () {
         // Initial calculation
         calculateOrderTotal();
     });
+    
+    // Product search functionality
+    const ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.product-search').forEach(initProductSearch);
+    });
+    
+    function initProductSearch(input) {
+        let timeout = null;
+        input.addEventListener('input', function() {
+            clearTimeout(timeout);
+            const query = this.value;
+            const resultsDiv = this.nextElementSibling.nextElementSibling;
+            
+            if (query.length < 2) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+            
+            timeout = setTimeout(() => {
+                // AJAX search for products
+                fetch(ajaxUrl + '?action=b2b_search_products&q=' + encodeURIComponent(query))
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.data.length > 0) {
+                            let html = '';
+                            data.data.forEach(product => {
+                                const escapedName = product.name.replace(/'/g, "\\'");
+                                html += `<div style="padding:8px;cursor:pointer;border-bottom:1px solid #eee" onclick="selectProduct(this, ${product.id}, '${escapedName}', ${product.price})" data-id="${product.id}">
+                                    <strong>${product.name}</strong><br>
+                                    <small>SKU: ${product.sku} | Price: $${product.price}</small>
+                                </div>`;
+                            });
+                            resultsDiv.innerHTML = html;
+                            resultsDiv.style.display = 'block';
+                        } else {
+                            resultsDiv.innerHTML = '<div style="padding:8px;color:#6b7280">No products found</div>';
+                            resultsDiv.style.display = 'block';
+                        }
+                    });
+            }, 300);
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!input.closest('.add-product-row').contains(e.target)) {
+                const resultsDiv = input.nextElementSibling.nextElementSibling;
+                resultsDiv.style.display = 'none';
+            }
+        });
+    }
+    
+    function selectProduct(element, productId, productName, productPrice) {
+        const row = element.closest('.add-product-row');
+        row.querySelector('.product-search').value = productName;
+        row.querySelector('.product-id').value = productId;
+        row.querySelector('input[name="new_product_prices[]"]').value = productPrice;
+        row.querySelector('.product-results').style.display = 'none';
+    }
+    
+    function addProductRow() {
+        const container = document.getElementById('add-product-container');
+        const newRow = container.querySelector('.add-product-row').cloneNode(true);
+        
+        // Clear inputs
+        newRow.querySelectorAll('input').forEach(input => {
+            if (input.type !== 'number' || input.name === 'new_product_quantities[]') {
+                if (input.name === 'new_product_quantities[]') input.value = '1';
+                else input.value = '';
+            }
+        });
+        
+        // Change + button to remove button
+        const btn = newRow.querySelector('button');
+        btn.onclick = function() { this.closest('.add-product-row').remove(); };
+        btn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        btn.style.background = '#ef4444';
+        
+        // Init search for new row
+        container.appendChild(newRow);
+        initProductSearch(newRow.querySelector('.product-search'));
+    }
     </script>
     
     <?php b2b_adm_footer(); exit;

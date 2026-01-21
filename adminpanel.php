@@ -5268,33 +5268,17 @@ add_action('wp_ajax_b2b_search_products', function() {
     
     // Get customer B2B discount if applicable
     $discount_percent = 0;
-    $debug_info = []; // For troubleshooting
     if ($customer_id) {
         $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
-        $debug_info['customer_id'] = $customer_id;
-        $debug_info['group_slug'] = $group_slug;
-        
         if ($group_slug) {
             $groups = get_option('b2b_dynamic_groups', []);
-            $debug_info['total_groups'] = count($groups);
-            
             foreach ($groups as $group) {
                 if ($group['slug'] === $group_slug && isset($group['discount_percent'])) {
                     $discount_percent = floatval($group['discount_percent']);
-                    $debug_info['matched_group'] = $group['name'] ?? 'Unknown';
-                    $debug_info['discount_percent'] = $discount_percent;
                     break;
                 }
             }
-            
-            if ($discount_percent === 0) {
-                $debug_info['warning'] = 'Group slug found but no matching discount in b2b_dynamic_groups';
-            }
-        } else {
-            $debug_info['warning'] = 'No b2b_group_slug found for customer';
         }
-    } else {
-        $debug_info['warning'] = 'No customer_id provided';
     }
     
     foreach ($products as $product) {
@@ -5322,8 +5306,7 @@ add_action('wp_ajax_b2b_search_products', function() {
         ];
     }
     
-    // Include debug info to help troubleshoot B2B discount issues
-    wp_send_json_success(['products' => $results, 'debug' => $debug_info]);
+    wp_send_json_success($results);
 });
 
 /* =====================================================
@@ -5625,9 +5608,9 @@ add_action('template_redirect', function () {
         
         // Redirect based on action
         if ($recalculate_only) {
-            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . intval($order_id) . '&recalculated=1'));
+            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&recalculated=1'));
         } else {
-            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . intval($order_id) . '&updated=1'));
+            wp_redirect(home_url('/b2b-panel/orders?updated=1'));
         }
         exit;
     }
@@ -5676,135 +5659,8 @@ add_action('template_redirect', function () {
     </div>
     <?php endif; ?>
     
-    <?php if (isset($_GET['updated'])): ?>
-    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:15px;margin-bottom:25px">
-        <i class="fa-solid fa-check-circle" style="color:#10b981;margin-right:8px"></i>
-        <strong style="color:#10b981">Order updated successfully!</strong>
-    </div>
-    <?php endif; ?>
-    
     <form method="POST" action="">
         <?php wp_nonce_field('b2b_save_order_' . $order_id, 'order_nonce'); ?>
-        
-        <!-- Billing and Shipping Addresses at Top (Side by Side) -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:25px;margin-bottom:25px">
-            <!-- Billing Address -->
-            <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
-                <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleCollapse('billing-address-content', 'billing-address-icon')">
-                    <span>
-                        <i class="fa-solid fa-user" style="margin-right:8px;color:#10b981"></i>
-                        Billing Address
-                    </span>
-                    <i id="billing-address-icon" class="fa-solid fa-chevron-down" style="color:#6b7280;font-size:14px"></i>
-                </h3>
-                
-                <div id="billing-address-content" style="display:none">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
-                        <input type="text" name="billing[first_name]" value="<?= esc_attr($order->get_billing_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
-                        <input type="text" name="billing[last_name]" value="<?= esc_attr($order->get_billing_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
-                        <input type="text" name="billing[company]" value="<?= esc_attr($order->get_billing_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
-                        <input type="text" name="billing[address_1]" value="<?= esc_attr($order->get_billing_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
-                        <input type="text" name="billing[address_2]" value="<?= esc_attr($order->get_billing_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
-                        <input type="text" name="billing[city]" value="<?= esc_attr($order->get_billing_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
-                        <input type="text" name="billing[postcode]" value="<?= esc_attr($order->get_billing_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
-                        <input type="text" name="billing[state]" value="<?= esc_attr($order->get_billing_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
-                        <input type="text" name="billing[country]" value="<?= esc_attr($order->get_billing_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Email</label>
-                        <input type="email" name="billing[email]" value="<?= esc_attr($order->get_billing_email()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Phone</label>
-                        <input type="text" name="billing[phone]" value="<?= esc_attr($order->get_billing_phone()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                </div>
-                </div>
-            </div>
-            
-            <!-- Shipping Address -->
-            <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #f3f4f6">
-                    <h3 style="margin:0;font-size:18px;font-weight:600;color:#111827;cursor:pointer;flex:1;display:flex;justify-content:space-between;align-items:center" onclick="toggleCollapse('shipping-address-content', 'shipping-address-icon')">
-                        <span>
-                            <i class="fa-solid fa-truck" style="margin-right:8px;color:#3b82f6"></i>
-                            Shipping Address
-                        </span>
-                        <i id="shipping-address-icon" class="fa-solid fa-chevron-down" style="color:#6b7280;font-size:14px"></i>
-                    </h3>
-                    <button type="button" onclick="copyBillingToShipping()" class="button secondary" style="padding:8px 16px;font-size:13px;border-radius:6px;margin-left:10px">
-                        <i class="fa-solid fa-copy"></i> Copy from Billing
-                    </button>
-                </div>
-                
-                <div id="shipping-address-content" style="display:none">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
-                        <input type="text" name="shipping[first_name]" id="shipping_first_name" value="<?= esc_attr($order->get_shipping_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
-                        <input type="text" name="shipping[last_name]" id="shipping_last_name" value="<?= esc_attr($order->get_shipping_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
-                        <input type="text" name="shipping[company]" id="shipping_company" value="<?= esc_attr($order->get_shipping_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
-                        <input type="text" name="shipping[address_1]" id="shipping_address_1" value="<?= esc_attr($order->get_shipping_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div style="grid-column:1/-1">
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
-                        <input type="text" name="shipping[address_2]" id="shipping_address_2" value="<?= esc_attr($order->get_shipping_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
-                        <input type="text" name="shipping[city]" id="shipping_city" value="<?= esc_attr($order->get_shipping_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
-                        <input type="text" name="shipping[postcode]" id="shipping_postcode" value="<?= esc_attr($order->get_shipping_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
-                        <input type="text" name="shipping[state]" id="shipping_state" value="<?= esc_attr($order->get_shipping_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
-                        <input type="text" name="shipping[country]" id="shipping_country" value="<?= esc_attr($order->get_shipping_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
-                    </div>
-                </div>
-                </div>
-            </div>
-        </div>
         
         <div style="display:grid;grid-template-columns:2fr 1fr;gap:25px;margin-bottom:25px">
             <!-- Left Column -->
@@ -5828,12 +5684,11 @@ add_action('template_redirect', function () {
                             <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
                                 <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
                                 <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
-                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Quantity</th>
+                                <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
                                 <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service (per product pricing)">
                                     <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
                                 </th>
                                 <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
-                                <th style="padding:12px;text-align:center;width:60px;font-weight:600;color:#374151">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -5849,7 +5704,7 @@ add_action('template_redirect', function () {
                                 $assembly_price = floatval(get_post_meta($product_id, '_assembly_price', true));
                                 $has_assembly = $assembly_price > 0;
                             ?>
-                            <tr class="item-row" style="border-bottom:1px solid #e5e7eb">
+                            <tr style="border-bottom:1px solid #e5e7eb">
                                 <td style="padding:15px">
                                     <div style="font-weight:600;color:#111827;margin-bottom:3px"><?= esc_html($item->get_name()) ?></div>
                                     <?php if ($product && $product->get_sku()): ?>
@@ -5872,22 +5727,16 @@ add_action('template_redirect', function () {
                                         <span style="color:#9ca3af">N/A</span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="padding:15px;text-align:right;font-weight:600;color:#111827" class="item-total-display">
+                                <td style="padding:15px;text-align:right;font-weight:600;color:#111827">
                                     <?= wc_price($item_total) ?>
-                                </td>
-                                <td style="padding:15px;text-align:center">
-                                    <button type="button" class="remove-item-btn" data-item-id="<?= $item_id ?>" style="padding:6px 10px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px" title="Remove this product">
-                                        <i class="fa-solid fa-trash"></i>
-                                    </button>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
                         <tfoot>
                             <tr style="background:#f9fafb;font-weight:700">
-                                <!-- Colspan: Product(1) + Price(1) + Qty(1) + Assembly(1) + Total(1) = 5 columns before Action column -->
-                                <td colspan="5" style="padding:15px;text-align:right;color:#111827">Subtotal (Items):</td>
-                                <td style="padding:15px;text-align:right;color:#6366f1;font-size:16px" class="order-subtotal-footer">$0.00</td>
+                                <td colspan="4" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
+                                <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px"><?= wc_price($order_total) ?></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -5895,14 +5744,46 @@ add_action('template_redirect', function () {
                     <div style="margin-top:15px;padding:12px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
                         <small style="color:#92400e">
                             <i class="fa-solid fa-info-circle"></i> 
-                            <strong>Note:</strong> You can edit item prices and quantities. Click the <i class="fa-solid fa-trash"></i> button to remove an item. Order totals update in real-time.
+                            <strong>Note:</strong> You can edit item prices and quantities. Set quantity to 0 to remove an item. Order totals will be recalculated automatically.
                         </small>
+                    </div>
+                    
+                    <!-- Order Totals Display -->
+                    <div class="order-totals" style="background:#f9fafb;padding:20px;border-radius:8px;margin-top:20px;border:2px solid #e5e7eb">
+                        <h4 style="margin:0 0 15px 0;font-size:16px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px;color:#6366f1"></i>
+                            Order Summary
+                        </h4>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Subtotal:</span>
+                            <span class="order-total-subtotal" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Assembly Fee:</span>
+                            <span class="order-total-assembly" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Custom Fees:</span>
+                            <span class="order-total-fees" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Shipping:</span>
+                            <span class="order-total-shipping" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:2px solid #d1d5db">
+                            <span style="color:#6b7280">Tax:</span>
+                            <span class="order-total-tax" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:15px 10px 0 10px;margin-top:5px">
+                            <span style="font-weight:700;font-size:18px;color:#111827">Grand Total:</span>
+                            <span class="order-total-total" style="font-weight:700;font-size:20px;color:#10b981">$0.00</span>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- Add Product Section (Moved here - below items table) -->
+                <!-- Add Product Section -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
-                    <div style="padding:20px;background:#f0fdf4;border:1px solid #10b981;border-radius:8px">
+                    <div style="margin-top:20px;padding:20px;background:#f0fdf4;border:1px solid #10b981;border-radius:8px">
                         <h4 style="margin:0 0 15px 0;color:#065f46">
                             <i class="fa-solid fa-plus-circle"></i> Add Product to Order
                         </h4>
@@ -5949,47 +5830,109 @@ add_action('template_redirect', function () {
                     </div>
                 </div>
                 
-                <!-- Order Totals Display (Full Width) -->
+                <!-- Billing Address -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
-                    <div class="order-totals" style="background:#f9fafb;padding:20px;border-radius:8px;margin-top:20px;border:2px solid #e5e7eb">
-                        <h4 style="margin:0 0 15px 0;font-size:16px;font-weight:600;color:#111827">
-                            <i class="fa-solid fa-calculator" style="margin-right:8px;color:#6366f1"></i>
-                            Order Summary
-                        </h4>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Subtotal:</span>
-                            <span class="order-total-subtotal" style="font-weight:600;color:#111827">$0.00</span>
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-user" style="margin-right:8px;color:#10b981"></i>
+                        Billing Address
+                    </h3>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
+                            <input type="text" name="billing[first_name]" value="<?= esc_attr($order->get_billing_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Assembly Fee:</span>
-                            <span class="order-total-assembly" style="font-weight:600;color:#111827">$0.00</span>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
+                            <input type="text" name="billing[last_name]" value="<?= esc_attr($order->get_billing_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Custom Fees:</span>
-                            <span class="order-total-fees" style="font-weight:600;color:#111827">$0.00</span>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
+                            <input type="text" name="billing[company]" value="<?= esc_attr($order->get_billing_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
-                            <span style="color:#6b7280">Shipping:</span>
-                            <span class="order-total-shipping" style="font-weight:600;color:#111827">$0.00</span>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
+                            <input type="text" name="billing[address_1]" value="<?= esc_attr($order->get_billing_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
-                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:2px solid #d1d5db">
-                            <span style="color:#6b7280">Tax:</span>
-                            <span class="order-total-tax" style="font-weight:600;color:#111827">$0.00</span>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
+                            <input type="text" name="billing[address_2]" value="<?= esc_attr($order->get_billing_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
-                        <div style="display:flex;justify-content:space-between;padding:15px 10px 10px 10px;margin-top:5px">
-                            <span style="font-weight:700;font-size:18px;color:#111827">Grand Total:</span>
-                            <span class="order-total-total" style="font-weight:700;font-size:20px;color:#10b981">$0.00</span>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
+                            <input type="text" name="billing[city]" value="<?= esc_attr($order->get_billing_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
-                        
-                        <!-- Recalculate Button Below Order Total -->
-                        <div style="margin-top:15px;padding-top:15px;border-top:1px solid #d1d5db">
-                            <button type="submit" name="recalculate_only" class="button secondary" style="width:100%;padding:12px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;transition:all 0.2s">
-                                <i class="fa-solid fa-calculator" style="margin-right:8px"></i>
-                                Recalculate Totals
-                            </button>
-                            <small style="display:block;margin-top:8px;color:#6b7280;text-align:center">
-                                <i class="fa-solid fa-info-circle"></i> Click to save and recalculate with server-side verification
-                            </small>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
+                            <input type="text" name="billing[postcode]" value="<?= esc_attr($order->get_billing_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
+                            <input type="text" name="billing[state]" value="<?= esc_attr($order->get_billing_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
+                            <input type="text" name="billing[country]" value="<?= esc_attr($order->get_billing_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Email</label>
+                            <input type="email" name="billing[email]" value="<?= esc_attr($order->get_billing_email()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Phone</label>
+                            <input type="text" name="billing[phone]" value="<?= esc_attr($order->get_billing_phone()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Shipping Address -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #f3f4f6">
+                        <h3 style="margin:0;font-size:18px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-truck" style="margin-right:8px;color:#3b82f6"></i>
+                            Shipping Address
+                        </h3>
+                        <button type="button" onclick="copyBillingToShipping()" class="button secondary" style="padding:8px 16px;font-size:13px;border-radius:6px">
+                            <i class="fa-solid fa-copy"></i> Copy from Billing
+                        </button>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
+                            <input type="text" name="shipping[first_name]" id="shipping_first_name" value="<?= esc_attr($order->get_shipping_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
+                            <input type="text" name="shipping[last_name]" id="shipping_last_name" value="<?= esc_attr($order->get_shipping_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
+                            <input type="text" name="shipping[company]" id="shipping_company" value="<?= esc_attr($order->get_shipping_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
+                            <input type="text" name="shipping[address_1]" id="shipping_address_1" value="<?= esc_attr($order->get_shipping_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
+                            <input type="text" name="shipping[address_2]" id="shipping_address_2" value="<?= esc_attr($order->get_shipping_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
+                            <input type="text" name="shipping[city]" id="shipping_city" value="<?= esc_attr($order->get_shipping_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
+                            <input type="text" name="shipping[postcode]" id="shipping_postcode" value="<?= esc_attr($order->get_shipping_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
+                            <input type="text" name="shipping[state]" id="shipping_state" value="<?= esc_attr($order->get_shipping_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
+                            <input type="text" name="shipping[country]" id="shipping_country" value="<?= esc_attr($order->get_shipping_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
                         </div>
                     </div>
                 </div>
@@ -5997,77 +5940,6 @@ add_action('template_redirect', function () {
             
             <!-- Right Column -->
             <div>
-                <!-- B2B Customer Status (Fixed to show properly) -->
-                <?php 
-                $customer_id = $order->get_customer_id();
-                $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
-                
-                // Get B2B role/group and discount
-                $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
-                $group_name = '';
-                $discount_percent = 0;
-                
-                if ($group_slug) {
-                    $groups = get_option('b2b_dynamic_groups', []);
-                    foreach ($groups as $group) {
-                        if (isset($group['slug']) && $group['slug'] === $group_slug) {
-                            $group_name = $group['name'] ?? $group_slug;
-                            $discount_percent = floatval($group['discount_percent'] ?? 0);
-                            break;
-                        }
-                    }
-                    // If group name still empty but we have a slug, use the slug as fallback
-                    if (empty($group_name) && !empty($group_slug)) {
-                        // Remove 'b2b_' prefix if present (e.g., 'b2b_dealer' → 'Dealer')
-                        $clean_slug = preg_replace('/^b2b[_-]/i', '', $group_slug);
-                        $group_name = ucwords(str_replace(['-', '_'], ' ', $clean_slug));
-                    }
-                }
-                
-                if ($customer_id > 0):
-                ?>
-                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
-                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
-                        <i class="fa-solid fa-shield-halved" style="margin-right:8px;color:#8b5cf6"></i>
-                        Customer B2B Status
-                    </h3>
-                    
-                    <div style="display:grid;gap:12px">
-                        <?php if ($group_name): ?>
-                        <div style="padding:12px;background:#f0f9ff;border-radius:6px;border-left:4px solid #3b82f6">
-                            <div style="font-size:13px;color:#1e40af;margin-bottom:4px">
-                                <i class="fa-solid fa-user-tag"></i> <strong>Customer Group:</strong>
-                            </div>
-                            <div style="font-size:15px;font-weight:600;color:#1e3a8a">
-                                <?= esc_html($group_name) ?>
-                                <?php if ($discount_percent > 0): ?>
-                                    <span style="color:#10b981;margin-left:8px">(<?= number_format($discount_percent, 0) ?>% discount)</span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <?php else: ?>
-                        <div style="padding:12px;background:#f3f4f6;border-radius:6px;border-left:4px solid #9ca3af">
-                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">
-                                <i class="fa-solid fa-user"></i> <strong>Customer Group:</strong>
-                            </div>
-                            <div style="font-size:14px;color:#6b7280">
-                                Standard Customer (No special discount group)
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <div style="padding:12px;background:<?= $is_tax_exempt ? '#f0fdf4' : '#fef3c7' ?>;border-radius:6px;border-left:4px solid <?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>">
-                            <div style="font-size:13px;color:<?= $is_tax_exempt ? '#065f46' : '#92400e' ?>;margin-bottom:4px">
-                                <i class="fa-solid fa-<?= $is_tax_exempt ? 'check-circle' : 'info-circle' ?>"></i> <strong>Tax Status:</strong>
-                            </div>
-                            <div style="font-size:15px;font-weight:600;color:<?= $is_tax_exempt ? '#10b981' : '#d97706' ?>">
-                                <?= $is_tax_exempt ? 'TAX EXEMPT' : 'Standard Tax' ?>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <?php endif; ?>
-                
                 <!-- Order Status -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
                     <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
@@ -6112,6 +5984,71 @@ add_action('template_redirect', function () {
                         </div>
                     </div>
                 </div>
+                
+                <!-- Tax Exemption Status -->
+                <?php 
+                $customer_id = $order->get_customer_id();
+                $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
+                
+                // Get B2B role/group and discount
+                $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
+                $group_name = '';
+                $discount_percent = 0;
+                
+                if ($group_slug) {
+                    $groups = get_option('b2b_dynamic_groups', []);
+                    foreach ($groups as $group) {
+                        if (isset($group['slug']) && $group['slug'] === $group_slug) {
+                            $group_name = $group['name'] ?? $group_slug;
+                            $discount_percent = floatval($group['discount_percent'] ?? 0);
+                            break;
+                        }
+                    }
+                }
+                
+                if ($customer_id > 0):
+                ?>
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-shield-halved" style="margin-right:8px;color:#8b5cf6"></i>
+                        Customer B2B Status
+                    </h3>
+                    
+                    <div style="display:grid;gap:12px">
+                        <?php if ($group_name): ?>
+                        <div style="padding:12px;background:#f0f9ff;border-radius:6px;border-left:4px solid #3b82f6">
+                            <div style="font-size:13px;color:#1e40af;margin-bottom:4px">
+                                <i class="fa-solid fa-user-tag"></i> <strong>Customer Role/Group:</strong>
+                            </div>
+                            <div style="font-size:15px;font-weight:600;color:#1e3a8a">
+                                <?= esc_html($group_name) ?>
+                                <?php if ($discount_percent > 0): ?>
+                                    <span style="color:#10b981;margin-left:8px">(<?= number_format($discount_percent, 0) ?>% discount)</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <div style="padding:12px;background:#f3f4f6;border-radius:6px;border-left:4px solid #9ca3af">
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">
+                                <i class="fa-solid fa-user"></i> <strong>Customer Role/Group:</strong>
+                            </div>
+                            <div style="font-size:14px;color:#6b7280">
+                                Standard Customer (No special discount group)
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <div style="padding:12px;background:<?= $is_tax_exempt ? '#f0fdf4' : '#fef3c7' ?>;border-radius:6px;border-left:4px solid <?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>">
+                            <div style="font-size:13px;color:<?= $is_tax_exempt ? '#065f46' : '#92400e' ?>;margin-bottom:4px">
+                                <i class="fa-solid fa-<?= $is_tax_exempt ? 'check-circle' : 'info-circle' ?>"></i> <strong>Tax Status:</strong>
+                            </div>
+                            <div style="font-size:15px;font-weight:600;color:<?= $is_tax_exempt ? '#10b981' : '#d97706' ?>">
+                                <?= $is_tax_exempt ? 'TAX EXEMPT' : 'Standard Tax' ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
                 
                 <!-- Refund Section (NMI only) -->
                 <?php if ($order->is_paid() && $order->get_payment_method() === 'nmi'): 
@@ -6212,8 +6149,6 @@ add_action('template_redirect', function () {
                         $existing_fees = $order->get_fees();
                         if (!empty($existing_fees)):
                             foreach ($existing_fees as $fee_id => $fee):
-                                // Skip Assembly Fee - it's calculated automatically from checked items
-                                if ($fee->get_name() === B2B_ASSEMBLY_FEE_NAME) continue;
                         ?>
                         <div class="fee-row" style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end">
                             <div>
@@ -6287,14 +6222,20 @@ add_action('template_redirect', function () {
                 
                 <!-- Save Button -->
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
-                    <button type="submit" name="save_order" class="button primary" style="width:100%;padding:15px;background:#10b981;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
-                        <i class="fa-solid fa-save" style="margin-right:8px"></i>
-                        Save Changes
-                    </button>
-                    <div style="padding:12px;background:#dbeafe;border-left:4px solid #3b82f6;border-radius:4px;margin-top:12px">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                        <button type="submit" name="recalculate_only" class="button secondary" style="padding:15px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px"></i>
+                            Recalculate Totals
+                        </button>
+                        <button type="submit" name="save_order" class="button primary" style="padding:15px;background:#10b981;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-save" style="margin-right:8px"></i>
+                            Save Changes
+                        </button>
+                    </div>
+                    <div style="padding:12px;background:#dbeafe;border-left:4px solid #3b82f6;border-radius:4px">
                         <small style="color:#1e40af">
                             <i class="fa-solid fa-info-circle"></i> 
-                            Click <strong>Save Changes</strong> to save all modifications. Use <strong>Recalculate Totals</strong> in the Order Summary section to preview changes.
+                            Use <strong>Recalculate</strong> to preview totals, or <strong>Save Changes</strong> to save all modifications.
                         </small>
                     </div>
                 </div>
@@ -6303,21 +6244,6 @@ add_action('template_redirect', function () {
     </form>
     
     <script>
-    function toggleCollapse(contentId, iconId) {
-        const content = document.getElementById(contentId);
-        const icon = document.getElementById(iconId);
-        if (!content || !icon) return;
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
-        } else {
-            content.style.display = 'none';
-            icon.classList.remove('fa-chevron-up');
-            icon.classList.add('fa-chevron-down');
-        }
-    }
-    
     function copyBillingToShipping() {
         const fields = ['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'postcode', 'state', 'country'];
         fields.forEach(field => {
@@ -6327,23 +6253,10 @@ add_action('template_redirect', function () {
     }
     
     function toggleAllAssembly() {
-        const checkboxes = document.querySelectorAll('.assembly-check');
+        const checkboxes = document.querySelectorAll('input[name*="[assembly]"]');
         const allChecked = Array.from(checkboxes).every(cb => cb.checked);
         checkboxes.forEach(cb => cb.checked = !allChecked);
-        calcTotals();
     }
-    
-    // Remove item button handler - IMMEDIATE DELETION FROM FORM
-    $(document).on('click', '.remove-item-btn', function() {
-        if (confirm('Are you sure you want to remove this product from the order?')) {
-            const itemRow = $(this).closest('tr.item-row');
-            // Fade out and remove the entire row immediately from DOM
-            itemRow.fadeOut(300, function() {
-                $(this).remove();
-                calcTotals(); // Recalculate totals after removal
-            });
-        }
-    });
     
     let feeUniqueId = 0;
     function addFeeRow() {
@@ -6368,12 +6281,11 @@ add_action('template_redirect', function () {
         container.appendChild(row);
     }
     
-    // Real-time total calculation - Triggers on input changes
-    $(document).on('input', '.item-qty, .item-price, .order-shipping, .order-tax, .fee-amount', function() {
+    // Real-time total calculation v4.0 - Exact working pattern from new-order page
+    $(document).on('input', '.item-qty, .item-price, .order-shipping, .order-tax, .fee-amount, .assembly-check', function() {
         calcTotals();
     });
     
-    // Trigger on checkbox changes (assembly checkboxes)
     $(document).on('change', '.assembly-check', function() {
         calcTotals();
     });
@@ -6386,13 +6298,13 @@ add_action('template_redirect', function () {
     function calcTotals() {
         let subtotal = 0, totalAssembly = 0;
         
-        // Calculate items (only visible rows)
-        $('.item-row:visible').each(function() {
-            let q = parseInt($(this).find('.item-qty').val()) || 0;
-            let p = parseFloat($(this).find('.item-price').val()) || 0;
-            let assemblyCheck = $(this).find('.assembly-check');
+        // Calculate items
+        $('.item-qty').each(function(index) {
+            let q = parseInt($(this).val()) || 0;
+            let p = parseFloat($('.item-price').eq(index).val()) || 0;
+            let assemblyCheck = $('.assembly-check').eq(index);
             let a = 0;
-            if(assemblyCheck.length && assemblyCheck.is(':checked')) {
+            if(assemblyCheck.is(':checked')) {
                 a = parseFloat(assemblyCheck.data('assembly-price')) || 0;
             }
             subtotal += (p * q);
@@ -6411,7 +6323,6 @@ add_action('template_redirect', function () {
         
         // Update displays
         $('.order-total-subtotal').text('$' + subtotal.toFixed(2));
-        $('.order-subtotal-footer').text('$' + subtotal.toFixed(2));
         $('.order-total-assembly').text('$' + totalAssembly.toFixed(2));
         $('.order-total-fees').text('$' + feesTotal.toFixed(2));
         $('.order-total-shipping').text('$' + shipping.toFixed(2));
@@ -6459,49 +6370,33 @@ add_action('template_redirect', function () {
                 fetch(url.toString())
                     .then(r => r.json())
                     .then(data => {
-                        if (data.success) {
-                            // Log debug info to help troubleshoot B2B discount issues
-                            if (data.data.debug) {
-                                console.log('=== B2B Discount Debug Info ===', data.data.debug);
-                                if (data.data.debug.warning) {
-                                    console.warn('B2B Discount Warning:', data.data.debug.warning);
-                                }
-                            }
-                            
-                            const products = data.data.products || data.data;
-                            if (products.length > 0) {
-                                // Use DocumentFragment for efficient DOM building
-                                const fragment = document.createDocumentFragment();
-                                products.forEach(product => {
-                                    const div = document.createElement('div');
-                                    div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
-                                    div.dataset.id = product.id;
-                                    div.dataset.name = product.name;
-                                    div.dataset.price = product.price;
-                                    div.dataset.assemblyEnabled = product.assembly_enabled ? '1' : '0';
-                                    div.dataset.assemblyPrice = product.assembly_price;
-                                    
-                                    const strong = document.createElement('strong');
-                                    strong.textContent = product.name;
-                                    div.appendChild(strong);
-                                    
-                                    div.appendChild(document.createElement('br'));
-                                    
-                                    const small = document.createElement('small');
-                                    small.innerHTML = 'SKU: ' + product.sku + ' | ';
-                                    
-                                    // Show discounted price prominently in green if applicable
-                                    if (product.has_discount && product.regular_price !== product.price) {
-                                        small.innerHTML += 'Price: <strong style="color:#10b981;font-size:14px">$' + product.price.toFixed(2) + '</strong> ';
-                                        small.innerHTML += '<span style="color:#ef4444;text-decoration:line-through;font-size:12px">$' + product.regular_price.toFixed(2) + '</span>';
-                                        console.log('Product with discount:', product.name, 'Regular:', product.regular_price, 'Discounted:', product.price);
-                                    } else {
-                                        small.innerHTML += 'Price: $' + product.price.toFixed(2);
-                                    }
+                        if (data.success && data.data.length > 0) {
+                            // Use DocumentFragment for efficient DOM building
+                            const fragment = document.createDocumentFragment();
+                            data.data.forEach(product => {
+                                const div = document.createElement('div');
+                                div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
+                                div.dataset.id = product.id;
+                                div.dataset.name = product.name;
+                                div.dataset.price = product.price;
+                                div.dataset.assemblyEnabled = product.assembly_enabled ? '1' : '0';
+                                div.dataset.assemblyPrice = product.assembly_price;
                                 
-                                if (product.assembly_enabled) {
-                                    small.innerHTML += ' | Assembly: $' + product.assembly_price.toFixed(2);
+                                const strong = document.createElement('strong');
+                                strong.textContent = product.name;
+                                div.appendChild(strong);
+                                
+                                div.appendChild(document.createElement('br'));
+                                
+                                const small = document.createElement('small');
+                                let priceText = 'SKU: ' + product.sku + ' | Price: $' + product.price.toFixed(2);
+                                if (product.has_discount && product.regular_price !== product.price) {
+                                    priceText += ' (Regular: $' + product.regular_price.toFixed(2) + ')';
                                 }
+                                if (product.assembly_enabled) {
+                                    priceText += ' | Assembly: $' + product.assembly_price.toFixed(2);
+                                }
+                                small.textContent = priceText;
                                 div.appendChild(small);
                                 
                                 div.onclick = function() { selectProduct(this); };

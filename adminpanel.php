@@ -5250,6 +5250,7 @@ add_action('wp_ajax_b2b_search_products', function() {
     }
     
     $query = sanitize_text_field($_GET['q'] ?? '');
+    $customer_id = filter_input(INPUT_GET, 'customer_id', FILTER_VALIDATE_INT);
     
     if (strlen($query) < 2) {
         wp_send_json_success([]);
@@ -5265,12 +5266,43 @@ add_action('wp_ajax_b2b_search_products', function() {
     $products = wc_get_products($args);
     $results = [];
     
+    // Get customer B2B discount if applicable
+    $discount_percent = 0;
+    if ($customer_id) {
+        $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
+        if ($group_slug) {
+            $groups = get_option('b2b_dynamic_groups', []);
+            foreach ($groups as $group) {
+                if ($group['slug'] === $group_slug && isset($group['discount_percent'])) {
+                    $discount_percent = floatval($group['discount_percent']);
+                    break;
+                }
+            }
+        }
+    }
+    
     foreach ($products as $product) {
+        $regular_price = floatval($product->get_price());
+        $discounted_price = $regular_price;
+        
+        // Apply B2B discount if applicable
+        if ($discount_percent > 0) {
+            $discounted_price = $regular_price * (1 - ($discount_percent / 100));
+        }
+        
+        // Get assembly info
+        $assembly_price = floatval(get_post_meta($product->get_id(), '_assembly_price', true));
+        $assembly_enabled = $assembly_price > 0;
+        
         $results[] = [
             'id' => $product->get_id(),
             'name' => esc_html($product->get_name()),
             'sku' => esc_html($product->get_sku()),
-            'price' => floatval($product->get_price())
+            'price' => $discounted_price,
+            'regular_price' => $regular_price,
+            'assembly_enabled' => $assembly_enabled,
+            'assembly_price' => $assembly_price,
+            'has_discount' => $discount_percent > 0
         ];
     }
     
@@ -5688,7 +5720,7 @@ add_action('template_redirect', function () {
                                 <td style="padding:15px;text-align:center">
                                     <?php if ($has_assembly): ?>
                                         <div>
-                                            <input type="checkbox" name="items[<?= $item_id ?>][assembly]" value="1" <?= checked($assembly_enabled, 1, false) ?> style="width:20px;height:20px;cursor:pointer">
+                                            <input type="checkbox" name="items[<?= $item_id ?>][assembly]" value="1" <?= checked($assembly_enabled, 1, false) ?> data-assembly-price="<?= esc_attr($assembly_price) ?>" style="width:20px;height:20px;cursor:pointer">
                                         </div>
                                         <small style="color:#6b7280;font-size:11px">$<?= number_format($assembly_price, 2) ?>/item</small>
                                     <?php else: ?>
@@ -5715,6 +5747,38 @@ add_action('template_redirect', function () {
                             <strong>Note:</strong> You can edit item prices and quantities. Set quantity to 0 to remove an item. Order totals will be recalculated automatically.
                         </small>
                     </div>
+                    
+                    <!-- Order Totals Display -->
+                    <div class="order-totals" style="background:#f9fafb;padding:20px;border-radius:8px;margin-top:20px;border:2px solid #e5e7eb">
+                        <h4 style="margin:0 0 15px 0;font-size:16px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px;color:#6366f1"></i>
+                            Order Summary
+                        </h4>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Subtotal:</span>
+                            <span class="order-total-subtotal" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Assembly Fee:</span>
+                            <span class="order-total-assembly" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Custom Fees:</span>
+                            <span class="order-total-fees" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Shipping:</span>
+                            <span class="order-total-shipping" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:2px solid #d1d5db">
+                            <span style="color:#6b7280">Tax:</span>
+                            <span class="order-total-tax" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:15px 10px 0 10px;margin-top:5px">
+                            <span style="font-weight:700;font-size:18px;color:#111827">Grand Total:</span>
+                            <span class="order-total-total" style="font-weight:700;font-size:20px;color:#10b981">$0.00</span>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- Add Product Section -->
@@ -5725,11 +5789,12 @@ add_action('template_redirect', function () {
                         </h4>
                         
                         <div id="add-product-container">
-                            <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;margin-bottom:10px" class="add-product-row">
+                            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 100px auto;gap:10px;margin-bottom:10px" class="add-product-row">
                                 <div style="position:relative">
                                     <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Product Search</label>
                                     <input type="text" class="product-search" placeholder="Search products..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
                                     <input type="hidden" class="product-id" name="new_products[]" value="">
+                                    <input type="hidden" class="product-assembly-price" value="0">
                                     <div class="product-results" style="display:none;position:absolute;background:white;border:1px solid #d1d5db;border-radius:4px;max-height:200px;overflow-y:auto;z-index:10;width:300px"></div>
                                 </div>
                                 <div>
@@ -5739,6 +5804,15 @@ add_action('template_redirect', function () {
                                 <div>
                                     <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Quantity</label>
                                     <input type="number" name="new_product_quantities[]" value="1" min="1" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px;text-align:center" title="Add assembly service">
+                                        <i class="fa-solid fa-wrench"></i> Assembly
+                                    </label>
+                                    <div style="text-align:center;padding:8px 0">
+                                        <input type="checkbox" class="product-assembly-checkbox" name="new_product_assembly[]" value="1" style="width:20px;height:20px;cursor:pointer" disabled>
+                                        <div class="product-assembly-price-display" style="color:#6b7280;font-size:10px;margin-top:2px">N/A</div>
+                                    </div>
                                 </div>
                                 <div>
                                     <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">&nbsp;</label>
@@ -5915,17 +5989,54 @@ add_action('template_redirect', function () {
                 <?php 
                 $customer_id = $order->get_customer_id();
                 $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
+                
+                // Get B2B role/group and discount
+                $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
+                $group_name = '';
+                $discount_percent = 0;
+                
+                if ($group_slug) {
+                    $groups = get_option('b2b_dynamic_groups', []);
+                    foreach ($groups as $group) {
+                        if ($group['slug'] === $group_slug) {
+                            $group_name = $group['name'] ?? $group_slug;
+                            $discount_percent = floatval($group['discount_percent'] ?? 0);
+                            break;
+                        }
+                    }
+                }
+                
                 if ($customer_id > 0):
                 ?>
                 <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
                     <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
                         <i class="fa-solid fa-shield-halved" style="margin-right:8px;color:#8b5cf6"></i>
-                        Tax Exemption Status
+                        Customer B2B Status
                     </h3>
                     
-                    <div style="padding:12px;background:<?= $is_tax_exempt ? '#f0fdf4' : '#fef3c7' ?>;border-radius:6px;border-left:4px solid <?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>">
-                        <i class="fa-solid fa-<?= $is_tax_exempt ? 'check-circle' : 'info-circle' ?>" style="color:<?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>;margin-right:8px"></i>
-                        Customer is <?= $is_tax_exempt ? '<strong style="color:#10b981">TAX EXEMPT</strong>' : '<strong>NOT tax exempt</strong>' ?>
+                    <div style="display:grid;gap:12px">
+                        <?php if ($group_name): ?>
+                        <div style="padding:12px;background:#f0f9ff;border-radius:6px;border-left:4px solid #3b82f6">
+                            <div style="font-size:13px;color:#1e40af;margin-bottom:4px">
+                                <i class="fa-solid fa-user-tag"></i> <strong>Customer Role:</strong>
+                            </div>
+                            <div style="font-size:15px;font-weight:600;color:#1e3a8a">
+                                <?= esc_html($group_name) ?>
+                                <?php if ($discount_percent > 0): ?>
+                                    <span style="color:#10b981">(<?= number_format($discount_percent, 0) ?>% discount)</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <div style="padding:12px;background:<?= $is_tax_exempt ? '#f0fdf4' : '#fef3c7' ?>;border-radius:6px;border-left:4px solid <?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>">
+                            <div style="font-size:13px;color:<?= $is_tax_exempt ? '#065f46' : '#92400e' ?>;margin-bottom:4px">
+                                <i class="fa-solid fa-<?= $is_tax_exempt ? 'check-circle' : 'info-circle' ?>"></i> <strong>Tax Status:</strong>
+                            </div>
+                            <div style="font-size:15px;font-weight:600;color:<?= $is_tax_exempt ? '#10b981' : '#d97706' ?>">
+                                <?= $is_tax_exempt ? 'TAX EXEMPT' : 'Standard Tax' ?>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -6166,12 +6277,13 @@ add_action('template_redirect', function () {
         let subtotal = 0;
         let assemblyTotal = 0;
         
-        // Calculate subtotal from items
-        document.querySelectorAll('input[name*="[quantity]"]').forEach((qtyInput, index) => {
+        // Calculate subtotal from existing items
+        document.querySelectorAll('input[name*="items["][name*="[quantity]"]').forEach((qtyInput, index) => {
             const qty = parseFloat(qtyInput.value) || 0;
-            const priceInput = document.querySelectorAll('input[name*="[price]"]')[index];
-            const price = parseFloat(priceInput.value) || 0;
-            const assemblyCheckbox = document.querySelectorAll('input[name*="[assembly]"]')[index];
+            const priceInputs = document.querySelectorAll('input[name*="items["][name*="[price]"]');
+            const price = parseFloat(priceInputs[index]?.value) || 0;
+            const assemblyCheckboxes = document.querySelectorAll('input[name*="items["][name*="[assembly]"]');
+            const assemblyCheckbox = assemblyCheckboxes[index];
             const assemblyPrice = parseFloat(assemblyCheckbox?.getAttribute('data-assembly-price') || 0);
             
             subtotal += qty * price;
@@ -6186,10 +6298,8 @@ add_action('template_redirect', function () {
         
         // Calculate fees
         let feesTotal = 0;
-        document.querySelectorAll('input[name*="[amount]"]').forEach(feeInput => {
-            if (feeInput.name.includes('fees[')) {
-                feesTotal += parseFloat(feeInput.value) || 0;
-            }
+        document.querySelectorAll('input[name*="fees["][name*="[amount]"]').forEach(feeInput => {
+            feesTotal += parseFloat(feeInput.value) || 0;
         });
         
         // Calculate total
@@ -6214,18 +6324,34 @@ add_action('template_redirect', function () {
     // Attach event listeners for real-time calculation
     document.addEventListener('DOMContentLoaded', function() {
         // Listen to all inputs that affect the total
-        document.querySelectorAll('input[name*="[quantity]"], input[name*="[price]"], input[name*="[assembly]"], input[name="shipping_cost"], input[name="tax_amount"], input[name*="[amount]"]').forEach(input => {
+        document.querySelectorAll('input[name*="[quantity]"], input[name*="[price]"], input[name*="[assembly]"], input[name="shipping_cost"], input[name="tax_amount"]').forEach(input => {
             input.addEventListener('input', calculateOrderTotal);
             input.addEventListener('change', calculateOrderTotal);
         });
         
         // Initial calculation
         calculateOrderTotal();
+        
+        // Re-attach when fees are added
+        const originalAddFeeRow = window.addFeeRow;
+        window.addFeeRow = function() {
+            originalAddFeeRow();
+            setTimeout(() => {
+                document.querySelectorAll('input[name*="fees["][name*="[amount]"]').forEach(input => {
+                    input.removeEventListener('input', calculateOrderTotal);
+                    input.removeEventListener('change', calculateOrderTotal);
+                    input.addEventListener('input', calculateOrderTotal);
+                    input.addEventListener('change', calculateOrderTotal);
+                });
+                calculateOrderTotal();
+            }, 50);
+        };
     });
     
     // Product search functionality
     const ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
     const searchNonce = '<?= wp_create_nonce('b2b_product_search') ?>';
+    const customerId = <?= $order->get_customer_id() ?: 0 ?>;
     
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('.product-search').forEach(initProductSearch);
@@ -6251,6 +6377,7 @@ add_action('template_redirect', function () {
                 url.searchParams.set('action', 'b2b_search_products');
                 url.searchParams.set('search_nonce', searchNonce);
                 url.searchParams.set('q', query);
+                url.searchParams.set('customer_id', customerId);
                 
                 // AJAX search for products with nonce
                 fetch(url.toString())
@@ -6265,6 +6392,8 @@ add_action('template_redirect', function () {
                                 div.dataset.id = product.id;
                                 div.dataset.name = product.name;
                                 div.dataset.price = product.price;
+                                div.dataset.assemblyEnabled = product.assembly_enabled ? '1' : '0';
+                                div.dataset.assemblyPrice = product.assembly_price;
                                 
                                 const strong = document.createElement('strong');
                                 strong.textContent = product.name;
@@ -6273,7 +6402,14 @@ add_action('template_redirect', function () {
                                 div.appendChild(document.createElement('br'));
                                 
                                 const small = document.createElement('small');
-                                small.textContent = 'SKU: ' + product.sku + ' | Price: $' + product.price;
+                                let priceText = 'SKU: ' + product.sku + ' | Price: $' + product.price.toFixed(2);
+                                if (product.has_discount && product.regular_price !== product.price) {
+                                    priceText += ' (Regular: $' + product.regular_price.toFixed(2) + ')';
+                                }
+                                if (product.assembly_enabled) {
+                                    priceText += ' | Assembly: $' + product.assembly_price.toFixed(2);
+                                }
+                                small.textContent = priceText;
                                 div.appendChild(small);
                                 
                                 div.onclick = function() { selectProduct(this); };
@@ -6316,11 +6452,31 @@ add_action('template_redirect', function () {
         const productId = element.dataset.id;
         const productName = element.dataset.name;
         const productPrice = element.dataset.price;
+        const assemblyEnabled = element.dataset.assemblyEnabled === '1';
+        const assemblyPrice = parseFloat(element.dataset.assemblyPrice) || 0;
         
         row.querySelector('.product-search').value = productName;
         row.querySelector('.product-id').value = productId;
         row.querySelector('input[name="new_product_prices[]"]').value = productPrice;
         row.querySelector('.product-results').style.display = 'none';
+        
+        // Handle assembly checkbox
+        const assemblyCheckbox = row.querySelector('.product-assembly-checkbox');
+        const assemblyPriceHidden = row.querySelector('.product-assembly-price');
+        const assemblyPriceDisplay = row.querySelector('.product-assembly-price-display');
+        
+        if (assemblyEnabled && assemblyPrice > 0) {
+            assemblyCheckbox.disabled = false;
+            assemblyPriceHidden.value = assemblyPrice;
+            assemblyPriceDisplay.textContent = '$' + assemblyPrice.toFixed(2) + '/item';
+            assemblyPriceDisplay.style.color = '#10b981';
+        } else {
+            assemblyCheckbox.disabled = true;
+            assemblyCheckbox.checked = false;
+            assemblyPriceHidden.value = '0';
+            assemblyPriceDisplay.textContent = 'N/A';
+            assemblyPriceDisplay.style.color = '#6b7280';
+        }
     }
     
     function addProductRow() {
@@ -6333,6 +6489,9 @@ add_action('template_redirect', function () {
         const priceInput = newRow.querySelector('input[name="new_product_prices[]"]');
         const qtyInput = newRow.querySelector('input[name="new_product_quantities[]"]');
         const resultsDiv = newRow.querySelector('.product-results');
+        const assemblyCheckbox = newRow.querySelector('.product-assembly-checkbox');
+        const assemblyPriceHidden = newRow.querySelector('.product-assembly-price');
+        const assemblyPriceDisplay = newRow.querySelector('.product-assembly-price-display');
         
         searchInput.value = '';
         productIdInput.value = '';
@@ -6340,6 +6499,11 @@ add_action('template_redirect', function () {
         qtyInput.value = '1';
         resultsDiv.innerHTML = '';
         resultsDiv.style.display = 'none';
+        assemblyCheckbox.checked = false;
+        assemblyCheckbox.disabled = true;
+        assemblyPriceHidden.value = '0';
+        assemblyPriceDisplay.textContent = 'N/A';
+        assemblyPriceDisplay.style.color = '#6b7280';
         
         // Change + button to remove button
         const btn = newRow.querySelector('button');
@@ -6351,6 +6515,7 @@ add_action('template_redirect', function () {
         container.appendChild(newRow);
         initProductSearch(searchInput);
     }
+    
     </script>
     
     <?php b2b_adm_footer(); exit;
@@ -17736,6 +17901,15 @@ function sa_render_packing_slip($order_id) {
                         <?php endif; ?>
                         <?php if ($dimensions): ?>
                             <div class="product-dimensions">Dimensions: <?= esc_html($dimensions) ?></div>
+                        <?php endif; ?>
+                        <?php 
+                        // Check if item has assembly enabled
+                        $assembly_enabled = $item->get_meta('_assembly_enabled');
+                        if ($assembly_enabled): 
+                        ?>
+                            <div style="color:#10b981;font-weight:600;font-size:9px;margin-top:3px">
+                                <i class="fa-solid fa-wrench"></i> (+ASSEMBLY)
+                            </div>
                         <?php endif; ?>
                     </td>
                     <td>

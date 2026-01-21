@@ -5244,7 +5244,7 @@ add_action('wp_ajax_b2b_search_products', function() {
     }
     
     // Security: Verify nonce
-    if (!isset($_GET['nonce']) || !wp_verify_nonce($_GET['nonce'], 'b2b_product_search')) {
+    if (!isset($_GET['search_nonce']) || !wp_verify_nonce($_GET['search_nonce'], 'b2b_product_search')) {
         wp_send_json_error(['message' => 'Invalid nonce']);
         return;
     }
@@ -6246,34 +6246,58 @@ add_action('template_redirect', function () {
             }
             
             timeout = setTimeout(() => {
+                // Build URL with URLSearchParams for safety
+                const url = new URL(ajaxUrl);
+                url.searchParams.set('action', 'b2b_search_products');
+                url.searchParams.set('search_nonce', searchNonce);
+                url.searchParams.set('q', query);
+                
                 // AJAX search for products with nonce
-                fetch(ajaxUrl + '?action=b2b_search_products&nonce=' + searchNonce + '&q=' + encodeURIComponent(query))
+                fetch(url.toString())
                     .then(r => r.json())
                     .then(data => {
                         if (data.success && data.data.length > 0) {
-                            let html = '';
+                            // Use DocumentFragment for efficient DOM building
+                            const fragment = document.createDocumentFragment();
                             data.data.forEach(product => {
                                 const div = document.createElement('div');
                                 div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
                                 div.dataset.id = product.id;
                                 div.dataset.name = product.name;
                                 div.dataset.price = product.price;
-                                div.innerHTML = `<strong>${product.name}</strong><br><small>SKU: ${product.sku} | Price: $${product.price}</small>`;
-                                div.onclick = function() {
-                                    selectProduct(this);
-                                };
-                                html += div.outerHTML;
+                                
+                                const strong = document.createElement('strong');
+                                strong.textContent = product.name;
+                                div.appendChild(strong);
+                                
+                                div.appendChild(document.createElement('br'));
+                                
+                                const small = document.createElement('small');
+                                small.textContent = 'SKU: ' + product.sku + ' | Price: $' + product.price;
+                                div.appendChild(small);
+                                
+                                div.onclick = function() { selectProduct(this); };
+                                fragment.appendChild(div);
                             });
-                            resultsDiv.innerHTML = html;
+                            resultsDiv.innerHTML = '';
+                            resultsDiv.appendChild(fragment);
                             resultsDiv.style.display = 'block';
                         } else {
-                            resultsDiv.innerHTML = '<div style="padding:8px;color:#6b7280">No products found</div>';
+                            const noResults = document.createElement('div');
+                            noResults.style.cssText = 'padding:8px;color:#6b7280';
+                            noResults.textContent = 'No products found';
+                            resultsDiv.innerHTML = '';
+                            resultsDiv.appendChild(noResults);
                             resultsDiv.style.display = 'block';
                         }
                     })
                     .catch(error => {
                         console.error('Product search error:', error);
-                        resultsDiv.innerHTML = '<div style="padding:8px;color:#ef4444">Error searching products</div>';
+                        const errorDiv = document.createElement('div');
+                        errorDiv.style.cssText = 'padding:8px;color:#ef4444';
+                        errorDiv.textContent = 'Error searching products';
+                        resultsDiv.innerHTML = '';
+                        resultsDiv.appendChild(errorDiv);
                         resultsDiv.style.display = 'block';
                     });
             }, 300);

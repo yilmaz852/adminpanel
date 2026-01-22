@@ -15,7 +15,7 @@
  * 
  * Architecture: Follows personnelpanel.php pattern
  * - Custom database tables for production tracking
- * - WordPress rewrite rules for clean URLs (/production-panel/*)
+ * - WordPress rewrite rules for clean URLs (/b2b-panel/production/*)
  * - Single-file organization with template_redirect hooks
  * - Compatible with WooCommerce orders but independent structure
  */
@@ -208,90 +208,107 @@ function production_log_status_change($order_id, $old_status, $new_status, $orde
 }
 
 /* =====================================================
- * 3. URL REWRITE RULES
- * ===================================================== */
-add_action('init', function() {
-    add_rewrite_rule('^production-panel/?$', 'index.php?production_page=dashboard', 'top');
-    add_rewrite_rule('^production-panel/schedule/?$', 'index.php?production_page=schedule', 'top');
-    add_rewrite_rule('^production-panel/departments/?$', 'index.php?production_page=departments', 'top');
-    add_rewrite_rule('^production-panel/calendar/?$', 'index.php?production_page=calendar', 'top');
-    add_rewrite_rule('^production-panel/analytics/?$', 'index.php?production_page=analytics', 'top');
-    add_rewrite_rule('^production-panel/settings/?$', 'index.php?production_page=settings', 'top');
-    add_rewrite_rule('^production-panel/reports/?$', 'index.php?production_page=reports', 'top');
-    
-    // Flush rewrite rules if needed
-    if (!get_option('production_rewrite_v1')) {
-        flush_rewrite_rules();
-        update_option('production_rewrite_v1', true);
-    }
-});
-
-add_filter('query_vars', function($vars) {
-    $vars[] = 'production_page';
-    return $vars;
-});
-
-/* =====================================================
- * 4. ADMIN ACCESS GUARD
- * ===================================================== */
-function production_admin_guard() {
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel/login'));
-        exit();
-    }
-}
-
-/* =====================================================
- * 5. ADMIN PANEL INTEGRATION
- * Production panel now uses b2b_adm_header() and b2b_adm_footer()
- * to integrate with the admin panel layout (sidebar + main content area)
+ * 3. ROUTING - ADMIN PANEL INTEGRATION
+ * URL routing is handled by adminpanel.php (lines 85-91):
+ *   /b2b-panel/production → b2b_adm_page=production
+ *   /b2b-panel/production/schedule → b2b_adm_page=production_schedule
+ *   /b2b-panel/production/departments → b2b_adm_page=production_departments
+ *   /b2b-panel/production/calendar → b2b_adm_page=production_calendar
+ *   /b2b-panel/production/analytics → b2b_adm_page=production_analytics
+ *   /b2b-panel/production/settings → b2b_adm_page=production_settings
+ * 
+ * This file provides template_redirect hooks for each page.
  * ===================================================== */
 
 /* =====================================================
- * 6. ROUTER - SINGLE TEMPLATE_REDIRECT HOOK
+ * 4. DASHBOARD PAGE (Production)
  * ===================================================== */
-add_action('template_redirect', 'production_panel_router');
-function production_panel_router() {
-    $page = get_query_var('production_page');
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production') return;
     
-    if (!$page) return;
-    
-    // Admin-only access control
+    // Admin guard
     if (!is_user_logged_in() || !current_user_can('manage_options')) {
         wp_redirect(home_url('/b2b-panel'));
         exit;
     }
     
-    // Route to appropriate handler
-    switch ($page) {
-        case 'dashboard':
-            production_dashboard_page();
-            break;
-        case 'schedule':
-            production_schedule_page();
-            break;
-        case 'departments':
-            production_departments_page();
-            break;
-        case 'calendar':
-            production_calendar_page();
-            break;
-        case 'analytics':
-            production_analytics_page();
-            break;
-        case 'reports':
-            production_reports_page();
-            break;
-        case 'settings':
-            production_settings_page();
-            break;
-        default:
-            wp_redirect(home_url('/production-panel/dashboard'));
-            exit;
+    production_dashboard_page();
+});
+
+/* =====================================================
+ * 5. SCHEDULE PAGE (Production Schedule)
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_schedule') return;
+    
+    // Admin guard
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
     }
     
-    exit;
-}
+    production_schedule_page();
+});
+
+/* =====================================================
+ * 6. DEPARTMENTS PAGE (Production Departments)
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_departments') return;
+    
+    // Admin guard
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    production_departments_page();
+});
+
+/* =====================================================
+ * 7. CALENDAR PAGE (Production Calendar)
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_calendar') return;
+    
+    // Admin guard
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    production_calendar_page();
+});
+
+/* =====================================================
+ * 8. ANALYTICS PAGE (Production Analytics)
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_analytics') return;
+    
+    // Admin guard
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    production_analytics_page();
+});
+
+/* =====================================================
+ * 9. SETTINGS PAGE (Production Settings)
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_settings') return;
+    
+    // Admin guard
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    production_settings_page();
+});
 
 /* =====================================================
  * 7. DASHBOARD PAGE

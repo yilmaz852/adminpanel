@@ -138,6 +138,7 @@ class WUP_Main {
             'uretim-planlama_page_wup-calendar',
             'uretim-planlama_page_wup-analytics',
             'uretim-planlama_page_wup-settings',
+            'uretim-planlama_page_wup-departments',
             'shop_order'
         );
         
@@ -145,17 +146,37 @@ class WUP_Main {
             return;
         }
         
-        // CSS
+        // Base CSS
         wp_enqueue_style('wup-admin', WUP_PLUGIN_URL . 'assets/css/admin.css', array(), WUP_VERSION);
+        
+        // Dashboard CSS
+        if ($screen->id === 'toplevel_page_wup-report') {
+            wp_enqueue_style('wup-dashboard', WUP_PLUGIN_URL . 'assets/css/dashboard.css', array('wup-admin'), WUP_VERSION);
+        }
+        
+        // Calendar CSS
+        if ($screen->id === 'uretim-planlama_page_wup-calendar') {
+            wp_enqueue_style('wup-calendar', WUP_PLUGIN_URL . 'assets/css/calendar.css', array('wup-admin'), WUP_VERSION);
+        }
         
         // Chart.js (rapor ve analiz sayfaları için)
         if (in_array($screen->id, array('toplevel_page_wup-report', 'uretim-planlama_page_wup-analytics'))) {
             wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js', array(), '4.4.1', true);
+            wp_enqueue_script('wup-analytics', WUP_PLUGIN_URL . 'assets/js/analytics.js', array('jquery', 'chart-js'), WUP_VERSION, true);
         }
         
         // FullCalendar (takvim sayfası için)
         if ($screen->id === 'uretim-planlama_page_wup-calendar') {
             wp_enqueue_script('fullcalendar', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js', array(), '6.1.11', true);
+            wp_enqueue_script('wup-calendar', WUP_PLUGIN_URL . 'assets/js/calendar.js', array('jquery', 'fullcalendar'), WUP_VERSION, true);
+        }
+        
+        // Scheduler JS
+        if ($screen->id === 'uretim-planlama_page_wup-schedule') {
+            wp_enqueue_script('jquery-ui-draggable');
+            wp_enqueue_script('jquery-ui-droppable');
+            wp_enqueue_script('jquery-ui-datepicker');
+            wp_enqueue_script('wup-scheduler', WUP_PLUGIN_URL . 'assets/js/scheduler.js', array('jquery', 'jquery-ui-draggable', 'jquery-ui-droppable'), WUP_VERSION, true);
         }
         
         // Ana JS
@@ -163,6 +184,7 @@ class WUP_Main {
         
         wp_localize_script('wup-admin', 'wupData', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
+            'adminUrl' => admin_url(),
             'nonce' => wp_create_nonce('wup_nonce'),
             'texts' => array(
                 'processing' => __('İşleniyor...', 'woo-uretim-planlama'),

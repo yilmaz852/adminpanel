@@ -21,7 +21,7 @@
  */
 
 // Exit if accessed directly
-if (!defined('ABSPATH')) exit;
+if (!defined('ABSPATH')) exit();
 
 /* =====================================================
  * 1. DATABASE TABLES - PRODUCTION TRACKING
@@ -114,7 +114,9 @@ function production_panel_activate() {
  * ===================================================== */
 add_action('init', 'production_panel_register_statuses');
 function production_panel_register_statuses() {
-    if (!class_exists('WooCommerce')) return;
+    if (!class_exists('WooCommerce')) {
+        return;
+    }
     
     register_post_status('wc-in-production', [
         'label' => 'In Production',
@@ -285,7 +287,7 @@ function production_panel_header($title = 'Production Panel') {
     <head>
         <meta charset="<?php bloginfo('charset'); ?>">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title><?php echo esc_html($title); ?> - <?php bloginfo('name'); ?></title>
+        <title><?php echo esc_html($title); ?> - <?php echo esc_html(get_bloginfo('name')); ?></title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <?php wp_head(); ?>
@@ -646,20 +648,23 @@ function production_panel_departments() {
     production_panel_header('Departments');
     
     // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['department_name'])) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         check_admin_referer('production_add_department');
         
-        $table = $wpdb->prefix . 'production_departments';
-        $wpdb->insert($table, [
-            'name' => sanitize_text_field($_POST['department_name']),
-            'slug' => sanitize_title($_POST['department_name']),
-            'capacity' => absint($_POST['capacity']),
-            'workers' => absint($_POST['workers']),
-            'color' => sanitize_hex_color($_POST['color']),
-            'is_active' => 1
-        ]);
+        if (isset($_POST['department_name'])) {
         
-        echo '<div class="container"><div class="alert alert-success">Department added successfully!</div></div>';
+            $table = $wpdb->prefix . 'production_departments';
+            $wpdb->insert($table, [
+                'name' => sanitize_text_field($_POST['department_name']),
+                'slug' => sanitize_title($_POST['department_name']),
+                'capacity' => absint($_POST['capacity']),
+                'workers' => absint($_POST['workers']),
+                'color' => sanitize_hex_color($_POST['color']),
+                'is_active' => 1
+            ]);
+            
+            echo '<div class="container"><div class="alert alert-success">Department added successfully!</div></div>';
+        }
     }
     
     $table = $wpdb->prefix . 'production_departments';
@@ -772,7 +777,7 @@ function production_panel_analytics() {
 function production_panel_settings() {
     production_panel_header('Settings');
     
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce'])) {
         check_admin_referer('production_save_settings');
         
         $settings = [

@@ -242,323 +242,10 @@ function production_admin_guard() {
 }
 
 /* =====================================================
- * 5. HEADER & FOOTER TEMPLATES
+ * 5. ADMIN PANEL INTEGRATION
+ * Production panel now uses b2b_adm_header() and b2b_adm_footer()
+ * to integrate with the admin panel layout (sidebar + main content area)
  * ===================================================== */
-function production_header($title = 'Production Panel') {
-    production_admin_guard();
-    ?>
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title><?= esc_html($title) ?> | <?= esc_html(get_bloginfo('name')) ?></title>
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-            :root {
-                --primary: #3b82f6;
-                --secondary: #64748b;
-                --success: #10b981;
-                --danger: #ef4444;
-                --warning: #f59e0b;
-                --bg: #f8fafc;
-                --white: #ffffff;
-                --border: #e2e8f0;
-                --text: #0f172a;
-                --text-muted: #64748b;
-                --shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            
-            body {
-                font-family: 'Outfit', sans-serif;
-                background: var(--bg);
-                color: var(--text);
-                line-height: 1.6;
-            }
-            
-            .container {
-                max-width: 1400px;
-                margin: 0 auto;
-                padding: 20px;
-            }
-            
-            .header {
-                background: var(--white);
-                border-bottom: 1px solid var(--border);
-                padding: 15px 0;
-                margin-bottom: 30px;
-            }
-            
-            .header-content {
-                max-width: 1400px;
-                margin: 0 auto;
-                padding: 0 20px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            
-            .header h1 {
-                font-size: 24px;
-                font-weight: 700;
-                color: var(--text);
-            }
-            
-            .nav-tabs {
-                display: flex;
-                gap: 10px;
-                margin-bottom: 30px;
-                border-bottom: 2px solid var(--border);
-                padding-bottom: 0;
-            }
-            
-            .nav-tab {
-                padding: 12px 24px;
-                background: transparent;
-                border: none;
-                border-bottom: 3px solid transparent;
-                color: var(--text-muted);
-                text-decoration: none;
-                font-weight: 500;
-                transition: all 0.3s;
-                cursor: pointer;
-            }
-            
-            .nav-tab:hover {
-                color: var(--primary);
-                border-bottom-color: var(--primary);
-            }
-            
-            .nav-tab.active {
-                color: var(--primary);
-                border-bottom-color: var(--primary);
-            }
-            
-            .card {
-                background: var(--white);
-                border-radius: 8px;
-                padding: 24px;
-                box-shadow: var(--shadow);
-                margin-bottom: 20px;
-            }
-            
-            .card h3 {
-                font-size: 18px;
-                font-weight: 700;
-                margin-bottom: 20px;
-                color: var(--text);
-            }
-            
-            .stat-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                gap: 20px;
-                margin-bottom: 30px;
-            }
-            
-            .stat-card {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 24px;
-                border-radius: 8px;
-                box-shadow: var(--shadow);
-            }
-            
-            .stat-card.green { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-            .stat-card.blue { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-            .stat-card.orange { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
-            .stat-card.red { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-            
-            .stat-label {
-                font-size: 13px;
-                opacity: 0.9;
-                margin-bottom: 8px;
-            }
-            
-            .stat-value {
-                font-size: 32px;
-                font-weight: 700;
-            }
-            
-            .button {
-                padding: 10px 20px;
-                border-radius: 6px;
-                font-weight: 500;
-                text-decoration: none;
-                display: inline-block;
-                transition: all 0.3s;
-                border: none;
-                cursor: pointer;
-            }
-            
-            .button.primary {
-                background: var(--primary);
-                color: white;
-            }
-            
-            .button.primary:hover {
-                background: #2563eb;
-            }
-            
-            .button.secondary {
-                background: var(--secondary);
-                color: white;
-            }
-            
-            .button.secondary:hover {
-                background: #475569;
-            }
-            
-            .button.success {
-                background: var(--success);
-                color: white;
-            }
-            
-            .data-table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            
-            .data-table thead {
-                background: var(--bg);
-            }
-            
-            .data-table th {
-                padding: 12px;
-                text-align: left;
-                font-weight: 600;
-                color: var(--text);
-                border-bottom: 2px solid var(--border);
-            }
-            
-            .data-table td {
-                padding: 12px;
-                border-bottom: 1px solid var(--border);
-            }
-            
-            .data-table tr:hover {
-                background: var(--bg);
-            }
-            
-            .badge {
-                padding: 4px 12px;
-                border-radius: 12px;
-                font-size: 12px;
-                font-weight: 600;
-                display: inline-block;
-            }
-            
-            .badge.scheduled { background: #dbeafe; color: #1e40af; }
-            .badge.in-progress { background: #fef3c7; color: #92400e; }
-            .badge.completed { background: #d1fae5; color: #065f46; }
-            .badge.delayed { background: #fee2e2; color: #991b1b; }
-            
-            .form-group {
-                margin-bottom: 20px;
-            }
-            
-            .form-label {
-                display: block;
-                margin-bottom: 8px;
-                font-weight: 600;
-                color: var(--text);
-            }
-            
-            .form-control {
-                width: 100%;
-                padding: 10px;
-                border: 1px solid var(--border);
-                border-radius: 6px;
-                font-size: 14px;
-            }
-            
-            .form-control:focus {
-                outline: none;
-                border-color: var(--primary);
-            }
-            
-            .alert {
-                padding: 15px 20px;
-                border-radius: 6px;
-                margin-bottom: 20px;
-            }
-            
-            .alert.success {
-                background: #d1fae5;
-                color: #065f46;
-                border-left: 4px solid #10b981;
-            }
-            
-            .alert.error {
-                background: #fee2e2;
-                color: #991b1b;
-                border-left: 4px solid #ef4444;
-            }
-            
-            .page-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 30px;
-            }
-            
-            .page-title {
-                font-size: 28px;
-                font-weight: 700;
-                color: var(--text);
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <div class="header-content">
-                <h1><i class="fa-solid fa-industry"></i> <?= esc_html($title) ?></h1>
-                <div>
-                    <a href="<?= home_url('/b2b-panel') ?>" class="button secondary">
-                        <i class="fa-solid fa-arrow-left"></i> Back to Admin
-                    </a>
-                </div>
-            </div>
-        </div>
-        
-        <div class="container">
-            <div class="nav-tabs">
-                <a href="<?= home_url('/production-panel') ?>" class="nav-tab <?= get_query_var('production_page') == 'dashboard' || !get_query_var('production_page') ? 'active' : '' ?>">
-                    <i class="fa-solid fa-dashboard"></i> Dashboard
-                </a>
-                <a href="<?= home_url('/production-panel/schedule') ?>" class="nav-tab <?= get_query_var('production_page') == 'schedule' ? 'active' : '' ?>">
-                    <i class="fa-solid fa-calendar-days"></i> Schedule
-                </a>
-                <a href="<?= home_url('/production-panel/departments') ?>" class="nav-tab <?= get_query_var('production_page') == 'departments' ? 'active' : '' ?>">
-                    <i class="fa-solid fa-building"></i> Departments
-                </a>
-                <a href="<?= home_url('/production-panel/calendar') ?>" class="nav-tab <?= get_query_var('production_page') == 'calendar' ? 'active' : '' ?>">
-                    <i class="fa-solid fa-calendar"></i> Calendar
-                </a>
-                <a href="<?= home_url('/production-panel/analytics') ?>" class="nav-tab <?= get_query_var('production_page') == 'analytics' ? 'active' : '' ?>">
-                    <i class="fa-solid fa-chart-line"></i> Analytics
-                </a>
-                <a href="<?= home_url('/production-panel/reports') ?>" class="nav-tab <?= get_query_var('production_page') == 'reports' ? 'active' : '' ?>">
-                    <i class="fa-solid fa-file-export"></i> Reports
-                </a>
-                <a href="<?= home_url('/production-panel/settings') ?>" class="nav-tab <?= get_query_var('production_page') == 'settings' ? 'active' : '' ?>">
-                    <i class="fa-solid fa-cog"></i> Settings
-                </a>
-            </div>
-    <?php
-}
-
-function production_footer() {
-    ?>
-        </div>
-    </body>
-    </html>
-    <?php
-    exit();
-}
 
 /* =====================================================
  * 6. DASHBOARD PAGE
@@ -570,7 +257,7 @@ add_action('template_redirect', function() {
         
         if ($page !== 'dashboard' && $page !== '') return;
         
-        production_header('Production Dashboard');
+        b2b_adm_header('Production Dashboard');
         
         global $wpdb;
         $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -670,7 +357,7 @@ add_action('template_redirect', function() {
         </div>
         
         <?php
-        production_footer();
+        b2b_adm_footer();
     }
 });
 
@@ -680,7 +367,7 @@ add_action('template_redirect', function() {
 add_action('template_redirect', function() {
     if (get_query_var('production_page') !== 'schedule') return;
     
-    production_header('Production Schedule');
+    b2b_adm_header('Production Schedule');
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -832,7 +519,7 @@ add_action('template_redirect', function() {
     </div>
     
     <?php
-    production_footer();
+    b2b_adm_footer();
 });
 
 /* =====================================================
@@ -841,7 +528,7 @@ add_action('template_redirect', function() {
 add_action('template_redirect', function() {
     if (get_query_var('production_page') !== 'departments') return;
     
-    production_header('Production Departments');
+    b2b_adm_header('Production Departments');
     
     global $wpdb;
     $table = $wpdb->prefix . 'production_departments';
@@ -949,7 +636,7 @@ add_action('template_redirect', function() {
     </div>
     
     <?php
-    production_footer();
+    b2b_adm_footer();
 });
 
 /* =====================================================
@@ -958,7 +645,7 @@ add_action('template_redirect', function() {
 add_action('template_redirect', function() {
     if (get_query_var('production_page') !== 'calendar') return;
     
-    production_header('Production Calendar');
+    b2b_adm_header('Production Calendar');
     ?>
     
     <div class="card">
@@ -977,7 +664,7 @@ add_action('template_redirect', function() {
     </div>
     
     <?php
-    production_footer();
+    b2b_adm_footer();
 });
 
 /* =====================================================
@@ -986,7 +673,7 @@ add_action('template_redirect', function() {
 add_action('template_redirect', function() {
     if (get_query_var('production_page') !== 'analytics') return;
     
-    production_header('Production Analytics');
+    b2b_adm_header('Production Analytics');
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -1064,7 +751,7 @@ add_action('template_redirect', function() {
     </div>
     
     <?php
-    production_footer();
+    b2b_adm_footer();
 });
 
 /* =====================================================
@@ -1073,7 +760,7 @@ add_action('template_redirect', function() {
 add_action('template_redirect', function() {
     if (get_query_var('production_page') !== 'reports') return;
     
-    production_header('Production Reports');
+    b2b_adm_header('Production Reports');
     
     // Handle CSV export
     if (isset($_GET['export']) && $_GET['export'] === 'csv') {
@@ -1124,7 +811,7 @@ add_action('template_redirect', function() {
     </div>
     
     <?php
-    production_footer();
+    b2b_adm_footer();
 });
 
 /* =====================================================
@@ -1133,7 +820,7 @@ add_action('template_redirect', function() {
 add_action('template_redirect', function() {
     if (get_query_var('production_page') !== 'settings') return;
     
-    production_header('Production Settings');
+    b2b_adm_header('Production Settings');
     
     // Handle settings save
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce'])) {
@@ -1202,5 +889,5 @@ add_action('template_redirect', function() {
     </div>
     
     <?php
-    production_footer();
+    b2b_adm_footer();
 });

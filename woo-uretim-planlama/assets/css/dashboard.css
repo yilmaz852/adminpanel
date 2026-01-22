@@ -1,0 +1,456 @@
+/**
+ * WooCommerce Üretim Planlama - Dashboard CSS
+ * Dashboard widgets and statistics styling
+ */
+
+/* Dashboard Container */
+.wup-dashboard-container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Dashboard Grid */
+.wup-dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+/* Dashboard Widgets */
+.wup-dashboard-widget {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+    transition: box-shadow 0.3s ease;
+}
+
+.wup-dashboard-widget:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.wup-dashboard-widget h3 {
+    margin: 0 0 15px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1d2327;
+    border-bottom: 2px solid #f0f0f1;
+    padding-bottom: 10px;
+}
+
+/* Stat Cards */
+.wup-stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: #fff;
+    padding: 25px;
+    position: relative;
+    overflow: hidden;
+}
+
+.wup-stat-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: rgba(255, 255, 255, 0.1);
+    transform: rotate(45deg);
+}
+
+.wup-stat-card h3 {
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
+.wup-stat-value {
+    font-size: 36px;
+    font-weight: 700;
+    margin: 10px 0;
+    position: relative;
+    z-index: 1;
+}
+
+.wup-stat-label {
+    font-size: 14px;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: relative;
+    z-index: 1;
+}
+
+.wup-stat-change {
+    font-size: 13px;
+    margin-top: 8px;
+    position: relative;
+    z-index: 1;
+}
+
+.wup-stat-change.positive {
+    color: #4ade80;
+}
+
+.wup-stat-change.negative {
+    color: #f87171;
+}
+
+/* Color Variants */
+.wup-stat-card.blue {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.wup-stat-card.green {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.wup-stat-card.orange {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.wup-stat-card.red {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.wup-stat-card.purple {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+/* Quick Actions Panel */
+.wup-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.wup-quick-action {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 16px;
+    background: #f0f0f1;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+    text-align: center;
+    text-decoration: none;
+    color: #1d2327;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.wup-quick-action:hover {
+    background: #2271b1;
+    border-color: #2271b1;
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.wup-quick-action .dashicons {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+/* Progress Bars */
+.wup-progress {
+    background: #f0f0f1;
+    border-radius: 4px;
+    height: 20px;
+    margin: 10px 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.wup-progress-bar {
+    background: linear-gradient(90deg, #2271b1 0%, #135e96 100%);
+    height: 100%;
+    line-height: 20px;
+    color: #fff;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    transition: width 0.5s ease;
+}
+
+.wup-progress-bar.success {
+    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.wup-progress-bar.warning {
+    background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+
+.wup-progress-bar.danger {
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+}
+
+/* Department List */
+.wup-department-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.wup-department-item {
+    padding: 12px;
+    border-bottom: 1px solid #f0f0f1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.wup-department-item:last-child {
+    border-bottom: none;
+}
+
+.wup-department-name {
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wup-department-badge {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.wup-department-stats {
+    text-align: right;
+    font-size: 13px;
+    color: #646970;
+}
+
+.wup-department-utilization {
+    font-weight: 600;
+    color: #1d2327;
+}
+
+/* Recent Orders Table */
+.wup-recent-orders {
+    margin-top: 10px;
+}
+
+.wup-recent-orders table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.wup-recent-orders th {
+    background: #f9f9f9;
+    padding: 8px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #e5e5e5;
+}
+
+.wup-recent-orders td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.wup-recent-orders tr:last-child td {
+    border-bottom: none;
+}
+
+.wup-order-id {
+    font-weight: 600;
+    color: #2271b1;
+}
+
+/* Status Badges */
+.wup-status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.wup-status-badge.scheduled {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.wup-status-badge.in-progress {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.wup-status-badge.completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.wup-status-badge.delayed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.wup-status-badge.on-hold {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+/* Bottleneck Alert */
+.wup-bottleneck-alert {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 12px 15px;
+    margin: 15px 0;
+    border-radius: 4px;
+}
+
+.wup-bottleneck-alert h4 {
+    margin: 0 0 8px;
+    color: #92400e;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wup-bottleneck-alert h4::before {
+    content: "⚠";
+    font-size: 18px;
+}
+
+.wup-bottleneck-alert p {
+    margin: 5px 0;
+    color: #78350f;
+    font-size: 13px;
+}
+
+/* Charts Container */
+.wup-dashboard-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 20px;
+    margin-top: 30px;
+}
+
+.wup-chart-widget {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.wup-chart-widget h3 {
+    margin: 0 0 15px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.wup-chart-wrapper {
+    position: relative;
+    height: 300px;
+}
+
+/* Empty State */
+.wup-empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #646970;
+}
+
+.wup-empty-state .dashicons {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    opacity: 0.3;
+}
+
+.wup-empty-state h4 {
+    margin: 15px 0 8px;
+    color: #1d2327;
+    font-size: 16px;
+}
+
+.wup-empty-state p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* Loading Skeleton */
+.wup-skeleton {
+    background: linear-gradient(90deg, #f0f0f1 25%, #e5e5e5 50%, #f0f0f1 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s ease-in-out infinite;
+    border-radius: 4px;
+    height: 20px;
+    margin: 10px 0;
+}
+
+@keyframes loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .wup-dashboard-grid {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+    
+    .wup-dashboard-charts {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 782px) {
+    .wup-dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .wup-stat-value {
+        font-size: 28px;
+    }
+    
+    .wup-quick-actions {
+        flex-direction: column;
+    }
+    
+    .wup-quick-action {
+        width: 100%;
+    }
+    
+    .wup-department-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .wup-department-stats {
+        text-align: left;
+    }
+}
+
+@media (max-width: 480px) {
+    .wup-dashboard-widget {
+        padding: 15px;
+    }
+    
+    .wup-stat-card {
+        padding: 20px;
+    }
+    
+    .wup-stat-value {
+        font-size: 24px;
+    }
+}

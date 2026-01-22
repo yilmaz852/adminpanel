@@ -322,8 +322,16 @@
             modal.fadeIn(200);
             
             // Close on click
-            modal.on('click', '.wup-modal-close, .wup-modal', function(e) {
-                if (e.target === this) {
+            modal.on('click', '.wup-modal-close', function(e) {
+                e.preventDefault();
+                modal.fadeOut(200, function() {
+                    modal.remove();
+                });
+            });
+            
+            // Close on background click
+            modal.on('click', function(e) {
+                if ($(e.target).hasClass('wup-modal')) {
                     modal.fadeOut(200, function() {
                         modal.remove();
                     });

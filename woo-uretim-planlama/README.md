@@ -75,6 +75,13 @@ Track and analyze:
 2. Activate the plugin through the 'Plugins' menu in WordPress
 3. Go to Production Planning → Settings to configure
 
+### Important Notes
+
+**External Dependencies**: This plugin uses CDN-hosted libraries for FullCalendar and Chart.js. While convenient for development and reducing server load, consider the following:
+- Ensure your server allows external CDN connections
+- For production environments with strict security policies, you may want to download and host these libraries locally
+- The plugin will display an error in the browser console if CDN libraries cannot be loaded
+
 ## Database Tables
 
 The plugin creates the following database tables on activation:

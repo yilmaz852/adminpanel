@@ -225,13 +225,7 @@ function production_log_status_change($order_id, $old_status, $new_status, $orde
  * ===================================================== */
 add_action('template_redirect', function() {
     if (get_query_var('b2b_adm_page') !== 'production') return;
-    
-    // Admin guard
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel'));
-        exit;
-    }
-    
+    b2b_adm_guard();
     production_dashboard_page();
 });
 
@@ -240,13 +234,7 @@ add_action('template_redirect', function() {
  * ===================================================== */
 add_action('template_redirect', function() {
     if (get_query_var('b2b_adm_page') !== 'production_schedule') return;
-    
-    // Admin guard
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel'));
-        exit;
-    }
-    
+    b2b_adm_guard();
     production_schedule_page();
 });
 
@@ -255,13 +243,7 @@ add_action('template_redirect', function() {
  * ===================================================== */
 add_action('template_redirect', function() {
     if (get_query_var('b2b_adm_page') !== 'production_departments') return;
-    
-    // Admin guard
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel'));
-        exit;
-    }
-    
+    b2b_adm_guard();
     production_departments_page();
 });
 
@@ -270,13 +252,7 @@ add_action('template_redirect', function() {
  * ===================================================== */
 add_action('template_redirect', function() {
     if (get_query_var('b2b_adm_page') !== 'production_calendar') return;
-    
-    // Admin guard
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel'));
-        exit;
-    }
-    
+    b2b_adm_guard();
     production_calendar_page();
 });
 
@@ -285,13 +261,7 @@ add_action('template_redirect', function() {
  * ===================================================== */
 add_action('template_redirect', function() {
     if (get_query_var('b2b_adm_page') !== 'production_analytics') return;
-    
-    // Admin guard
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel'));
-        exit;
-    }
-    
+    b2b_adm_guard();
     production_analytics_page();
 });
 
@@ -300,13 +270,7 @@ add_action('template_redirect', function() {
  * ===================================================== */
 add_action('template_redirect', function() {
     if (get_query_var('b2b_adm_page') !== 'production_settings') return;
-    
-    // Admin guard
-    if (!is_user_logged_in() || !current_user_can('manage_options')) {
-        wp_redirect(home_url('/b2b-panel'));
-        exit;
-    }
-    
+    b2b_adm_guard();
     production_settings_page();
 });
 

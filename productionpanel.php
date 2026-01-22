@@ -248,16 +248,56 @@ function production_admin_guard() {
  * ===================================================== */
 
 /* =====================================================
- * 6. DASHBOARD PAGE
+ * 6. ROUTER - SINGLE TEMPLATE_REDIRECT HOOK
  * ===================================================== */
-add_action('template_redirect', function() {
+add_action('template_redirect', 'production_panel_router');
+function production_panel_router() {
     $page = get_query_var('production_page');
-    if (!$page || $page === 'dashboard') {
-        production_admin_guard();
-        
-        if ($page !== 'dashboard' && $page !== '') return;
-        
-        b2b_adm_header('Production Dashboard');
+    
+    if (!$page) return;
+    
+    // Admin-only access control
+    if (!is_user_logged_in() || !current_user_can('manage_options')) {
+        wp_redirect(home_url('/b2b-panel'));
+        exit;
+    }
+    
+    // Route to appropriate handler
+    switch ($page) {
+        case 'dashboard':
+            production_dashboard_page();
+            break;
+        case 'schedule':
+            production_schedule_page();
+            break;
+        case 'departments':
+            production_departments_page();
+            break;
+        case 'calendar':
+            production_calendar_page();
+            break;
+        case 'analytics':
+            production_analytics_page();
+            break;
+        case 'reports':
+            production_reports_page();
+            break;
+        case 'settings':
+            production_settings_page();
+            break;
+        default:
+            wp_redirect(home_url('/production-panel/dashboard'));
+            exit;
+    }
+    
+    exit;
+}
+
+/* =====================================================
+ * 7. DASHBOARD PAGE
+ * ===================================================== */
+function production_dashboard_page() {
+    b2b_adm_header('Production Dashboard');
         
         global $wpdb;
         $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -358,15 +398,13 @@ add_action('template_redirect', function() {
         
         <?php
         b2b_adm_footer();
-    }
-});
+        exit;
+}
 
 /* =====================================================
- * 7. SCHEDULE PAGE
+ * 8. SCHEDULE PAGE
  * ===================================================== */
-add_action('template_redirect', function() {
-    if (get_query_var('production_page') !== 'schedule') return;
-    
+function production_schedule_page() {
     b2b_adm_header('Production Schedule');
     
     global $wpdb;
@@ -520,14 +558,13 @@ add_action('template_redirect', function() {
     
     <?php
     b2b_adm_footer();
-});
+    exit;
+}
 
 /* =====================================================
- * 8. DEPARTMENTS PAGE
+ * 9. DEPARTMENTS PAGE
  * ===================================================== */
-add_action('template_redirect', function() {
-    if (get_query_var('production_page') !== 'departments') return;
-    
+function production_departments_page() {
     b2b_adm_header('Production Departments');
     
     global $wpdb;
@@ -637,14 +674,13 @@ add_action('template_redirect', function() {
     
     <?php
     b2b_adm_footer();
-});
+    exit;
+}
 
 /* =====================================================
- * 9. CALENDAR PAGE
+ * 10. CALENDAR PAGE
  * ===================================================== */
-add_action('template_redirect', function() {
-    if (get_query_var('production_page') !== 'calendar') return;
-    
+function production_calendar_page() {
     b2b_adm_header('Production Calendar');
     ?>
     
@@ -665,14 +701,13 @@ add_action('template_redirect', function() {
     
     <?php
     b2b_adm_footer();
-});
+    exit;
+}
 
 /* =====================================================
- * 10. ANALYTICS PAGE
+ * 11. ANALYTICS PAGE
  * ===================================================== */
-add_action('template_redirect', function() {
-    if (get_query_var('production_page') !== 'analytics') return;
-    
+function production_analytics_page() {
     b2b_adm_header('Production Analytics');
     
     global $wpdb;
@@ -752,14 +787,13 @@ add_action('template_redirect', function() {
     
     <?php
     b2b_adm_footer();
-});
+    exit;
+}
 
 /* =====================================================
- * 11. REPORTS PAGE
+ * 12. REPORTS PAGE
  * ===================================================== */
-add_action('template_redirect', function() {
-    if (get_query_var('production_page') !== 'reports') return;
-    
+function production_reports_page() {
     b2b_adm_header('Production Reports');
     
     // Handle CSV export
@@ -812,14 +846,13 @@ add_action('template_redirect', function() {
     
     <?php
     b2b_adm_footer();
-});
+    exit;
+}
 
 /* =====================================================
- * 12. SETTINGS PAGE
+ * 13. SETTINGS PAGE
  * ===================================================== */
-add_action('template_redirect', function() {
-    if (get_query_var('production_page') !== 'settings') return;
-    
+function production_settings_page() {
     b2b_adm_header('Production Settings');
     
     // Handle settings save
@@ -890,4 +923,5 @@ add_action('template_redirect', function() {
     
     <?php
     b2b_adm_footer();
-});
+    exit;
+}

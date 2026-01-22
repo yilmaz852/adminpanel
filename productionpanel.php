@@ -26,8 +26,17 @@ if (!defined('ABSPATH')) exit();
 /* =====================================================
  * 1. DATABASE TABLES - PRODUCTION TRACKING
  * ===================================================== */
-register_activation_hook(__FILE__, 'production_panel_activate');
-function production_panel_activate() {
+// Check and create tables on init
+add_action('init', 'production_panel_check_tables', 5);
+function production_panel_check_tables() {
+    // Check if tables exist
+    if (!get_option('production_panel_tables_created')) {
+        production_panel_create_tables();
+        add_option('production_panel_tables_created', true);
+    }
+}
+
+function production_panel_create_tables() {
     global $wpdb;
     $charset_collate = $wpdb->get_charset_collate();
     
@@ -35,7 +44,7 @@ function production_panel_activate() {
     
     // Production status history
     $table_status_history = $wpdb->prefix . 'production_status_history';
-    $sql1 = "CREATE TABLE {$table_status_history} (
+    $sql1 = "CREATE TABLE IF NOT EXISTS {$table_status_history} (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         order_id BIGINT UNSIGNED NOT NULL,
         status VARCHAR(50) NOT NULL,
@@ -49,7 +58,7 @@ function production_panel_activate() {
     
     // Production schedule
     $table_schedule = $wpdb->prefix . 'production_schedule';
-    $sql2 = "CREATE TABLE {$table_schedule} (
+    $sql2 = "CREATE TABLE IF NOT EXISTS {$table_schedule} (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         order_id BIGINT UNSIGNED NOT NULL,
         department_id BIGINT UNSIGNED NOT NULL,
@@ -72,7 +81,7 @@ function production_panel_activate() {
     
     // Departments
     $table_departments = $wpdb->prefix . 'production_departments';
-    $sql3 = "CREATE TABLE {$table_departments} (
+    $sql3 = "CREATE TABLE IF NOT EXISTS {$table_departments} (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         slug VARCHAR(100) UNIQUE NOT NULL,
@@ -88,7 +97,7 @@ function production_panel_activate() {
     
     // Product routes
     $table_routes = $wpdb->prefix . 'production_routes';
-    $sql4 = "CREATE TABLE {$table_routes} (
+    $sql4 = "CREATE TABLE IF NOT EXISTS {$table_routes} (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         product_id BIGINT UNSIGNED NOT NULL,
         department_id BIGINT UNSIGNED NOT NULL,
@@ -99,14 +108,14 @@ function production_panel_activate() {
     dbDelta($sql4);
     
     // Default settings
-    add_option('production_panel_settings', [
-        'daily_hours' => 8,
-        'working_days' => ['1', '2', '3', '4', '5'],
-        'cache_duration' => 3600,
-        'notifications_enabled' => 0
-    ]);
-    
-    flush_rewrite_rules();
+    if (!get_option('production_panel_settings')) {
+        add_option('production_panel_settings', [
+            'daily_hours' => 8,
+            'working_days' => ['1', '2', '3', '4', '5'],
+            'cache_duration' => 3600,
+            'notifications_enabled' => 0
+        ]);
+    }
 }
 
 /* =====================================================

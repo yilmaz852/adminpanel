@@ -21,6 +21,7 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-register/?$', 'index.php?b2b_adm_page=register', 'top');
     add_rewrite_rule('^b2b-panel/?$', 'index.php?b2b_adm_page=dashboard', 'top');
     add_rewrite_rule('^b2b-panel/orders/?$', 'index.php?b2b_adm_page=orders', 'top');
+    add_rewrite_rule('^b2b-panel/orders/edit/?$', 'index.php?b2b_adm_page=order_edit', 'top');
     
     // Reports
     add_rewrite_rule('^b2b-panel/reports/?$', 'index.php?b2b_adm_page=reports', 'top');
@@ -82,12 +83,12 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/stock-planning/supplier-orders/?$', 'index.php?b2b_adm_page=supplier_orders', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures packing slip settings rewrites are properly registered
-    if (!get_option('b2b_rewrite_v23_packing_slip')) {
+    // Fixed version that ensures order edit page rewrites are properly registered
+    if (!get_option('b2b_rewrite_v24_order_edit')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v23_packing_slip', true);
+        update_option('b2b_rewrite_v24_order_edit', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v22_stock_planning');
+        delete_option('b2b_rewrite_v23_packing_slip');
     }
 });
 
@@ -1389,6 +1390,38 @@ add_action('wp_ajax_b2b_adm_wh_update', function(){
     wp_send_json_success(['new_state' => ($new === '1')]);
 });
 
+// AJAX handler to delete order item
+add_action('wp_ajax_b2b_delete_order_item', function() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+        return;
+    }
+    
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $item_id = intval($_POST['item_id'] ?? 0);
+    $nonce = $_POST['nonce'] ?? '';
+    
+    // Verify nonce
+    if (!wp_verify_nonce($nonce, 'b2b_delete_order_item_' . $order_id)) {
+        wp_send_json_error('Invalid nonce');
+        return;
+    }
+    
+    // Get order
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        wp_send_json_error('Order not found');
+        return;
+    }
+    
+    // Remove the item
+    $order->remove_item($item_id);
+    $order->calculate_totals();
+    $order->save();
+    
+    wp_send_json_success('Item deleted successfully');
+});
+
 // D. Get Order Edit Data
 add_action('wp_ajax_b2b_adm_get_order_edit_data', function(){
     if (!current_user_can('manage_options')) wp_die();
@@ -2216,7 +2249,7 @@ function b2b_adm_header($title) {
                 
                 <!-- Orders -->
                 <div class="nav-item">
-                    <a href="<?= home_url('/b2b-panel/orders') ?>" class="nav-link <?= get_query_var('b2b_adm_page')=='orders'?'active':'' ?>" data-title="Orders">
+                    <a href="<?= home_url('/b2b-panel/orders') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['orders', 'order_edit'])?'active':'' ?>" data-title="Orders">
                         <i class="fa-solid fa-box"></i> <span class="nav-label">Orders</span>
                     </a>
                 </div>
@@ -5137,7 +5170,7 @@ add_action('template_redirect', function () {
                 </td>
                 <td data-col="7" style="text-align:right;display:flex;gap:5px;justify-content:flex-end">
                     <button class="secondary" onclick="viewOrder(<?=$oid?>)" style="padding:6px 10px" title="View Order"><i class="fa-regular fa-eye"></i></button>
-                    <button class="secondary" onclick="editOrder(<?=$oid?>)" style="padding:6px 10px" title="Edit Order"><i class="fa-regular fa-pen-to-square"></i></button>
+                    <a href="<?= home_url('/b2b-panel/orders/edit?id=' . $oid) ?>" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Edit Order"><i class="fa-regular fa-pen-to-square"></i></a>
                     <a href="<?= home_url('/packing-slip/' . $oid) ?>" target="_blank" class="button secondary" style="padding:6px 10px;border-radius:4px;color:#374151;text-decoration:none" title="Packing Slip"><i class="fa-solid fa-print"></i></a>
                     <?=$pdf_btn?>
                 </td>
@@ -5171,8 +5204,6 @@ add_action('template_redirect', function () {
     </div>
 
     <div id="ordModal" class="modal"><div class="modal-content"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3>Details</h3><span onclick="$('#ordModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="mBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div></div></div>
-    
-    <div id="editModal" class="modal"><div class="modal-content" style="max-width:900px"><div style="padding:15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between"><h3><i class="fa-solid fa-pen-to-square"></i> Edit Order</h3><span onclick="$('#editModal').hide()" style="cursor:pointer;font-size:20px">&times;</span></div><div id="editBody" style="padding:20px;max-height:80vh;overflow-y:auto"></div><div style="padding:15px;border-top:1px solid #eee;text-align:right"><button class="button secondary" onclick="$('#editModal').hide()">Cancel</button> <button class="button primary" onclick="saveOrderChanges()" style="background:#10b981;color:white;margin-left:10px"><i class="fa-solid fa-save"></i> Save Changes</button></div></div></div>
 
     <script>
     var ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
@@ -5227,154 +5258,1385 @@ add_action('template_redirect', function () {
         });
     }
     
-    // Edit Modal
-    var currentEditOrder = null;
-    function editOrder(id) {
-        currentEditOrder = id;
-        $('#editModal').css('display','flex'); $('#editBody').html('Loading...');
-        $.get(ajaxUrl, {action:'b2b_adm_get_order_edit_data', order_id:id}, function(r){
-            if(r.success) {
-                var d = r.data;
-                var h = `
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-                        <!-- Left Column -->
-                        <div>
-                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
-                                <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-user"></i> Billing Address</h4>
-                                <div style="display:grid;gap:12px">
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">First Name</label><input type="text" id="billing_first_name" value="${d.billing.first_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Last Name</label><input type="text" id="billing_last_name" value="${d.billing.last_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Company</label><input type="text" id="billing_company" value="${d.billing.company}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 1</label><input type="text" id="billing_address_1" value="${d.billing.address_1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 2</label><input type="text" id="billing_address_2" value="${d.billing.address_2}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">City</label><input type="text" id="billing_city" value="${d.billing.city}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Postcode</label><input type="text" id="billing_postcode" value="${d.billing.postcode}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    </div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">State</label><input type="text" id="billing_state" value="${d.billing.state}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Country</label><input type="text" id="billing_country" value="${d.billing.country}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Email</label><input type="email" id="billing_email" value="${d.billing.email}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Phone</label><input type="text" id="billing_phone" value="${d.billing.phone}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- Right Column -->
-                        <div>
-                            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
-                                <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-truck"></i> Shipping Address</h4>
-                                <div style="margin-bottom:10px"><button class="button secondary" onclick="copyBillingToShipping()" style="font-size:12px;padding:6px 12px"><i class="fa-solid fa-copy"></i> Copy from Billing</button></div>
-                                <div style="display:grid;gap:12px">
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">First Name</label><input type="text" id="shipping_first_name" value="${d.shipping.first_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Last Name</label><input type="text" id="shipping_last_name" value="${d.shipping.last_name}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Company</label><input type="text" id="shipping_company" value="${d.shipping.company}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 1</label><input type="text" id="shipping_address_1" value="${d.shipping.address_1}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Address 2</label><input type="text" id="shipping_address_2" value="${d.shipping.address_2}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">City</label><input type="text" id="shipping_city" value="${d.shipping.city}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                        <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Postcode</label><input type="text" id="shipping_postcode" value="${d.shipping.postcode}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    </div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">State</label><input type="text" id="shipping_state" value="${d.shipping.state}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                    <div><label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Country</label><input type="text" id="shipping_country" value="${d.shipping.country}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px"/></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Order Items -->
-                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:20px">
-                        <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-box"></i> Order Items</h4>
-                        <table style="width:100%;border-collapse:collapse" id="orderItemsTable">
-                            <thead><tr style="background:#e2e8f0"><th style="padding:10px;text-align:left">Product</th><th style="padding:10px;text-align:center;width:100px">Quantity</th><th style="padding:10px;text-align:center;width:80px">Actions</th></tr></thead>
-                            <tbody>${d.items.map((item,idx)=>`<tr style="border-bottom:1px solid #e2e8f0" data-item-id="${item.item_id}"><td style="padding:10px">${item.name}<br><small style="color:#6b7280">${item.sku}</small></td><td style="padding:10px;text-align:center"><input type="number" min="1" value="${item.qty}" data-item-id="${item.item_id}" class="item-qty" style="width:70px;padding:6px;border:1px solid #d1d5db;border-radius:4px;text-align:center"/></td><td style="padding:10px;text-align:center"><button class="button secondary" onclick="removeOrderItem(${item.item_id})" style="padding:6px 10px;font-size:12px;background:#ef4444;color:white"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('')}</tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- Customer Note -->
-                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px">
-                        <h4 style="margin:0 0 15px 0;padding-bottom:10px;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-note-sticky"></i> Customer Note</h4>
-                        <textarea id="customer_note" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;min-height:80px">${d.customer_note}</textarea>
-                    </div>
-                `;
-                $('#editBody').html(h);
-            }
-        });
-    }
     
-    function copyBillingToShipping() {
-        $('#shipping_first_name').val($('#billing_first_name').val());
-        $('#shipping_last_name').val($('#billing_last_name').val());
-        $('#shipping_company').val($('#billing_company').val());
-        $('#shipping_address_1').val($('#billing_address_1').val());
-        $('#shipping_address_2').val($('#billing_address_2').val());
-        $('#shipping_city').val($('#billing_city').val());
-        $('#shipping_postcode').val($('#billing_postcode').val());
-        $('#shipping_state').val($('#billing_state').val());
-        $('#shipping_country').val($('#billing_country').val());
-    }
-    
-    function removeOrderItem(itemId) {
-        if(!confirm('Are you sure you want to remove this item?')) return;
-        $('tr[data-item-id="'+itemId+'"]').fadeOut(300, function(){ $(this).remove(); });
-    }
-    
-    function saveOrderChanges() {
-        if(!confirm('Save all changes to this order?')) return;
-        
-        // Collect all data
-        var data = {
-            action: 'b2b_adm_save_order',
-            order_id: currentEditOrder,
-            billing: {
-                first_name: $('#billing_first_name').val(),
-                last_name: $('#billing_last_name').val(),
-                company: $('#billing_company').val(),
-                address_1: $('#billing_address_1').val(),
-                address_2: $('#billing_address_2').val(),
-                city: $('#billing_city').val(),
-                postcode: $('#billing_postcode').val(),
-                state: $('#billing_state').val(),
-                country: $('#billing_country').val(),
-                email: $('#billing_email').val(),
-                phone: $('#billing_phone').val()
-            },
-            shipping: {
-                first_name: $('#shipping_first_name').val(),
-                last_name: $('#shipping_last_name').val(),
-                company: $('#shipping_company').val(),
-                address_1: $('#shipping_address_1').val(),
-                address_2: $('#shipping_address_2').val(),
-                city: $('#shipping_city').val(),
-                postcode: $('#shipping_postcode').val(),
-                state: $('#shipping_state').val(),
-                country: $('#shipping_country').val()
-            },
-            items: [],
-            customer_note: $('#customer_note').val()
-        };
-        
-        // Collect item quantities
-        $('.item-qty').each(function(){
-            data.items.push({
-                item_id: $(this).data('item-id'),
-                qty: $(this).val()
-            });
-        });
-        
-        $.post(ajaxUrl, data, function(r){
-            if(r.success) {
-                alert('Order updated successfully!');
-                $('#editModal').hide();
-                location.reload();
-            } else {
-                alert('Error: ' + (r.data || 'Unknown error'));
-            }
-        });
-    }
-    
-    $(window).click(function(e){if(e.target.id=='ordModal')$('#ordModal').hide();if(e.target.id=='editModal')$('#editModal').hide();});
+    $(window).click(function(e){if(e.target.id=='ordModal')$('#ordModal').hide();});
     </script>
     <?php b2b_adm_footer(); exit;
 });
+
+/* =====================================================
+   8A. AJAX HANDLER: PRODUCT SEARCH
+===================================================== */
+// AJAX handler for product search
+add_action('wp_ajax_b2b_search_products', function() {
+    // Security: Check user capabilities
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+        return;
+    }
+    
+    // Security: Verify nonce
+    if (!isset($_GET['search_nonce']) || !wp_verify_nonce($_GET['search_nonce'], 'b2b_product_search')) {
+        wp_send_json_error(['message' => 'Invalid nonce']);
+        return;
+    }
+    
+    $query = sanitize_text_field($_GET['q'] ?? '');
+    $customer_id = filter_input(INPUT_GET, 'customer_id', FILTER_VALIDATE_INT);
+    
+    if (strlen($query) < 2) {
+        wp_send_json_success([]);
+        return;
+    }
+    
+    // CRITICAL: Switch to customer user context to get their B2B pricing
+    // This makes WooCommerce automatically apply ALL discount rules for this customer
+    $old_user = get_current_user_id();
+    if ($customer_id > 0) {
+        wp_set_current_user($customer_id);
+    }
+    
+    $args = [
+        's' => $query,
+        'limit' => 20,
+        'status' => 'publish',
+        'return' => 'ids'
+    ];
+    
+    $product_ids = wc_get_products($args);
+    $results = [];
+    
+    foreach ($product_ids as $pid) {
+        // Clear cache to ensure fresh pricing
+        wp_cache_delete($pid, 'post_meta');
+        
+        $product = wc_get_product($pid);
+        if (!$product || $product->is_type('variable')) {
+            continue;
+        }
+        
+        // Get price HTML - this includes ALL B2B discounts applied automatically
+        // This approach matches sales-panel/new-order exactly (lines 16310-16315)
+        $price_html = $product->get_price_html();
+        $clean_text = strip_tags(html_entity_decode($price_html));
+        
+        // Extract all prices from the HTML (same regex as sales-panel)
+        preg_match_all('/[0-9]+(?:\.[0-9]+)?/', $clean_text, $matches);
+        $found_prices = $matches[0] ?? [];
+        
+        // Use sales-panel logic: min from HTML is final price
+        $final_price = !empty($found_prices) ? floatval(min($found_prices)) : floatval($product->get_price());
+        
+        // Additional safety check (same as sales-panel line 16315)
+        if ($product->get_price() > 0 && $product->get_price() < $final_price) {
+            $final_price = $product->get_price();
+        }
+        
+        // Regular price for comparison (if there are multiple prices, max is regular)
+        $regular_price = floatval($product->get_regular_price());
+        if (!empty($found_prices) && count($found_prices) > 1) {
+            $regular_price = floatval(max($found_prices));
+        }
+        
+        // Get assembly info
+        $assembly_price = floatval(get_post_meta($pid, '_assembly_price', true));
+        $assembly_enabled = get_post_meta($pid, '_assembly_enabled', true) === 'yes' || $assembly_price > 0;
+        
+        $results[] = [
+            'id' => $pid,
+            'name' => esc_html($product->get_name()),
+            'sku' => esc_html($product->get_sku()),
+            'price' => $final_price,
+            'regular_price' => $regular_price,
+            'assembly_enabled' => $assembly_enabled,
+            'assembly_price' => $assembly_price,
+            'has_discount' => ($final_price < $regular_price && $regular_price > 0)
+        ];
+    }
+    
+    // Restore original user context
+    wp_set_current_user($old_user);
+    
+    wp_send_json_success($results);
+});
+
+/* =====================================================
+   8B. PAGE: ORDER EDIT (FULL PAGE EDITOR)
+===================================================== */
+add_action('template_redirect', function () {
+    if (get_query_var('b2b_adm_page') !== 'order_edit') return;
+    b2b_adm_guard();
+    
+    $order_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+    if (!$order_id) wp_die('Order ID is required');
+    
+    $order = wc_get_order($order_id);
+    if (!$order) wp_die('Order not found');
+    
+    // Assembly fee configuration
+    if (!defined('B2B_ASSEMBLY_FEE_AMOUNT')) define('B2B_ASSEMBLY_FEE_AMOUNT', 50);
+    if (!defined('B2B_ASSEMBLY_FEE_NAME')) define('B2B_ASSEMBLY_FEE_NAME', 'Assembly Fee');
+    if (!defined('B2B_ASSEMBLY_FALLBACK_TAX_RATE')) define('B2B_ASSEMBLY_FALLBACK_TAX_RATE', 0.08);
+    
+    // Handle form submission
+    if ($_POST && (isset($_POST['save_order']) || isset($_POST['recalculate_only']))) {
+        check_admin_referer('b2b_save_order_' . $order_id, 'order_nonce');
+        
+        // Check if this is just a recalculate request
+        $recalculate_only = isset($_POST['recalculate_only']);
+        
+        // Process refund if requested (only for full save)
+        if (!$recalculate_only && isset($_POST['process_refund'])) {
+            $refund_amount = filter_var($_POST['refund_amount'] ?? 0, FILTER_VALIDATE_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
+            $refund_reason = sanitize_text_field($_POST['refund_reason'] ?? '');
+            
+            if ($refund_amount > 0 && $order->get_payment_method() === 'nmi') {
+                // Validate refund amount doesn't exceed maximum refundable
+                $total_refunded = $order->get_total_refunded();
+                $max_refund = $order->get_total() - $total_refunded;
+                
+                if ($refund_amount > $max_refund) {
+                    $order->add_order_note(sprintf('Refund failed: Amount %s exceeds maximum refundable %s', wc_price($refund_amount), wc_price($max_refund)), false, true);
+                } else {
+                    try {
+                        $gateways = WC()->payment_gateways()->payment_gateways();
+                        $payment_gateway = isset($gateways[$order->get_payment_method()]) ? $gateways[$order->get_payment_method()] : null;
+                        
+                        if ($payment_gateway && method_exists($payment_gateway, 'process_refund')) {
+                            $result = $payment_gateway->process_refund($order_id, $refund_amount, $refund_reason);
+                            
+                            if (is_wp_error($result)) {
+                                $order->add_order_note(sprintf('Refund failed: %s', $result->get_error_message()), false, true);
+                            } elseif ($result === true) {
+                                $order->add_order_note(sprintf('Refund of %s processed successfully via NMI. Reason: %s', wc_price($refund_amount), $refund_reason ?: 'None provided'), false, true);
+                            } else {
+                                $order->add_order_note('Refund failed: Payment gateway returned unsuccessful result', false, true);
+                            }
+                        } else {
+                            $order->add_order_note('Refund failed: Payment gateway not available or does not support refunds', false, true);
+                        }
+                    } catch (Exception $e) {
+                        $order->add_order_note(sprintf('Refund failed: %s', $e->getMessage()), false, true);
+                    }
+                }
+            }
+        }
+        
+        // Update billing address
+        if (isset($_POST['billing'])) {
+            $billing = $_POST['billing'];
+            $order->set_billing_first_name(sanitize_text_field($billing['first_name'] ?? ''));
+            $order->set_billing_last_name(sanitize_text_field($billing['last_name'] ?? ''));
+            $order->set_billing_company(sanitize_text_field($billing['company'] ?? ''));
+            $order->set_billing_address_1(sanitize_text_field($billing['address_1'] ?? ''));
+            $order->set_billing_address_2(sanitize_text_field($billing['address_2'] ?? ''));
+            $order->set_billing_city(sanitize_text_field($billing['city'] ?? ''));
+            $order->set_billing_postcode(sanitize_text_field($billing['postcode'] ?? ''));
+            $order->set_billing_state(sanitize_text_field($billing['state'] ?? ''));
+            $order->set_billing_country(sanitize_text_field($billing['country'] ?? ''));
+            $order->set_billing_email(sanitize_email($billing['email'] ?? ''));
+            $order->set_billing_phone(sanitize_text_field($billing['phone'] ?? ''));
+        }
+        
+        // Update shipping address
+        if (isset($_POST['shipping'])) {
+            $shipping = $_POST['shipping'];
+            $order->set_shipping_first_name(sanitize_text_field($shipping['first_name'] ?? ''));
+            $order->set_shipping_last_name(sanitize_text_field($shipping['last_name'] ?? ''));
+            $order->set_shipping_company(sanitize_text_field($shipping['company'] ?? ''));
+            $order->set_shipping_address_1(sanitize_text_field($shipping['address_1'] ?? ''));
+            $order->set_shipping_address_2(sanitize_text_field($shipping['address_2'] ?? ''));
+            $order->set_shipping_city(sanitize_text_field($shipping['city'] ?? ''));
+            $order->set_shipping_postcode(sanitize_text_field($shipping['postcode'] ?? ''));
+            $order->set_shipping_state(sanitize_text_field($shipping['state'] ?? ''));
+            $order->set_shipping_country(sanitize_text_field($shipping['country'] ?? ''));
+        }
+        
+        // Update item quantities and prices
+        if (isset($_POST['items']) && is_array($_POST['items'])) {
+            foreach ($_POST['items'] as $item_id => $item_data) {
+                $qty = intval($item_data['qty'] ?? 0);
+                $price = isset($item_data['price']) && $item_data['price'] !== '' ? floatval($item_data['price']) : null;
+                $assembly = isset($item_data['assembly']) ? 1 : 0;
+                
+                // Find the item in the order
+                $item_found = false;
+                foreach ($order->get_items() as $order_item_id => $order_item) {
+                    if ($order_item_id == $item_id) {
+                        $item_found = true;
+                        if ($qty > 0) {
+                            $order_item->set_quantity($qty);
+                            if ($price !== null && $price >= 0) {
+                                $subtotal = $price * $qty;
+                                $order_item->set_subtotal($subtotal);
+                                $order_item->set_total($subtotal);
+                            }
+                            // Update assembly meta
+                            $order_item->update_meta_data('_assembly_enabled', $assembly);
+                            $order_item->save();
+                        } else {
+                            // Remove item if quantity is 0
+                            $order->remove_item($item_id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Add assembly fee if any items have assembly enabled
+        $assembly_fee_total = 0;
+        $customer_id = $order->get_customer_id();
+        $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
+        
+        // Cache tax rates to avoid repeated API calls
+        $tax_rates_cache = [];
+        
+        foreach ($order->get_items() as $item) {
+            if ($item->get_meta('_assembly_enabled')) {
+                $product_id = $item->get_product_id();
+                $assembly_price = floatval(get_post_meta($product_id, '_assembly_price', true));
+                $assembly_tax_included = get_post_meta($product_id, '_assembly_tax', true) === 'yes';
+                
+                if ($assembly_price > 0) {
+                    $item_assembly_cost = $assembly_price * $item->get_quantity();
+                    
+                    // Add tax if assembly tax is enabled and customer is not tax exempt
+                    if ($assembly_tax_included && !$is_tax_exempt) {
+                        // Get product for tax class
+                        $product = wc_get_product($product_id);
+                        $tax_class = $product ? $product->get_tax_class() : '';
+                        
+                        // Create cache key for this tax configuration
+                        $cache_key = $tax_class . '|' . $order->get_shipping_country() . '|' . $order->get_shipping_state() . '|' . $order->get_shipping_postcode();
+                        
+                        // Get tax rate from cache or API
+                        if (!isset($tax_rates_cache[$cache_key])) {
+                            $tax_rates = WC_Tax::get_rates($tax_class, $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode());
+                            if (!empty($tax_rates)) {
+                                $tax_rate = reset($tax_rates);
+                                $tax_rates_cache[$cache_key] = floatval($tax_rate['rate']) / 100;
+                            } else {
+                                // Fallback tax rate (configurable via B2B_ASSEMBLY_FALLBACK_TAX_RATE constant)
+                                $tax_rates_cache[$cache_key] = B2B_ASSEMBLY_FALLBACK_TAX_RATE;
+                            }
+                        }
+                        
+                        $item_assembly_cost *= (1 + $tax_rates_cache[$cache_key]);
+                    }
+                    
+                    $assembly_fee_total += $item_assembly_cost;
+                }
+            }
+        }
+        
+        // Remove existing assembly fee
+        foreach ($order->get_fees() as $fee_id => $fee) {
+            if ($fee->get_name() === B2B_ASSEMBLY_FEE_NAME) {
+                $order->remove_item($fee_id);
+            }
+        }
+        
+        // Add new assembly fee if applicable
+        if ($assembly_fee_total > 0) {
+            $assembly_fee = new WC_Order_Item_Fee();
+            $assembly_fee->set_name(B2B_ASSEMBLY_FEE_NAME);
+            $assembly_fee->set_total($assembly_fee_total);
+            $order->add_item($assembly_fee);
+        }
+        
+        // Update shipping cost by removing old shipping and adding new
+        if (isset($_POST['shipping_cost'])) {
+            $shipping_cost = floatval($_POST['shipping_cost']);
+            
+            // Remove existing shipping items
+            foreach ($order->get_shipping_methods() as $shipping_id => $shipping_item) {
+                $order->remove_item($shipping_id);
+            }
+            
+            // Add new shipping if cost > 0
+            if ($shipping_cost > 0) {
+                $shipping_item = new WC_Order_Item_Shipping();
+                $shipping_item->set_method_title('Custom Shipping');
+                $shipping_item->set_method_id('custom');
+                $shipping_item->set_total($shipping_cost);
+                $order->add_item($shipping_item);
+            }
+        }
+        
+        // Update tax by removing old tax items and adding new
+        if (isset($_POST['tax_amount'])) {
+            $tax_amount = floatval($_POST['tax_amount']);
+            
+            // Remove existing tax items
+            foreach ($order->get_items('tax') as $tax_id => $tax_item) {
+                $order->remove_item($tax_id);
+            }
+            
+            // Add new tax if amount > 0
+            if ($tax_amount > 0) {
+                $tax_item = new WC_Order_Item_Tax();
+                $tax_item->set_rate_id(0);
+                $tax_item->set_label('Custom Tax');
+                $tax_item->set_compound(false);
+                $tax_item->set_tax_total($tax_amount);
+                $tax_item->set_shipping_tax_total(0);
+                $order->add_item($tax_item);
+            }
+        }
+        
+        // Remove all existing fees (except assembly fee which was already handled)
+        foreach ($order->get_fees() as $fee_id => $fee) {
+            if ($fee->get_name() !== B2B_ASSEMBLY_FEE_NAME) {
+                $order->remove_item($fee_id);
+            }
+        }
+        
+        // Add custom fees
+        if (isset($_POST['fees']) && is_array($_POST['fees'])) {
+            foreach ($_POST['fees'] as $fee_data) {
+                $fee_name = sanitize_text_field($fee_data['name'] ?? '');
+                $fee_amount = isset($fee_data['amount']) && $fee_data['amount'] !== '' ? floatval($fee_data['amount']) : 0;
+                
+                if ($fee_name && $fee_amount !== 0.0) {
+                    $fee = new WC_Order_Item_Fee();
+                    $fee->set_name($fee_name);
+                    $fee->set_total($fee_amount);
+                    $order->add_item($fee);
+                }
+            }
+        }
+        
+        // Update order status
+        if (isset($_POST['order_status'])) {
+            $new_status = sanitize_text_field($_POST['order_status']);
+            $order->set_status($new_status);
+        }
+        
+        // Update customer note
+        if (isset($_POST['customer_note'])) {
+            $order->set_customer_note(sanitize_textarea_field($_POST['customer_note']));
+        }
+        
+        // Add new products to order
+        if (isset($_POST['new_products']) && is_array($_POST['new_products'])) {
+            $new_products = array_map('intval', $_POST['new_products']);
+            $new_prices = isset($_POST['new_product_prices']) ? array_map('floatval', $_POST['new_product_prices']) : [];
+            $new_quantities = isset($_POST['new_product_quantities']) ? array_map('intval', $_POST['new_product_quantities']) : [];
+            
+            foreach ($new_products as $idx => $product_id) {
+                if ($product_id > 0) {
+                    $product = wc_get_product($product_id);
+                    if ($product) {
+                        $qty = isset($new_quantities[$idx]) ? $new_quantities[$idx] : 1;
+                        $price = isset($new_prices[$idx]) ? $new_prices[$idx] : floatval($product->get_price());
+                        
+                        if ($qty > 0 && $price >= 0) {
+                            $item_id = $order->add_product($product, $qty);
+                            if ($item_id) {
+                                $item = $order->get_item($item_id);
+                                $subtotal = $price * $qty;
+                                $item->set_subtotal($subtotal);
+                                $item->set_total($subtotal);
+                                $item->save();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Recalculate totals
+        $order->calculate_totals();
+        
+        // Save order
+        $order->save();
+        
+        // Add admin note (only for full save)
+        if (!$recalculate_only) {
+            $order->add_order_note('Order details updated via B2B Admin Panel', false, true);
+        }
+        
+        // Redirect based on action
+        if ($recalculate_only) {
+            wp_redirect(home_url('/b2b-panel/orders/edit?id=' . $order_id . '&recalculated=1'));
+        } else {
+            wp_redirect(home_url('/b2b-panel/orders?updated=1'));
+        }
+        exit;
+    }
+    
+    b2b_adm_header('Edit Order #' . $order_id);
+    
+    // Get order data
+    $order_status = $order->get_status();
+    $order_date = $order->get_date_created();
+    $order_total = $order->get_total();
+    $items = $order->get_items();
+    ?>
+    
+    <div class="page-title-wrapper" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px">
+        <h1 class="page-title" style="margin:0;font-size:28px;font-weight:600;color:#111827">
+            <i class="fa-solid fa-pen-to-square" style="margin-right:10px;color:#6366f1"></i>
+            Edit Order #<?= $order_id ?>
+        </h1>
+        <div style="display:flex;gap:10px">
+            <a href="<?= home_url('/b2b-panel/orders') ?>" class="button secondary" style="padding:10px 20px;border-radius:6px">
+                <i class="fa-solid fa-arrow-left"></i> Back to Orders
+            </a>
+        </div>
+    </div>
+    
+    <!-- Order Info Bar -->
+    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;border-radius:8px;margin-bottom:25px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+        <div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:5px">Order Date</div>
+            <div style="font-size:18px;font-weight:600"><?= $order_date->date_i18n('F j, Y g:i A') ?></div>
+        </div>
+        <div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:5px">Status</div>
+            <div style="font-size:18px;font-weight:600"><?= wc_get_order_status_name($order_status) ?></div>
+        </div>
+        <div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:5px">Total</div>
+            <div style="font-size:24px;font-weight:700"><?= wc_price($order_total) ?></div>
+        </div>
+    </div>
+    
+    <?php if (isset($_GET['recalculated'])): ?>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:15px;margin-bottom:25px">
+        <i class="fa-solid fa-check-circle" style="color:#10b981;margin-right:8px"></i>
+        <strong style="color:#10b981">Order totals recalculated successfully!</strong>
+    </div>
+    <?php endif; ?>
+    
+    <form method="POST" action="">
+        <?php wp_nonce_field('b2b_save_order_' . $order_id, 'order_nonce'); ?>
+        
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:25px;margin-bottom:25px">
+            <!-- Left Column -->
+            <div>
+                <!-- Order Items -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-box" style="margin-right:8px;color:#6366f1"></i>
+                        Order Items
+                    </h3>
+                    
+                    <div style="margin-bottom:15px">
+                        <button type="button" onclick="toggleAllAssembly()" class="button secondary" style="padding:10px 18px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-wrench" style="margin-right:6px"></i>
+                            Toggle Assembly for All
+                        </button>
+                    </div>
+                    
+                    <table style="width:100%;border-collapse:collapse">
+                        <thead>
+                            <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+                                <th style="padding:12px;text-align:left;font-weight:600;color:#374151">Product</th>
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151">Price</th>
+                                <th style="padding:12px;text-align:center;width:120px;font-weight:600;color:#374151">Quantity</th>
+                                <th style="padding:12px;text-align:center;width:100px;font-weight:600;color:#374151" title="Add assembly service (per product pricing)">
+                                    <i class="fa-solid fa-wrench" style="margin-right:4px"></i>Assembly
+                                </th>
+                                <th style="padding:12px;text-align:right;width:120px;font-weight:600;color:#374151">Total</th>
+                                <th style="padding:12px;text-align:center;width:80px;font-weight:600;color:#374151">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($items as $item_id => $item): 
+                                $product = $item->get_product();
+                                $item_total = $item->get_total();
+                                $qty = $item->get_quantity();
+                                $item_price = ($qty > 0) ? ($item->get_subtotal() / $qty) : 0;
+                                $assembly_enabled = $item->get_meta('_assembly_enabled');
+                                
+                                // Get product assembly price
+                                $product_id = $item->get_product_id();
+                                $assembly_price = floatval(get_post_meta($product_id, '_assembly_price', true));
+                                $has_assembly = $assembly_price > 0;
+                            ?>
+                            <tr style="border-bottom:1px solid #e5e7eb">
+                                <td style="padding:15px">
+                                    <div style="font-weight:600;color:#111827;margin-bottom:3px"><?= esc_html($item->get_name()) ?></div>
+                                    <?php if ($product && $product->get_sku()): ?>
+                                    <small style="color:#6b7280">SKU: <?= esc_html($product->get_sku()) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding:15px;text-align:center">
+                                    <input type="number" name="items[<?= $item_id ?>][price]" class="item-price" value="<?= esc_attr(number_format($item_price, 2, '.', '')) ?>" step="0.01" min="0" style="width:90px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
+                                </td>
+                                <td style="padding:15px;text-align:center">
+                                    <input type="number" name="items[<?= $item_id ?>][qty]" class="item-qty" value="<?= esc_attr($item->get_quantity()) ?>" min="0" style="width:80px;padding:8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-weight:600">
+                                </td>
+                                <td style="padding:15px;text-align:center">
+                                    <?php if ($has_assembly): ?>
+                                        <div>
+                                            <input type="checkbox" name="items[<?= $item_id ?>][assembly]" class="assembly-check" value="1" <?= checked($assembly_enabled, 1, false) ?> data-assembly-price="<?= esc_attr($assembly_price) ?>" style="width:20px;height:20px;cursor:pointer">
+                                        </div>
+                                        <small style="color:#6b7280;font-size:11px">$<?= number_format($assembly_price, 2) ?>/item</small>
+                                    <?php else: ?>
+                                        <span style="color:#9ca3af">N/A</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding:15px;text-align:right;font-weight:600;color:#111827">
+                                    <?= wc_price($item_total) ?>
+                                </td>
+                                <td style="padding:15px;text-align:center">
+                                    <button type="button" class="delete-item-btn" data-item-id="<?= $item_id ?>" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px" title="Delete this item">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr style="background:#f9fafb;font-weight:700">
+                                <td colspan="4" style="padding:15px;text-align:right;color:#111827">Order Total:</td>
+                                <td style="padding:15px;text-align:right;color:#6366f1;font-size:18px">
+                                    <span class="order-footer-total">$<?= number_format($order_total, 2) ?></span>
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    
+                    <div style="margin-top:15px;padding:12px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
+                        <small style="color:#92400e">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            <strong>Note:</strong> You can edit item prices and quantities. Set quantity to 0 to remove an item. Order totals will be recalculated automatically.
+                        </small>
+                    </div>
+                    
+                    <!-- Order Totals Display -->
+                    <div class="order-totals" style="background:#f9fafb;padding:20px;border-radius:8px;margin-top:20px;border:2px solid #e5e7eb">
+                        <h4 style="margin:0 0 15px 0;font-size:16px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px;color:#6366f1"></i>
+                            Order Summary
+                        </h4>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Subtotal:</span>
+                            <span class="order-total-subtotal" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Assembly Fee:</span>
+                            <span class="order-total-assembly" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Custom Fees:</span>
+                            <span class="order-total-fees" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #d1d5db">
+                            <span style="color:#6b7280">Shipping:</span>
+                            <span class="order-total-shipping" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:2px solid #d1d5db">
+                            <span style="color:#6b7280">Tax:</span>
+                            <span class="order-total-tax" style="font-weight:600;color:#111827">$0.00</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:15px 10px 0 10px;margin-top:5px">
+                            <span style="font-weight:700;font-size:18px;color:#111827">Grand Total:</span>
+                            <span class="order-total-total" style="font-weight:700;font-size:20px;color:#10b981">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Add Product Section -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <div style="margin-top:20px;padding:20px;background:#f0fdf4;border:1px solid #10b981;border-radius:8px">
+                        <h4 style="margin:0 0 15px 0;color:#065f46">
+                            <i class="fa-solid fa-plus-circle"></i> Add Product to Order
+                        </h4>
+                        
+                        <div id="add-product-container">
+                            <div style="display:grid;grid-template-columns:2fr 1fr 1fr 100px auto;gap:10px;margin-bottom:10px" class="add-product-row">
+                                <div style="position:relative">
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Product Search</label>
+                                    <input type="text" class="product-search" placeholder="Search products..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                    <input type="hidden" class="product-id" name="new_products[]" value="">
+                                    <input type="hidden" class="product-assembly-price" value="0">
+                                    <div class="product-results" style="display:none;position:absolute;background:white;border:1px solid #d1d5db;border-radius:4px;max-height:200px;overflow-y:auto;z-index:10;width:300px"></div>
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Price</label>
+                                    <input type="number" name="new_product_prices[]" placeholder="0.00" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">Quantity</label>
+                                    <input type="number" name="new_product_quantities[]" value="1" min="1" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px;text-align:center" title="Add assembly service">
+                                        <i class="fa-solid fa-wrench"></i> Assembly
+                                    </label>
+                                    <div style="text-align:center;padding:8px 0">
+                                        <input type="checkbox" class="product-assembly-checkbox" name="new_product_assembly[]" value="1" style="width:20px;height:20px;cursor:pointer" disabled>
+                                        <div class="product-assembly-price-display" style="color:#6b7280;font-size:10px;margin-top:2px">N/A</div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style="display:block;margin-bottom:5px;font-weight:600;font-size:12px">&nbsp;</label>
+                                    <button type="button" onclick="addProductRow()" class="button secondary" style="padding:8px 12px;background:#10b981;color:white;border:none;border-radius:4px;cursor:pointer">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <small style="color:#065f46">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Search and select products to add to this order. You can add multiple products.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Billing Address -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-user" style="margin-right:8px;color:#10b981"></i>
+                        Billing Address
+                    </h3>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
+                            <input type="text" name="billing[first_name]" value="<?= esc_attr($order->get_billing_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
+                            <input type="text" name="billing[last_name]" value="<?= esc_attr($order->get_billing_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
+                            <input type="text" name="billing[company]" value="<?= esc_attr($order->get_billing_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
+                            <input type="text" name="billing[address_1]" value="<?= esc_attr($order->get_billing_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
+                            <input type="text" name="billing[address_2]" value="<?= esc_attr($order->get_billing_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
+                            <input type="text" name="billing[city]" value="<?= esc_attr($order->get_billing_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
+                            <input type="text" name="billing[postcode]" value="<?= esc_attr($order->get_billing_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
+                            <input type="text" name="billing[state]" value="<?= esc_attr($order->get_billing_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
+                            <input type="text" name="billing[country]" value="<?= esc_attr($order->get_billing_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Email</label>
+                            <input type="email" name="billing[email]" value="<?= esc_attr($order->get_billing_email()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Phone</label>
+                            <input type="text" name="billing[phone]" value="<?= esc_attr($order->get_billing_phone()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Shipping Address -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #f3f4f6">
+                        <h3 style="margin:0;font-size:18px;font-weight:600;color:#111827">
+                            <i class="fa-solid fa-truck" style="margin-right:8px;color:#3b82f6"></i>
+                            Shipping Address
+                        </h3>
+                        <button type="button" onclick="copyBillingToShipping()" class="button secondary" style="padding:8px 16px;font-size:13px;border-radius:6px">
+                            <i class="fa-solid fa-copy"></i> Copy from Billing
+                        </button>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">First Name</label>
+                            <input type="text" name="shipping[first_name]" id="shipping_first_name" value="<?= esc_attr($order->get_shipping_first_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Last Name</label>
+                            <input type="text" name="shipping[last_name]" id="shipping_last_name" value="<?= esc_attr($order->get_shipping_last_name()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Company</label>
+                            <input type="text" name="shipping[company]" id="shipping_company" value="<?= esc_attr($order->get_shipping_company()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 1</label>
+                            <input type="text" name="shipping[address_1]" id="shipping_address_1" value="<?= esc_attr($order->get_shipping_address_1()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div style="grid-column:1/-1">
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Address 2</label>
+                            <input type="text" name="shipping[address_2]" id="shipping_address_2" value="<?= esc_attr($order->get_shipping_address_2()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">City</label>
+                            <input type="text" name="shipping[city]" id="shipping_city" value="<?= esc_attr($order->get_shipping_city()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Postcode</label>
+                            <input type="text" name="shipping[postcode]" id="shipping_postcode" value="<?= esc_attr($order->get_shipping_postcode()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">State</label>
+                            <input type="text" name="shipping[state]" id="shipping_state" value="<?= esc_attr($order->get_shipping_state()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Country</label>
+                            <input type="text" name="shipping[country]" id="shipping_country" value="<?= esc_attr($order->get_shipping_country()) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column -->
+            <div>
+                <!-- Order Status -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-flag" style="margin-right:8px;color:#f59e0b"></i>
+                        Order Status
+                    </h3>
+                    
+                    <select name="order_status" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-weight:600">
+                        <?php
+                        $statuses = wc_get_order_statuses();
+                        foreach ($statuses as $status_key => $status_label):
+                            $status_key = str_replace('wc-', '', $status_key);
+                        ?>
+                        <option value="<?= esc_attr($status_key) ?>" <?= selected($order_status, $status_key, false) ?>>
+                            <?= esc_html($status_label) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                
+                <!-- Payment Info -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-credit-card" style="margin-right:8px;color:#8b5cf6"></i>
+                        Payment Info
+                    </h3>
+                    
+                    <div style="display:grid;gap:12px">
+                        <div>
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Payment Method</div>
+                            <div style="font-weight:600;color:#111827"><?= $order->get_payment_method_title() ?: 'N/A' ?></div>
+                        </div>
+                        <?php if ($order->get_transaction_id()): ?>
+                        <div>
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Transaction ID</div>
+                            <div style="font-weight:600;color:#111827;font-family:monospace;font-size:12px"><?= esc_html($order->get_transaction_id()) ?></div>
+                        </div>
+                        <?php endif; ?>
+                        <div>
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Date Paid</div>
+                            <div style="font-weight:600;color:#111827"><?= $order->get_date_paid() ? $order->get_date_paid()->date_i18n('F j, Y g:i A') : 'Not paid' ?></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tax Exemption Status -->
+                <?php 
+                $customer_id = $order->get_customer_id();
+                $is_tax_exempt = get_user_meta($customer_id, 'b2b_tax_exempt', true) == 1;
+                
+                // Get B2B role/group and discount
+                $group_slug = get_user_meta($customer_id, 'b2b_group_slug', true);
+                $group_name = '';
+                $discount_percent = 0;
+                
+                if ($group_slug) {
+                    $groups = get_option('b2b_dynamic_groups', []);
+                    foreach ($groups as $group) {
+                        if (isset($group['slug']) && $group['slug'] === $group_slug) {
+                            $group_name = $group['name'] ?? $group_slug;
+                            $discount_percent = floatval($group['discount_percent'] ?? 0);
+                            break;
+                        }
+                    }
+                    
+                    // If no group found, clean the slug for display
+                    if (empty($group_name)) {
+                        // Remove b2b_ prefix if present
+                        $clean_slug = preg_replace('/^b2b[_-]/i', '', $group_slug);
+                        $group_name = ucwords(str_replace(['-', '_'], ' ', $clean_slug));
+                    }
+                }
+                
+                if ($customer_id > 0):
+                ?>
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-shield-halved" style="margin-right:8px;color:#8b5cf6"></i>
+                        Customer B2B Status
+                    </h3>
+                    
+                    <div style="display:grid;gap:12px">
+                        <?php if ($group_name): ?>
+                        <div style="padding:12px;background:#f0f9ff;border-radius:6px;border-left:4px solid #3b82f6">
+                            <div style="font-size:13px;color:#1e40af;margin-bottom:4px">
+                                <i class="fa-solid fa-user-tag"></i> <strong>Customer Role/Group:</strong>
+                            </div>
+                            <div style="font-size:15px;font-weight:600;color:#1e3a8a">
+                                <?= esc_html($group_name) ?>
+                                <?php if ($discount_percent > 0): ?>
+                                    <span style="color:#10b981;margin-left:8px">(<?= number_format($discount_percent, 0) ?>% discount)</span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <div style="padding:12px;background:#f3f4f6;border-radius:6px;border-left:4px solid #9ca3af">
+                            <div style="font-size:13px;color:#6b7280;margin-bottom:4px">
+                                <i class="fa-solid fa-user"></i> <strong>Customer Role/Group:</strong>
+                            </div>
+                            <div style="font-size:14px;color:#6b7280">
+                                Standard Customer (No special discount group)
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <div style="padding:12px;background:<?= $is_tax_exempt ? '#f0fdf4' : '#fef3c7' ?>;border-radius:6px;border-left:4px solid <?= $is_tax_exempt ? '#10b981' : '#f59e0b' ?>">
+                            <div style="font-size:13px;color:<?= $is_tax_exempt ? '#065f46' : '#92400e' ?>;margin-bottom:4px">
+                                <i class="fa-solid fa-<?= $is_tax_exempt ? 'check-circle' : 'info-circle' ?>"></i> <strong>Tax Status:</strong>
+                            </div>
+                            <div style="font-size:15px;font-weight:600;color:<?= $is_tax_exempt ? '#10b981' : '#d97706' ?>">
+                                <?= $is_tax_exempt ? 'TAX EXEMPT' : 'Standard Tax' ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Refund Section (NMI only) -->
+                <?php if ($order->is_paid() && $order->get_payment_method() === 'nmi'): 
+                    $total_refunded = $order->get_total_refunded();
+                    $max_refund = $order->get_total() - $total_refunded;
+                ?>
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-rotate-left" style="margin-right:8px;color:#ef4444"></i>
+                        Refund
+                    </h3>
+                    
+                    <?php if ($total_refunded > 0): ?>
+                    <div style="padding:12px;background:#fef2f2;border-left:4px solid #ef4444;border-radius:4px;margin-bottom:15px">
+                        <div style="font-size:13px;color:#991b1b">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            <strong>Total Refunded:</strong> <?= wc_price($total_refunded) ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($max_refund > 0): ?>
+                    <div style="display:grid;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">
+                                Refund Amount
+                                <span style="font-weight:400;color:#6b7280">(Max: <?= wc_price($max_refund) ?>)</span>
+                            </label>
+                            <input type="number" name="refund_amount" value="" step="0.01" min="0.01" max="<?= esc_attr(number_format($max_refund, 2, '.', '')) ?>" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px" placeholder="0.00">
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">
+                                Refund Reason <span style="font-weight:400;color:#6b7280">(Optional)</span>
+                            </label>
+                            <input type="text" name="refund_reason" value="" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px" placeholder="e.g., Customer request, defective item">
+                        </div>
+                        <div>
+                            <button type="submit" name="process_refund" value="1" class="button" style="width:100%;padding:12px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;transition:all 0.2s" onclick="return confirm('Are you sure you want to process this refund via NMI?')">
+                                <i class="fa-solid fa-rotate-left" style="margin-right:8px"></i>
+                                Process Refund via NMI
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top:12px;padding:10px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
+                        <small style="color:#92400e">
+                            <i class="fa-solid fa-exclamation-triangle"></i> 
+                            Refunds are processed immediately via NMI gateway and cannot be undone
+                        </small>
+                    </div>
+                    <?php else: ?>
+                    <div style="padding:15px;text-align:center;color:#6b7280">
+                        <i class="fa-solid fa-check-circle" style="font-size:24px;margin-bottom:8px;color:#10b981"></i>
+                        <div>Order has been fully refunded</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Shipping & Tax -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-dollar-sign" style="margin-right:8px;color:#10b981"></i>
+                        Shipping & Tax
+                    </h3>
+                    
+                    <div style="display:grid;gap:15px">
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Shipping Cost</label>
+                            <input type="number" name="shipping_cost" class="order-shipping" value="<?= esc_attr(number_format($order->get_shipping_total(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                            <small style="color:#6b7280;margin-top:4px;display:block">
+                                <i class="fa-solid fa-info-circle"></i> Shipping method can be changed in WooCommerce settings
+                            </small>
+                        </div>
+                        <div>
+                            <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Tax Amount</label>
+                            <input type="number" name="tax_amount" class="order-tax" value="<?= esc_attr(number_format($order->get_total_tax(), 2, '.', '')) ?>" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top:12px;padding:10px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:4px">
+                        <small style="color:#065f46">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Manual adjustments to shipping and tax
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Custom Fees -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-receipt" style="margin-right:8px;color:#f59e0b"></i>
+                        Custom Fees
+                    </h3>
+                    
+                    <div id="fees-container">
+                        <?php
+                        $existing_fees = $order->get_fees();
+                        if (!empty($existing_fees)):
+                            foreach ($existing_fees as $fee_id => $fee):
+                                // Skip Assembly Fee - it's managed separately through product assembly checkboxes
+                                if ($fee->get_name() === B2B_ASSEMBLY_FEE_NAME) {
+                                    continue;
+                                }
+                        ?>
+                        <div class="fee-row" style="display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end">
+                            <div>
+                                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
+                                <input type="text" name="fees[<?= $fee_id ?>][name]" value="<?= esc_attr($fee->get_name()) ?>" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                            </div>
+                            <div>
+                                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
+                                <input type="number" name="fees[<?= $fee_id ?>][amount]" class="fee-amount" value="<?= esc_attr(number_format($fee->get_total(), 2, '.', '')) ?>" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+                            </div>
+                            <button type="button" class="remove-fee-row" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                        <?php endforeach; endif; ?>
+                    </div>
+                    
+                    <button type="button" onclick="addFeeRow()" class="button secondary" style="width:100%;padding:10px;border-radius:6px;margin-top:10px">
+                        <i class="fa-solid fa-plus"></i> Add Fee
+                    </button>
+                    
+                    <div style="margin-top:12px;padding:10px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px">
+                        <small style="color:#92400e">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Add custom fees (positive) or discounts (negative amounts)
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Order Notes History -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-comments" style="margin-right:8px;color:#3b82f6"></i>
+                        Order Notes History
+                    </h3>
+                    
+                    <?php
+                    $notes = wc_get_order_notes(['order_id' => $order_id, 'limit' => 10]);
+                    if (!empty($notes)):
+                    ?>
+                    <div style="max-height:400px;overflow-y:auto">
+                        <?php foreach ($notes as $note): ?>
+                        <div style="padding:12px;background:#f9fafb;border-left:3px solid <?= $note->customer_note ? '#10b981' : '#6b7280' ?>;border-radius:4px;margin-bottom:10px">
+                            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+                                <div style="font-size:12px;color:#6b7280">
+                                    <?= $note->customer_note ? '<i class="fa-solid fa-user"></i> Customer Note' : '<i class="fa-solid fa-lock"></i> Private Note' ?>
+                                </div>
+                                <div style="font-size:11px;color:#9ca3af"><?= date_i18n('M j, Y g:i A', strtotime($note->date_created)) ?></div>
+                            </div>
+                            <div style="color:#111827;font-size:14px"><?= wp_kses_post(wpautop($note->content)) ?></div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php else: ?>
+                    <div style="padding:20px;text-align:center;color:#6b7280">
+                        <i class="fa-solid fa-inbox" style="font-size:32px;margin-bottom:10px;opacity:0.3"></i>
+                        <div>No notes yet</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                
+                <!-- Customer Note -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px;margin-bottom:25px">
+                    <h3 style="margin:0 0 20px 0;padding-bottom:15px;border-bottom:2px solid #f3f4f6;font-size:18px;font-weight:600;color:#111827">
+                        <i class="fa-solid fa-note-sticky" style="margin-right:8px;color:#ec4899"></i>
+                        Customer Note
+                    </h3>
+                    
+                    <textarea name="customer_note" rows="5" style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;resize:vertical;font-family:inherit"><?= esc_textarea($order->get_customer_note()) ?></textarea>
+                </div>
+                
+                <!-- Save Button -->
+                <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:25px">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                        <button type="submit" name="recalculate_only" class="button secondary" style="padding:15px;background:#6366f1;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-calculator" style="margin-right:8px"></i>
+                            Recalculate Totals
+                        </button>
+                        <button type="submit" name="save_order" class="button primary" style="padding:15px;background:#10b981;color:white;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.2s">
+                            <i class="fa-solid fa-save" style="margin-right:8px"></i>
+                            Save Changes
+                        </button>
+                    </div>
+                    <div style="padding:12px;background:#dbeafe;border-left:4px solid #3b82f6;border-radius:4px">
+                        <small style="color:#1e40af">
+                            <i class="fa-solid fa-info-circle"></i> 
+                            Use <strong>Recalculate</strong> to preview totals, or <strong>Save Changes</strong> to save all modifications.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    
+    <script>
+    function copyBillingToShipping() {
+        const fields = ['first_name', 'last_name', 'company', 'address_1', 'address_2', 'city', 'postcode', 'state', 'country'];
+        fields.forEach(field => {
+            const billingValue = document.querySelector(`input[name="billing[${field}]"]`).value;
+            document.getElementById(`shipping_${field}`).value = billingValue;
+        });
+    }
+    
+    function toggleAllAssembly() {
+        const checkboxes = document.querySelectorAll('input[name*="[assembly]"]');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+        // Trigger calculation after toggle to update subtotals and Order Summary
+        calcTotals();
+    }
+    
+    let feeUniqueId = 0;
+    function addFeeRow() {
+        const feeId = 'new_' + Date.now() + '_' + (++feeUniqueId);
+        const container = document.getElementById('fees-container');
+        const row = document.createElement('div');
+        row.className = 'fee-row';
+        row.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:10px;align-items:end';
+        row.innerHTML = `
+            <div>
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Fee Name</label>
+                <input type="text" name="fees[${feeId}][name]" placeholder="e.g., Handling Fee" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:6px;font-weight:600;font-size:13px;color:#374151">Amount</label>
+                <input type="number" name="fees[${feeId}][amount]" class="fee-amount" value="0.00" step="0.01" style="width:100px;padding:8px;border:1px solid #d1d5db;border-radius:4px">
+            </div>
+            <button type="button" class="remove-fee-row" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        `;
+        container.appendChild(row);
+    }
+    
+    // Real-time total calculation v4.0 - Exact working pattern from new-order page
+    $(document).on('input', '.item-qty, .item-price, .order-shipping, .order-tax, .fee-amount, .assembly-check', function() {
+        calcTotals();
+    });
+    
+    $(document).on('change', '.assembly-check', function() {
+        calcTotals();
+    });
+    
+    $(document).on('click', '.remove-fee-row', function() {
+        $(this).closest('.fee-row').remove();
+        calcTotals();
+    });
+    
+    // Delete product item button
+    // Delete item button - removes item from order immediately via AJAX
+    $(document).on('click', '.delete-item-btn', function() {
+        if (!confirm('Are you sure you want to permanently remove this item from the order?')) {
+            return;
+        }
+        
+        const $btn = $(this);
+        const $row = $btn.closest('tr');
+        const itemId = $btn.data('item-id');
+        const orderId = <?= $order_id ?>;
+        
+        // Disable button during AJAX
+        $btn.prop('disabled', true).css('opacity', '0.5');
+        
+        // Send AJAX request to delete item
+        $.ajax({
+            url: '<?= admin_url('admin-ajax.php') ?>',
+            type: 'POST',
+            data: {
+                action: 'b2b_delete_order_item',
+                order_id: orderId,
+                item_id: itemId,
+                nonce: '<?= wp_create_nonce('b2b_delete_order_item_' . $order_id) ?>'
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Remove row with animation
+                    $row.fadeOut(300, function() {
+                        $row.remove();
+                        calcTotals();
+                    });
+                } else {
+                    alert('Error deleting item: ' + (response.data || 'Unknown error'));
+                    $btn.prop('disabled', false).css('opacity', '1');
+                }
+            },
+            error: function() {
+                alert('Error deleting item. Please try again.');
+                $btn.prop('disabled', false).css('opacity', '1');
+            }
+        });
+    });
+
+    function calcTotals() {
+        let subtotal = 0, totalAssembly = 0;
+        
+        // Calculate items
+        $('.item-qty').each(function(index) {
+            let q = parseInt($(this).val()) || 0;
+            let p = parseFloat($('.item-price').eq(index).val()) || 0;
+            let assemblyCheck = $('.assembly-check').eq(index);
+            let a = 0;
+            if(assemblyCheck.is(':checked')) {
+                a = parseFloat(assemblyCheck.data('assembly-price')) || 0;
+            }
+            subtotal += (p * q);
+            totalAssembly += (a * q);
+        });
+        
+        // Get fees
+        let feesTotal = 0;
+        $('.fee-amount').each(function() {
+            feesTotal += parseFloat($(this).val()) || 0;
+        });
+        
+        // Get shipping and tax
+        let shipping = parseFloat($('.order-shipping').val()) || 0;
+        let tax = parseFloat($('.order-tax').val()) || 0;
+        
+        // Calculate grand total
+        let grandTotal = subtotal + totalAssembly + feesTotal + shipping + tax;
+        
+        // Update displays
+        $('.order-total-subtotal').text('$' + subtotal.toFixed(2));
+        $('.order-total-assembly').text('$' + totalAssembly.toFixed(2));
+        $('.order-total-fees').text('$' + feesTotal.toFixed(2));
+        $('.order-total-shipping').text('$' + shipping.toFixed(2));
+        $('.order-total-tax').text('$' + tax.toFixed(2));
+        $('.order-total-total').text('$' + grandTotal.toFixed(2));
+        
+        // Update Order Total footer in items table
+        $('.order-footer-total').text('$' + grandTotal.toFixed(2));
+    }
+    
+    // Initial calculation on page load
+    $(document).ready(function() {
+        calcTotals();
+    });
+    
+    // Product search functionality
+    const ajaxUrl = '<?= admin_url('admin-ajax.php') ?>';
+    const searchNonce = '<?= wp_create_nonce('b2b_product_search') ?>';
+    const customerId = <?= $order->get_customer_id() ?: 0 ?>;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.product-search').forEach(initProductSearch);
+    });
+    
+    function initProductSearch(input) {
+        let timeout = null;
+        const row = input.closest('.add-product-row');
+        const resultsDiv = row.querySelector('.product-results');
+        
+        input.addEventListener('input', function() {
+            clearTimeout(timeout);
+            const query = this.value;
+            
+            if (query.length < 2) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+            
+            timeout = setTimeout(() => {
+                // Build URL with URLSearchParams for safety
+                const url = new URL(ajaxUrl);
+                url.searchParams.set('action', 'b2b_search_products');
+                url.searchParams.set('search_nonce', searchNonce);
+                url.searchParams.set('q', query);
+                url.searchParams.set('customer_id', customerId);
+                
+                // AJAX search for products with nonce
+                fetch(url.toString())
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.data.length > 0) {
+                            // Use DocumentFragment for efficient DOM building
+                            const fragment = document.createDocumentFragment();
+                            data.data.forEach(product => {
+                                const div = document.createElement('div');
+                                div.style.cssText = 'padding:8px;cursor:pointer;border-bottom:1px solid #eee';
+                                div.dataset.id = product.id;
+                                div.dataset.name = product.name;
+                                div.dataset.price = product.price;
+                                div.dataset.assemblyEnabled = product.assembly_enabled ? '1' : '0';
+                                div.dataset.assemblyPrice = product.assembly_price;
+                                
+                                const strong = document.createElement('strong');
+                                strong.textContent = product.name;
+                                div.appendChild(strong);
+                                
+                                div.appendChild(document.createElement('br'));
+                                
+                                const small = document.createElement('small');
+                                let priceHTML = 'SKU: ' + product.sku + ' | ';
+                                
+                                // Show discounted price prominently if applicable
+                                if (product.has_discount && product.regular_price !== product.price) {
+                                    priceHTML += 'Price: <span style="color:#10b981;font-weight:bold;font-size:14px">$' + product.price.toFixed(2) + '</span> ';
+                                    priceHTML += '<span style="color:#ef4444;text-decoration:line-through">$' + product.regular_price.toFixed(2) + '</span>';
+                                } else {
+                                    priceHTML += 'Price: $' + product.price.toFixed(2);
+                                }
+                                
+                                if (product.assembly_enabled) {
+                                    priceHTML += ' | Assembly: $' + product.assembly_price.toFixed(2);
+                                }
+                                small.innerHTML = priceHTML;
+                                div.appendChild(small);
+                                
+                                div.onclick = function() { selectProduct(this); };
+                                fragment.appendChild(div);
+                            });
+                            resultsDiv.innerHTML = '';
+                            resultsDiv.appendChild(fragment);
+                            resultsDiv.style.display = 'block';
+                        } else {
+                            const noResults = document.createElement('div');
+                            noResults.style.cssText = 'padding:8px;color:#6b7280';
+                            noResults.textContent = 'No products found';
+                            resultsDiv.innerHTML = '';
+                            resultsDiv.appendChild(noResults);
+                            resultsDiv.style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Product search error:', error);
+                        const errorDiv = document.createElement('div');
+                        errorDiv.style.cssText = 'padding:8px;color:#ef4444';
+                        errorDiv.textContent = 'Error searching products';
+                        resultsDiv.innerHTML = '';
+                        resultsDiv.appendChild(errorDiv);
+                        resultsDiv.style.display = 'block';
+                    });
+            }, 300);
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!row.contains(e.target)) {
+                resultsDiv.style.display = 'none';
+            }
+        });
+    }
+    
+    function selectProduct(element) {
+        const row = element.closest('.add-product-row');
+        const productId = element.dataset.id;
+        const productName = element.dataset.name;
+        const productPrice = element.dataset.price;
+        const assemblyEnabled = element.dataset.assemblyEnabled === '1';
+        const assemblyPrice = parseFloat(element.dataset.assemblyPrice) || 0;
+        
+        row.querySelector('.product-search').value = productName;
+        row.querySelector('.product-id').value = productId;
+        row.querySelector('input[name="new_product_prices[]"]').value = productPrice;
+        row.querySelector('.product-results').style.display = 'none';
+        
+        // Handle assembly checkbox
+        const assemblyCheckbox = row.querySelector('.product-assembly-checkbox');
+        const assemblyPriceHidden = row.querySelector('.product-assembly-price');
+        const assemblyPriceDisplay = row.querySelector('.product-assembly-price-display');
+        
+        if (assemblyEnabled && assemblyPrice > 0) {
+            assemblyCheckbox.disabled = false;
+            assemblyPriceHidden.value = assemblyPrice;
+            assemblyPriceDisplay.textContent = '$' + assemblyPrice.toFixed(2) + '/item';
+            assemblyPriceDisplay.style.color = '#10b981';
+        } else {
+            assemblyCheckbox.disabled = true;
+            assemblyCheckbox.checked = false;
+            assemblyPriceHidden.value = '0';
+            assemblyPriceDisplay.textContent = 'N/A';
+            assemblyPriceDisplay.style.color = '#6b7280';
+        }
+    }
+    
+    function addProductRow() {
+        const container = document.getElementById('add-product-container');
+        const newRow = container.querySelector('.add-product-row').cloneNode(true);
+        
+        // Clear all inputs properly
+        const searchInput = newRow.querySelector('.product-search');
+        const productIdInput = newRow.querySelector('.product-id');
+        const priceInput = newRow.querySelector('input[name="new_product_prices[]"]');
+        const qtyInput = newRow.querySelector('input[name="new_product_quantities[]"]');
+        const resultsDiv = newRow.querySelector('.product-results');
+        const assemblyCheckbox = newRow.querySelector('.product-assembly-checkbox');
+        const assemblyPriceHidden = newRow.querySelector('.product-assembly-price');
+        const assemblyPriceDisplay = newRow.querySelector('.product-assembly-price-display');
+        
+        searchInput.value = '';
+        productIdInput.value = '';
+        priceInput.value = '';
+        qtyInput.value = '1';
+        resultsDiv.innerHTML = '';
+        resultsDiv.style.display = 'none';
+        assemblyCheckbox.checked = false;
+        assemblyCheckbox.disabled = true;
+        assemblyPriceHidden.value = '0';
+        assemblyPriceDisplay.textContent = 'N/A';
+        assemblyPriceDisplay.style.color = '#6b7280';
+        
+        // Change + button to remove button
+        const btn = newRow.querySelector('button');
+        btn.onclick = function() { this.closest('.add-product-row').remove(); };
+        btn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        btn.style.background = '#ef4444';
+        
+        // Init search for new row
+        container.appendChild(newRow);
+        initProductSearch(searchInput);
+    }
+    
+    </script>
+    
+    <?php b2b_adm_footer(); exit;
+});
+
 /* =====================================================
    9. PAGE: PRODUCTS (ENHANCED WITH FILTERS & COLUMNS)
 ===================================================== */
@@ -16755,6 +18017,15 @@ function sa_render_packing_slip($order_id) {
                         <?php endif; ?>
                         <?php if ($dimensions): ?>
                             <div class="product-dimensions">Dimensions: <?= esc_html($dimensions) ?></div>
+                        <?php endif; ?>
+                        <?php 
+                        // Check if item has assembly enabled
+                        $assembly_enabled = $item->get_meta('_assembly_enabled');
+                        if ($assembly_enabled): 
+                        ?>
+                            <div style="color:#10b981;font-weight:600;font-size:9px;margin-top:3px">
+                                <i class="fa-solid fa-wrench"></i> (+ASSEMBLY)
+                            </div>
                         <?php endif; ?>
                     </td>
                     <td>

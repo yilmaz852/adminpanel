@@ -329,14 +329,17 @@ function production_get_order_details($order_id) {
         // Find cabinet type for this product
         $cabinet_type = null;
         if (!empty($categories)) {
-            $category_ids = implode(',', array_map('absint', $categories));
+            // Build safe IN clause with placeholders
+            $category_ids = array_map('absint', $categories);
+            $placeholders = implode(',', array_fill(0, count($category_ids), '%d'));
+            
             $cabinet_type_data = $wpdb->get_row($wpdb->prepare("
                 SELECT t.* 
                 FROM {$table_types} t
                 INNER JOIN {$table_categories} tc ON t.id = tc.cabinet_type_id
-                WHERE tc.category_id IN ({$category_ids}) AND t.is_active = 1
+                WHERE tc.category_id IN ({$placeholders}) AND t.is_active = 1
                 LIMIT 1
-            "));
+            ", ...$category_ids));
             
             if ($cabinet_type_data) {
                 // Get workflows with department names
@@ -524,7 +527,10 @@ function production_calculate_department_workload($start_date = null, $end_date 
     global $wpdb;
     
     if (!$start_date) $start_date = current_time('Y-m-d 00:00:00');
-    if (!$end_date) $end_date = date('Y-m-d 23:59:59', strtotime($start_date . ' +7 days'));
+    if (!$end_date) {
+        $end_timestamp = strtotime($start_date . ' +7 days');
+        $end_date = date('Y-m-d 23:59:59', $end_timestamp + (get_option('gmt_offset') * HOUR_IN_SECONDS));
+    }
     
     $table_schedule = $wpdb->prefix . 'production_schedule';
     $table_departments = $wpdb->prefix . 'production_departments';
@@ -1130,7 +1136,15 @@ add_action('wp_ajax_production_save_cabinet_type', function() {
     $color = sanitize_text_field($_POST['color'] ?? '#667eea');
     $time_multiplier = floatval($_POST['time_multiplier'] ?? 1.00);
     $base_duration = absint($_POST['base_duration'] ?? 0);
-    $workflows = isset($_POST['workflows']) ? json_decode(stripslashes($_POST['workflows']), true) : [];
+    
+    $workflows = [];
+    if (isset($_POST['workflows'])) {
+        $workflows_data = json_decode(stripslashes($_POST['workflows']), true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($workflows_data)) {
+            $workflows = $workflows_data;
+        }
+    }
+    
     $categories = isset($_POST['categories']) ? array_map('absint', (array)$_POST['categories']) : [];
     
     // Validate
@@ -1174,11 +1188,23 @@ add_action('wp_ajax_production_save_cabinet_type', function() {
         // Insert workflows
         if (!empty($workflows)) {
             foreach ($workflows as $index => $workflow) {
+                // Validate workflow data
+                if (!isset($workflow['department_id']) || !isset($workflow['duration_minutes'])) {
+                    continue;
+                }
+                
+                $dept_id = absint($workflow['department_id']);
+                $duration = absint($workflow['duration_minutes']);
+                
+                if ($dept_id <= 0) {
+                    continue;
+                }
+                
                 $wpdb->insert($table_workflows, [
                     'cabinet_type_id' => $cabinet_type_id,
-                    'department_id' => absint($workflow['department_id']),
+                    'department_id' => $dept_id,
                     'sequence_order' => $index,
-                    'duration_minutes' => absint($workflow['duration_minutes'] ?? 0)
+                    'duration_minutes' => $duration
                 ]);
             }
         }
@@ -2331,28 +2357,33 @@ function production_schedule_page() {
                 return;
             }
             
-            let html = '<div class="card" style="background:#e0e7ff;padding:15px;">';
-            html += '<h4 style="margin:0 0 10px 0;color:#4338ca;"><i class="fa-solid fa-magic"></i> Auto-Detected Workflow: ' + cabinetType.name + '</h4>';
-            html += '<div style="color:#4338ca;font-size:13px;margin-bottom:10px;">Based on product category, the following workflow will be used:</div>';
-            html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+            const $container = $('<div class="card" style="background:#e0e7ff;padding:15px;"></div>');
+            
+            const $header = $('<h4 style="margin:0 0 10px 0;color:#4338ca;"><i class="fa-solid fa-magic"></i> Auto-Detected Workflow: </h4>');
+            $header.append($('<span></span>').text(cabinetType.name));
+            $container.append($header);
+            
+            $container.append('<div style="color:#4338ca;font-size:13px;margin-bottom:10px;">Based on product category, the following workflow will be used:</div>');
+            
+            const $workflowContainer = $('<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"></div>');
             
             workflows.forEach(function(w, index) {
                 if (index > 0) {
-                    html += '<span style="color:#6366f1;font-size:18px;">→</span>';
+                    $workflowContainer.append('<span style="color:#6366f1;font-size:18px;">→</span>');
                 }
-                html += '<div style="background:white;padding:8px 15px;border-radius:6px;border:2px solid #818cf8;">';
-                html += '<strong>' + w.dept_name + '</strong>';
-                html += '<div style="font-size:11px;color:#6b7280;">' + w.duration_minutes + ' min</div>';
-                html += '</div>';
+                
+                const $step = $('<div style="background:white;padding:8px 15px;border-radius:6px;border:2px solid #818cf8;"></div>');
+                $step.append($('<strong></strong>').text(w.dept_name));
+                $step.append($('<div style="font-size:11px;color:#6b7280;"></div>').text(w.duration_minutes + ' min'));
+                $workflowContainer.append($step);
             });
             
-            html += '</div>';
+            $container.append($workflowContainer);
             
             const totalDuration = workflows.reduce((sum, w) => sum + parseInt(w.duration_minutes), 0);
-            html += '<div style="margin-top:10px;font-size:13px;color:#4338ca;"><strong>Total Duration:</strong> ' + totalDuration + ' minutes</div>';
-            html += '</div>';
+            $container.append('<div style="margin-top:10px;font-size:13px;color:#4338ca;"><strong>Total Duration:</strong> ' + totalDuration + ' minutes</div>');
             
-            $('#autoWorkflowPreview').html(html).fadeIn();
+            $('#autoWorkflowPreview').empty().append($container).fadeIn();
             
             // Auto-select first department
             if (workflows.length > 0) {

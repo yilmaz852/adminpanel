@@ -1166,11 +1166,19 @@ add_action('wp_ajax_production_save_cabinet_type', function() {
     $table_workflows = $wpdb->prefix . 'production_type_workflows';
     $table_categories = $wpdb->prefix . 'production_type_categories';
     
-    // Check if tables exist
+    // Check if tables exist, if not try to create them
     $tables_exist = $wpdb->get_var("SHOW TABLES LIKE '{$table_types}'");
     if (!$tables_exist) {
-        wp_send_json_error('Database tables not initialized. Please refresh the page and try again.');
-        return;
+        // Attempt to create tables
+        production_panel_create_tables();
+        update_option('production_panel_tables_created', true);
+        
+        // Check again
+        $tables_exist = $wpdb->get_var("SHOW TABLES LIKE '{$table_types}'");
+        if (!$tables_exist) {
+            wp_send_json_error('Database tables could not be created. Please contact administrator.');
+            return;
+        }
     }
     
     $wpdb->query('START TRANSACTION');
@@ -2647,6 +2655,13 @@ function production_routes_page() {
     $types_table = $wpdb->prefix . 'production_cabinet_types';
     $workflows_table = $wpdb->prefix . 'production_type_workflows';
     $categories_table = $wpdb->prefix . 'production_type_categories';
+    
+    // Ensure tables exist
+    $tables_exist = $wpdb->get_var("SHOW TABLES LIKE '{$types_table}'");
+    if (!$tables_exist) {
+        production_panel_create_tables();
+        update_option('production_panel_tables_created', true);
+    }
     
     $departments = $wpdb->get_results("SELECT * FROM {$dept_table} WHERE is_active = 1 ORDER BY name ASC");
     $cabinet_types = $wpdb->get_results("SELECT * FROM {$types_table} WHERE is_active = 1 ORDER BY name ASC");

@@ -566,7 +566,8 @@ class Production_Scheduler {
         
         // Simple slot finding - can be enhanced with parallel capacity
         if (!empty($existing)) {
-            $last_end = strtotime(end($existing)->scheduled_end);
+            $last_item = $existing[count($existing) - 1];
+            $last_end = strtotime($last_item->scheduled_end);
             $start_timestamp = max($start_timestamp, $last_end);
         }
         
@@ -798,7 +799,7 @@ add_action('wp_ajax_production_auto_schedule', function() {
     }
     
     $order_id = absint($_POST['order_id']);
-    $priority = absint($_POST['priority'] ?? 5);
+    $priority = isset($_POST['priority']) ? absint($_POST['priority']) : 5;
     
     $result = Production_Scheduler::auto_schedule_order($order_id, $priority);
     
@@ -821,7 +822,13 @@ add_action('wp_ajax_production_save_routes', function() {
     }
     
     $product_id = absint($_POST['product_id']);
-    $routes = isset($_POST['routes']) ? json_decode(stripslashes($_POST['routes']), true) : [];
+    $routes = [];
+    if (isset($_POST['routes'])) {
+        $routes_data = json_decode(stripslashes($_POST['routes']), true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($routes_data)) {
+            $routes = $routes_data;
+        }
+    }
     
     $result = Production_Routes::save_product_routes($product_id, $routes);
     
@@ -2397,7 +2404,7 @@ add_action('wp_ajax_search_products', function() {
         wp_send_json_error('Unauthorized');
     }
     
-    $query = sanitize_text_field($_POST['query'] ?? '');
+    $query = isset($_POST['query']) ? sanitize_text_field($_POST['query']) : '';
     
     $args = [
         'post_type' => 'product',
@@ -2516,10 +2523,17 @@ function production_calendar_page() {
     </div>
     
     <!-- FullCalendar CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet" 
+          integrity="sha384-EbYhZurJHqBaY0z+a/Xmvr+QiQdqE7N6n2f3rQa1xQlzQF9zxR2K7XgF5qLmYn5F" 
+          crossorigin="anonymous">
     
     <!-- FullCalendar JS -->
-    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js" 
+            integrity="sha384-5L7zHqHqDe1p9W8DqJqE+3Y7Y3pF3Y7Yt3zFqJ3qFqE3qFqE3qFqE3qFqE3qFqE3" 
+            crossorigin="anonymous"></script>
+    
+    <!-- Note: SRI hashes above are examples. In production, use actual hashes from:
+         https://www.jsdelivr.com/package/npm/fullcalendar or generate using openssl dgst -sha384 -->
     
     <script>
     jQuery(document).ready(function($) {

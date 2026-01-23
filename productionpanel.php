@@ -275,13 +275,74 @@ add_action('template_redirect', function() {
 });
 
 /* =====================================================
- * 7. DASHBOARD PAGE
+ * 7. NAVIGATION HELPER
+ * ===================================================== */
+function production_page_nav($active_page = 'dashboard') {
+    $pages = [
+        'dashboard' => ['icon' => 'fa-chart-line', 'label' => 'Dashboard', 'url' => home_url('/b2b-panel/production')],
+        'schedule' => ['icon' => 'fa-calendar-days', 'label' => 'Schedule', 'url' => home_url('/b2b-panel/production/schedule')],
+        'departments' => ['icon' => 'fa-building', 'label' => 'Departments', 'url' => home_url('/b2b-panel/production/departments')],
+        'calendar' => ['icon' => 'fa-calendar', 'label' => 'Calendar', 'url' => home_url('/b2b-panel/production/calendar')],
+        'analytics' => ['icon' => 'fa-chart-bar', 'label' => 'Analytics', 'url' => home_url('/b2b-panel/production/analytics')],
+        'settings' => ['icon' => 'fa-gear', 'label' => 'Settings', 'url' => home_url('/b2b-panel/production/settings')]
+    ];
+    
+    echo '<div class="page-nav">';
+    foreach ($pages as $key => $page) {
+        $active_class = ($key === $active_page) ? ' active' : '';
+        echo '<a href="' . esc_url($page['url']) . '" class="nav-btn' . $active_class . '">';
+        echo '<i class="fa-solid ' . esc_attr($page['icon']) . '"></i> ' . esc_html($page['label']);
+        echo '</a>';
+    }
+    echo '</div>';
+}
+
+/* =====================================================
+ * 8. DASHBOARD PAGE
  * ===================================================== */
 function production_dashboard_page() {
     b2b_adm_header('Production Dashboard');
     
     ?>
     <style>
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
         .stat-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -292,22 +353,30 @@ function production_dashboard_page() {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 30px;
             border-radius: 12px;
-            color: white;
+            color: #ffffff !important;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.15);
         }
         .stat-card.blue { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); }
         .stat-card.orange { background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%); }
         .stat-card.green { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
         .stat-label {
             font-size: 14px;
-            opacity: 0.9;
+            color: #ffffff !important;
+            opacity: 0.95;
             margin-bottom: 10px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 500;
         }
         .stat-value {
             font-size: 36px;
             font-weight: 700;
+            color: #ffffff !important;
         }
         .card {
             background: white;
@@ -373,6 +442,8 @@ function production_dashboard_page() {
             color: #065f46;
         }
     </style>
+    
+    <?php production_page_nav('dashboard'); ?>
     <?php
         
         global $wpdb;
@@ -510,8 +581,47 @@ function production_schedule_page() {
         .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
         .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
         .alert i { margin-right: 8px; }
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
     </style>
-    <?php
+    
+    <?php production_page_nav('schedule'); ?>
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -703,8 +813,47 @@ function production_departments_page() {
         .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
         .alert i { margin-right: 8px; }
         .color-swatch { display: inline-block; width: 24px; height: 24px; border-radius: 4px; border: 2px solid #e5e7eb; vertical-align: middle; }
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
     </style>
-    <?php
+    
+    <?php production_page_nav('departments'); ?>
     
     global $wpdb;
     $table = $wpdb->prefix . 'production_departments';
@@ -828,7 +977,47 @@ function production_calendar_page() {
         .card h3 i { margin-right: 8px; color: #667eea; }
         .card h4 { color: #6b7280; margin: 10px 0; }
         .card p { color: #6b7280; line-height: 1.6; }
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
     </style>
+    
+    <?php production_page_nav('calendar'); ?>
     
     <div class="card">
         <h3><i class="fa-solid fa-calendar"></i> Production Timeline</h3>
@@ -859,11 +1048,11 @@ function production_analytics_page() {
     ?>
     <style>
         .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; color: #ffffff !important; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .stat-card.blue { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); }
         .stat-card.green { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
-        .stat-label { font-size: 14px; opacity: 0.9; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .stat-value { font-size: 36px; font-weight: 700; }
+        .stat-label { font-size: 14px; color: #ffffff !important; opacity: 0.95; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+        .stat-value { font-size: 36px; font-weight: 700; color: #ffffff !important; }
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
         .card h3 i { margin-right: 8px; color: #667eea; }
@@ -873,8 +1062,47 @@ function production_analytics_page() {
         .data-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
         .data-table tr:hover { background: #f9fafb; }
         .color-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
     </style>
-    <?php
+    
+    <?php production_page_nav('analytics'); ?>
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -1037,8 +1265,47 @@ function production_settings_page() {
         .alert i { margin-right: 8px; }
         input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
         label { cursor: pointer; color: #374151; }
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
     </style>
-    <?php
+    
+    <?php production_page_nav('settings'); ?>
     
     // Handle settings save
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce'])) {

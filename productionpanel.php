@@ -2298,24 +2298,42 @@ function production_schedule_page() {
             html += '<h4 style="margin-bottom:10px;">Order Products:</h4>';
             html += '<div style="display:grid;gap:10px;">';
             
+            const $container = $('<div class="card" style="background:#f9fafb;padding:15px;"></div>');
+            $container.append('<h4 style="margin-bottom:10px;">Order Products:</h4>');
+            
+            const $productsGrid = $('<div style="display:grid;gap:10px;"></div>');
+            
             orderData.items.forEach(function(item) {
-                html += '<label style="display:flex;align-items:center;padding:10px;background:white;border-radius:6px;cursor:pointer;border:2px solid #e5e7eb;" class="product-option">';
-                html += '<input type="radio" name="product_id" value="' + item.product_id + '" data-categories="' + (item.categories || '').join(',') + '" required style="margin-right:10px;">';
-                html += '<div style="flex:1;">';
-                html += '<strong>' + item.name + '</strong>';
-                html += '<div style="color:#6b7280;font-size:13px;">SKU: ' + (item.sku || 'N/A') + ' | Qty: ' + item.quantity + '</div>';
+                const $label = $('<label style="display:flex;align-items:center;padding:10px;background:white;border-radius:6px;cursor:pointer;border:2px solid #e5e7eb;" class="product-option"></label>');
+                
+                const $radio = $('<input type="radio" name="product_id" required style="margin-right:10px;">');
+                $radio.val(item.product_id);
+                $radio.attr('data-categories', (item.categories || []).join(','));
+                $label.append($radio);
+                
+                const $details = $('<div style="flex:1;"></div>');
+                $details.append($('<strong></strong>').text(item.name));
+                
+                const $sku = $('<div style="color:#6b7280;font-size:13px;"></div>');
+                $sku.text('SKU: ' + (item.sku || 'N/A') + ' | Qty: ' + item.quantity);
+                $details.append($sku);
+                
                 if (item.cabinet_type) {
-                    html += '<div style="margin-top:5px;"><span class="type-badge" style="background:' + item.cabinet_type.color + ';color:white;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + item.cabinet_type.name + '</span></div>';
+                    const $badge = $('<span class="type-badge" style="color:white;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;"></span>');
+                    $badge.css('background', item.cabinet_type.color);
+                    $badge.text(item.cabinet_type.name);
+                    $details.append($('<div style="margin-top:5px;"></div>').append($badge));
                 }
-                html += '</div>';
-                html += '</label>';
+                
+                $label.append($details);
+                $productsGrid.append($label);
             });
             
-            html += '</div></div>';
+            $container.append($productsGrid);
             
-            html += '<div id="autoWorkflowPreview" style="display:none;margin-top:15px;"></div>';
+            const $preview = $('<div id="autoWorkflowPreview" style="display:none;margin-top:15px;"></div>');
             
-            $('#order_products_container').html(html).show();
+            $('#order_products_container').empty().append($container).append($preview).show();
             
             // Auto-fill quantity from first product
             if (orderData.items.length > 0) {

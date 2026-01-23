@@ -279,6 +279,101 @@ add_action('template_redirect', function() {
  * ===================================================== */
 function production_dashboard_page() {
     b2b_adm_header('Production Dashboard');
+    
+    ?>
+    <style>
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px;
+            border-radius: 12px;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .stat-card.blue { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); }
+        .stat-card.orange { background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%); }
+        .stat-card.green { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+        }
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .card h3 {
+            margin: 0 0 20px 0;
+            font-size: 18px;
+            color: #1f2937;
+            font-weight: 600;
+        }
+        .card h3 i {
+            margin-right: 8px;
+            color: #667eea;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .data-table thead {
+            background: #f9fafb;
+        }
+        .data-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #6b7280;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .data-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f3f4f6;
+            color: #374151;
+        }
+        .data-table tr:hover {
+            background: #f9fafb;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .badge.scheduled {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .badge.in_progress {
+            background: #fed7aa;
+            color: #c05621;
+        }
+        .badge.completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+    </style>
+    <?php
         
         global $wpdb;
         $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -387,6 +482,36 @@ function production_dashboard_page() {
  * ===================================================== */
 function production_schedule_page() {
     b2b_adm_header('Production Schedule');
+    
+    ?>
+    <style>
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-weight: 600; color: #374151; margin-bottom: 5px; font-size: 14px; }
+        .form-control { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+        .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a67d8; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-success:hover { background: #38a169; }
+        .btn-danger { background: #f56565; color: white; }
+        .btn-danger:hover { background: #e53e3e; }
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .data-table thead { background: #f9fafb; }
+        .data-table th { padding: 12px; text-align: left; font-weight: 600; color: #6b7280; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; }
+        .data-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+        .data-table tr:hover { background: #f9fafb; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge.scheduled { background: #dbeafe; color: #1e40af; }
+        .badge.in_progress { background: #fed7aa; color: #c05621; }
+        .badge.completed { background: #d1fae5; color: #065f46; }
+        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+        .alert i { margin-right: 8px; }
+    </style>
+    <?php
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -548,6 +673,39 @@ function production_schedule_page() {
 function production_departments_page() {
     b2b_adm_header('Production Departments');
     
+    ?>
+    <style>
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-weight: 600; color: #374151; margin-bottom: 5px; font-size: 14px; }
+        .form-control { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+        .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px; display: inline-block; text-decoration: none; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a67d8; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-success:hover { background: #38a169; }
+        .btn-warning { background: #f59e0b; color: white; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-danger { background: #f56565; color: white; }
+        .btn-danger:hover { background: #e53e3e; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .data-table thead { background: #f9fafb; }
+        .data-table th { padding: 12px; text-align: left; font-weight: 600; color: #6b7280; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; }
+        .data-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+        .data-table tr:hover { background: #f9fafb; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge.active { background: #d1fae5; color: #065f46; }
+        .badge.inactive { background: #fee2e2; color: #991b1b; }
+        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+        .alert i { margin-right: 8px; }
+        .color-swatch { display: inline-block; width: 24px; height: 24px; border-radius: 4px; border: 2px solid #e5e7eb; vertical-align: middle; }
+    </style>
+    <?php
+    
     global $wpdb;
     $table = $wpdb->prefix . 'production_departments';
     
@@ -664,6 +822,13 @@ function production_departments_page() {
 function production_calendar_page() {
     b2b_adm_header('Production Calendar');
     ?>
+    <style>
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
+        .card h3 i { margin-right: 8px; color: #667eea; }
+        .card h4 { color: #6b7280; margin: 10px 0; }
+        .card p { color: #6b7280; line-height: 1.6; }
+    </style>
     
     <div class="card">
         <h3><i class="fa-solid fa-calendar"></i> Production Timeline</h3>
@@ -690,6 +855,26 @@ function production_calendar_page() {
  * ===================================================== */
 function production_analytics_page() {
     b2b_adm_header('Production Analytics');
+    
+    ?>
+    <style>
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .stat-card.blue { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); }
+        .stat-card.green { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
+        .stat-label { font-size: 14px; opacity: 0.9; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 36px; font-weight: 700; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
+        .card h3 i { margin-right: 8px; color: #667eea; }
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table thead { background: #f9fafb; }
+        .data-table th { padding: 12px; text-align: left; font-weight: 600; color: #6b7280; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; }
+        .data-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+        .data-table tr:hover { background: #f9fafb; }
+        .color-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+    </style>
+    <?php
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -835,6 +1020,25 @@ function production_reports_page() {
  * ===================================================== */
 function production_settings_page() {
     b2b_adm_header('Production Settings');
+    
+    ?>
+    <style>
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-weight: 600; color: #374151; margin-bottom: 8px; font-size: 14px; }
+        .form-control { width: 100%; max-width: 400px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+        .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .btn { padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a67d8; }
+        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+        .alert i { margin-right: 8px; }
+        input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        label { cursor: pointer; color: #374151; }
+    </style>
+    <?php
     
     // Handle settings save
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce'])) {

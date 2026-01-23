@@ -1140,11 +1140,11 @@ add_action('wp_ajax_production_save_cabinet_type', function() {
     global $wpdb;
     
     $id = isset($_POST['id']) ? absint($_POST['id']) : 0;
-    $name = sanitize_text_field($_POST['name']);
-    $description = sanitize_textarea_field($_POST['description'] ?? '');
-    $color = sanitize_text_field($_POST['color'] ?? '#667eea');
-    $time_multiplier = floatval($_POST['time_multiplier'] ?? 1.00);
-    $base_duration = absint($_POST['base_duration'] ?? 0);
+    $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+    $description = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+    $color = isset($_POST['color']) ? sanitize_text_field($_POST['color']) : '#667eea';
+    $time_multiplier = isset($_POST['time_multiplier']) ? floatval($_POST['time_multiplier']) : 1.00;
+    $base_duration = isset($_POST['base_duration']) ? absint($_POST['base_duration']) : 0;
     
     $workflows = [];
     if (isset($_POST['workflows'])) {
@@ -1159,11 +1159,19 @@ add_action('wp_ajax_production_save_cabinet_type', function() {
     // Validate
     if (empty($name)) {
         wp_send_json_error('Cabinet type name is required');
+        return;
     }
     
     $table_types = $wpdb->prefix . 'production_cabinet_types';
     $table_workflows = $wpdb->prefix . 'production_type_workflows';
     $table_categories = $wpdb->prefix . 'production_type_categories';
+    
+    // Check if tables exist
+    $tables_exist = $wpdb->get_var("SHOW TABLES LIKE '{$table_types}'");
+    if (!$tables_exist) {
+        wp_send_json_error('Database tables not initialized. Please refresh the page and try again.');
+        return;
+    }
     
     $wpdb->query('START TRANSACTION');
     
@@ -1179,15 +1187,21 @@ add_action('wp_ajax_production_save_cabinet_type', function() {
         ];
         
         if ($id > 0) {
-            $wpdb->update($table_types, $data, ['id' => $id]);
+            $result = $wpdb->update($table_types, $data, ['id' => $id]);
+            if ($result === false) {
+                throw new Exception('Database error: ' . $wpdb->last_error);
+            }
             $cabinet_type_id = $id;
         } else {
-            $wpdb->insert($table_types, $data);
+            $result = $wpdb->insert($table_types, $data);
+            if ($result === false) {
+                throw new Exception('Database error: ' . $wpdb->last_error);
+            }
             $cabinet_type_id = $wpdb->insert_id;
         }
         
         if (!$cabinet_type_id) {
-            throw new Exception('Failed to save cabinet type');
+            throw new Exception('Failed to save cabinet type - no ID returned');
         }
         
         // Delete existing workflows and categories
@@ -2646,6 +2660,47 @@ function production_routes_page() {
     
     ?>
     <style>
+        /* Navigation Styles */
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .nav-btn:hover {
+            background: #e5e7eb;
+            color: #1f2937;
+            transform: translateY(-1px);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .nav-btn.active:hover {
+            background: #5a67d8;
+        }
+        .nav-btn i {
+            font-size: 14px;
+        }
+        
+        /* Card and Form Styles */
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
         .card h3 i { margin-right: 8px; color: #667eea; }

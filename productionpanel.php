@@ -621,7 +621,8 @@ function production_schedule_page() {
         }
     </style>
     
-    <?php production_page_nav('schedule'); ?>
+    <?php 
+    production_page_nav('schedule'); 
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -853,7 +854,8 @@ function production_departments_page() {
         }
     </style>
     
-    <?php production_page_nav('departments'); ?>
+    <?php 
+    production_page_nav('departments'); 
     
     global $wpdb;
     $table = $wpdb->prefix . 'production_departments';
@@ -1102,7 +1104,8 @@ function production_analytics_page() {
         }
     </style>
     
-    <?php production_page_nav('analytics'); ?>
+    <?php 
+    production_page_nav('analytics'); 
     
     global $wpdb;
     $table_schedule = $wpdb->prefix . 'production_schedule';
@@ -1305,7 +1308,8 @@ function production_settings_page() {
         }
     </style>
     
-    <?php production_page_nav('settings'); ?>
+    <?php 
+    production_page_nav('settings'); 
     
     // Handle settings save
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce'])) {

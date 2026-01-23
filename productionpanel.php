@@ -331,32 +331,36 @@ function production_get_order_details($order_id) {
         if (!empty($categories)) {
             // Build safe IN clause with placeholders
             $category_ids = array_map('absint', $categories);
-            $placeholders = implode(',', array_fill(0, count($category_ids), '%d'));
+            $category_ids = array_filter($category_ids); // Remove zeros
             
-            $cabinet_type_data = $wpdb->get_row($wpdb->prepare("
-                SELECT t.* 
-                FROM {$table_types} t
-                INNER JOIN {$table_categories} tc ON t.id = tc.cabinet_type_id
-                WHERE tc.category_id IN ({$placeholders}) AND t.is_active = 1
-                LIMIT 1
-            ", ...$category_ids));
-            
-            if ($cabinet_type_data) {
-                // Get workflows with department names
-                $workflows = $wpdb->get_results($wpdb->prepare("
-                    SELECT w.*, d.name as dept_name
-                    FROM {$table_workflows} w
-                    LEFT JOIN {$table_departments} d ON w.department_id = d.id
-                    WHERE w.cabinet_type_id = %d
-                    ORDER BY w.sequence_order ASC
-                ", $cabinet_type_data->id));
+            if (!empty($category_ids)) {
+                $placeholders = implode(',', array_fill(0, count($category_ids), '%d'));
                 
-                $cabinet_type = [
-                    'id' => $cabinet_type_data->id,
-                    'name' => $cabinet_type_data->name,
-                    'color' => $cabinet_type_data->color,
-                    'workflows' => $workflows
-                ];
+                $cabinet_type_data = $wpdb->get_row($wpdb->prepare("
+                    SELECT t.* 
+                    FROM {$table_types} t
+                    INNER JOIN {$table_categories} tc ON t.id = tc.cabinet_type_id
+                    WHERE tc.category_id IN ({$placeholders}) AND t.is_active = 1
+                    LIMIT 1
+                ", ...$category_ids));
+                
+                if ($cabinet_type_data) {
+                    // Get workflows with department names
+                    $workflows = $wpdb->get_results($wpdb->prepare("
+                        SELECT w.*, d.name as dept_name
+                        FROM {$table_workflows} w
+                        LEFT JOIN {$table_departments} d ON w.department_id = d.id
+                        WHERE w.cabinet_type_id = %d
+                        ORDER BY w.sequence_order ASC
+                    ", $cabinet_type_data->id));
+                    
+                    $cabinet_type = [
+                        'id' => $cabinet_type_data->id,
+                        'name' => $cabinet_type_data->name,
+                        'color' => $cabinet_type_data->color,
+                        'workflows' => $workflows
+                    ];
+                }
             }
         }
         
@@ -553,15 +557,20 @@ function production_calculate_department_workload($start_date = null, $end_date 
             AND status != 'cancelled'
         ", $dept->id, $start_date, $end_date));
         
-        $scheduled_data = $scheduled[0];
+        $scheduled_data = !empty($scheduled) ? $scheduled[0] : (object)[
+            'task_count' => 0,
+            'total_minutes' => 0,
+            'total_items' => 0
+        ];
         
         // Calculate capacity (assuming 8 hour days, workers * hours * 60)
         $days = ceil((strtotime($end_date) - strtotime($start_date)) / 86400);
         $daily_hours = 8;
         $capacity_minutes = $dept->workers * $daily_hours * 60 * $days;
         
+        $total_minutes = floatval($scheduled_data->total_minutes ?? 0);
         $utilization = $capacity_minutes > 0 ? 
-            round(($scheduled_data->total_minutes / $capacity_minutes) * 100, 2) : 0;
+            round(($total_minutes / $capacity_minutes) * 100, 2) : 0;
         
         $workload[] = [
             'department' => $dept->name,
@@ -569,11 +578,11 @@ function production_calculate_department_workload($start_date = null, $end_date 
             'color' => $dept->color,
             'workers' => $dept->workers,
             'capacity_minutes' => $capacity_minutes,
-            'scheduled_minutes' => $scheduled_data->total_minutes ?? 0,
-            'task_count' => $scheduled_data->task_count ?? 0,
-            'total_items' => $scheduled_data->total_items ?? 0,
+            'scheduled_minutes' => $total_minutes,
+            'task_count' => intval($scheduled_data->task_count ?? 0),
+            'total_items' => intval($scheduled_data->total_items ?? 0),
             'utilization_percent' => $utilization,
-            'available_minutes' => $capacity_minutes - ($scheduled_data->total_minutes ?? 0),
+            'available_minutes' => $capacity_minutes - $total_minutes,
             'status' => $utilization >= 100 ? 'overloaded' : 
                        ($utilization >= 80 ? 'busy' : 'available')
         ];
@@ -2372,6 +2381,11 @@ function production_schedule_page() {
                     $workflowContainer.append('<span style="color:#6366f1;font-size:18px;">→</span>');
                 }
                 
+                // Validate workflow data
+                if (!w || !w.dept_name || !w.duration_minutes) {
+                    return;
+                }
+                
                 const $step = $('<div style="background:white;padding:8px 15px;border-radius:6px;border:2px solid #818cf8;"></div>');
                 $step.append($('<strong></strong>').text(w.dept_name));
                 $step.append($('<div style="font-size:11px;color:#6b7280;"></div>').text(w.duration_minutes + ' min'));
@@ -2380,7 +2394,10 @@ function production_schedule_page() {
             
             $container.append($workflowContainer);
             
-            const totalDuration = workflows.reduce((sum, w) => sum + parseInt(w.duration_minutes), 0);
+            const totalDuration = workflows.reduce((sum, w) => {
+                if (!w || !w.duration_minutes) return sum;
+                return sum + parseInt(w.duration_minutes, 10);
+            }, 0);
             $container.append('<div style="margin-top:10px;font-size:13px;color:#4338ca;"><strong>Total Duration:</strong> ' + totalDuration + ' minutes</div>');
             
             $('#autoWorkflowPreview').empty().append($container).fadeIn();

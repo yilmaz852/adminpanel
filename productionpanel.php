@@ -218,6 +218,83 @@ function production_register_order_statuses() {
     ]);
 }
 
+/* =====================================================
+ * 3. WOOCOMMERCE ORDER INTEGRATION FUNCTIONS
+ * ===================================================== */
+
+/**
+ * Get WooCommerce orders for production scheduling
+ */
+function production_get_woo_orders($status = ['processing', 'pending', 'on-hold'], $limit = 100) {
+    if (!function_exists('wc_get_orders')) {
+        return [];
+    }
+    
+    $args = [
+        'limit' => $limit,
+        'status' => $status,
+        'orderby' => 'date',
+        'order' => 'DESC',
+        'return' => 'ids'
+    ];
+    
+    $order_ids = wc_get_orders($args);
+    $orders = [];
+    
+    foreach ($order_ids as $order_id) {
+        $order = wc_get_order($order_id);
+        if (!$order) continue;
+        
+        $orders[] = [
+            'id' => $order->get_id(),
+            'number' => $order->get_order_number(),
+            'customer' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
+            'total' => $order->get_total(),
+            'status' => $order->get_status(),
+            'date' => $order->get_date_created()->date('Y-m-d H:i:s'),
+            'items' => $order->get_items()
+        ];
+    }
+    
+    return $orders;
+}
+
+/**
+ * Get order details with products
+ */
+function production_get_order_details($order_id) {
+    if (!function_exists('wc_get_order')) {
+        return null;
+    }
+    
+    $order = wc_get_order($order_id);
+    if (!$order) return null;
+    
+    $items = [];
+    foreach ($order->get_items() as $item) {
+        $product = $item->get_product();
+        $items[] = [
+            'product_id' => $item->get_product_id(),
+            'name' => $item->get_name(),
+            'quantity' => $item->get_quantity(),
+            'sku' => $product ? $product->get_sku() : '',
+            'image' => $product && $product->get_image_id() ? wp_get_attachment_url($product->get_image_id()) : ''
+        ];
+    }
+    
+    return [
+        'id' => $order->get_id(),
+        'number' => $order->get_order_number(),
+        'customer' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
+        'email' => $order->get_billing_email(),
+        'phone' => $order->get_billing_phone(),
+        'total' => $order->get_total(),
+        'status' => $order->get_status(),
+        'date' => $order->get_date_created()->date('Y-m-d H:i:s'),
+        'items' => $items
+    ];
+}
+
 // Add to WooCommerce status list
 add_filter('wc_order_statuses', 'production_add_to_order_statuses');
 function production_add_to_order_statuses($order_statuses) {
@@ -712,6 +789,28 @@ class Production_Scheduler {
  * 6. AJAX HANDLERS - REAL-TIME OPERATIONS
  * ===================================================== */
 
+// Get WooCommerce order details
+add_action('wp_ajax_production_get_order_details', function() {
+    check_ajax_referer('production_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+    if (!$order_id) {
+        wp_send_json_error('Invalid order ID');
+    }
+    
+    $details = production_get_order_details($order_id);
+    
+    if ($details) {
+        wp_send_json_success($details);
+    } else {
+        wp_send_json_error('Order not found');
+    }
+});
+
 // Get calendar events for FullCalendar
 add_action('wp_ajax_production_get_calendar_events', function() {
     check_ajax_referer('production_ajax', 'nonce');
@@ -742,13 +841,31 @@ add_action('wp_ajax_production_get_calendar_events', function() {
         
         $events = [];
         foreach ($schedules as $schedule) {
-            $events[] = [
-                'id' => $schedule->id,
-                'title' => sprintf('#%s - %s (%d)', 
-                    str_replace('order_', '', $schedule->order_number),
+            // Get customer name from WooCommerce order
+            $customer_name = '';
+            if (function_exists('wc_get_order')) {
+                $order = wc_get_order($schedule->order_id);
+                if ($order) {
+                    $customer_name = $order->get_billing_first_name() . ' ' . $order->get_billing_last_name();
+                }
+            }
+            
+            $title = $customer_name 
+                ? sprintf('#%s - %s - %s (%d)', 
+                    $schedule->order_id,
+                    $customer_name,
                     $schedule->product_name,
                     $schedule->quantity
-                ),
+                )
+                : sprintf('#%s - %s (%d)', 
+                    $schedule->order_id,
+                    $schedule->product_name,
+                    $schedule->quantity
+                );
+            
+            $events[] = [
+                'id' => $schedule->id,
+                'title' => $title,
                 'start' => $schedule->scheduled_start,
                 'end' => $schedule->scheduled_end,
                 'backgroundColor' => $schedule->color ?? '#3498db',
@@ -758,7 +875,8 @@ add_action('wp_ajax_production_get_calendar_events', function() {
                     'order_id' => $schedule->order_id,
                     'product_id' => $schedule->product_id,
                     'status' => $schedule->status,
-                    'notes' => $schedule->notes
+                    'notes' => $schedule->notes,
+                    'customer' => $customer_name
                 ]
             ];
         }
@@ -1577,8 +1695,25 @@ function production_schedule_page() {
             <?php wp_nonce_field('production_add_schedule'); ?>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px">
                 <div class="form-group">
-                    <label class="form-label">Order ID</label>
-                    <input type="number" name="order_id" class="form-control" required>
+                    <label class="form-label">Select WooCommerce Order</label>
+                    <select name="order_id" id="woo_order_select" class="form-control" required>
+                        <option value="">-- Select Order --</option>
+                        <?php
+                        $woo_orders = production_get_woo_orders();
+                        foreach ($woo_orders as $order):
+                        ?>
+                        <option value="<?= esc_attr($order['id']) ?>" 
+                                data-customer="<?= esc_attr($order['customer']) ?>"
+                                data-total="<?= esc_attr($order['total']) ?>"
+                                data-status="<?= esc_attr($order['status']) ?>">
+                            #<?= esc_html($order['number']) ?> - <?= esc_html($order['customer']) ?> 
+                            (<?= function_exists('wc_price') ? wc_price($order['total']) : '$' . number_format($order['total'], 2) ?>) - <?= ucfirst($order['status']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small style="color:#6b7280;margin-top:5px;display:block;">
+                        Select a WooCommerce order to schedule for production
+                    </small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Department</label>
@@ -1589,10 +1724,9 @@ function production_schedule_page() {
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Product ID</label>
-                    <input type="number" name="product_id" class="form-control" required>
-                </div>
+                
+                <div id="order_products_container" style="display:none;grid-column:1/-1;"></div>
+                
                 <div class="form-group">
                     <label class="form-label">Quantity</label>
                     <input type="number" name="quantity" class="form-control" required>
@@ -1648,7 +1782,22 @@ function production_schedule_page() {
             <tbody>
                 <?php foreach ($schedules as $s): ?>
                 <tr>
-                    <td><strong>#<?= esc_html($s->order_id) ?></strong></td>
+                    <td>
+                        <strong>#<?= esc_html($s->order_id) ?></strong>
+                        <?php
+                        if (function_exists('wc_get_order')) {
+                            $order = wc_get_order($s->order_id);
+                            if ($order):
+                                $customer = $order->get_billing_first_name() . ' ' . $order->get_billing_last_name();
+                        ?>
+                        <div style="font-size:12px;color:#6b7280;">
+                            <?= esc_html($customer) ?>
+                        </div>
+                        <?php 
+                            endif;
+                        }
+                        ?>
+                    </td>
                     <td>
                         <span style="display:inline-block;width:10px;height:10px;background:<?= esc_attr($s->color) ?>;border-radius:50%;margin-right:5px;"></span>
                         <?= esc_html($s->department_name) ?>
@@ -1746,6 +1895,65 @@ function production_schedule_page() {
         $('table.data-table tbody tr').each(function() {
             $(this).attr('title', 'Click Edit button to modify this schedule');
         });
+        
+        // WooCommerce Order Selection Handler
+        $('#woo_order_select').on('change', function() {
+            const orderId = $(this).val();
+            if (!orderId) {
+                $('#order_products_container').hide();
+                return;
+            }
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'production_get_order_details',
+                    nonce: '<?= wp_create_nonce('production_ajax') ?>',
+                    order_id: orderId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        displayOrderProducts(response.data);
+                    } else {
+                        alert('Failed to load order products');
+                    }
+                }
+            });
+        });
+        
+        function displayOrderProducts(orderData) {
+            let html = '<div class="card" style="background:#f9fafb;padding:15px;">';
+            html += '<h4 style="margin-bottom:10px;">Order Products:</h4>';
+            html += '<div style="display:grid;gap:10px;">';
+            
+            orderData.items.forEach(function(item) {
+                html += '<label style="display:flex;align-items:center;padding:10px;background:white;border-radius:6px;cursor:pointer;border:2px solid #e5e7eb;" class="product-option">';
+                html += '<input type="radio" name="product_id" value="' + item.product_id + '" required style="margin-right:10px;">';
+                html += '<div style="flex:1;">';
+                html += '<strong>' + item.name + '</strong>';
+                html += '<div style="color:#6b7280;font-size:13px;">SKU: ' + (item.sku || 'N/A') + ' | Qty: ' + item.quantity + '</div>';
+                html += '</div>';
+                html += '</label>';
+            });
+            
+            html += '</div></div>';
+            $('#order_products_container').html(html).show();
+            
+            // Auto-fill quantity from first product
+            if (orderData.items.length > 0) {
+                $('input[name="quantity"]').val(orderData.items[0].quantity);
+            }
+            
+            // Update quantity when product selection changes
+            $(document).on('change', 'input[name="product_id"]', function() {
+                const selectedProductId = $(this).val();
+                const selectedItem = orderData.items.find(item => item.product_id == selectedProductId);
+                if (selectedItem) {
+                    $('input[name="quantity"]').val(selectedItem.quantity);
+                }
+            });
+        }
     });
     </script>
     

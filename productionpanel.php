@@ -147,6 +147,44 @@ function production_panel_create_tables() {
     ) {$charset_collate};";
     dbDelta($sql7);
     
+    // Cabinet Types
+    $table_cabinet_types = $wpdb->prefix . 'production_cabinet_types';
+    $sql8 = "CREATE TABLE IF NOT EXISTS {$table_cabinet_types} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        color VARCHAR(7) DEFAULT '#667eea',
+        time_multiplier DECIMAL(3,2) DEFAULT 1.00,
+        base_duration INT DEFAULT 0,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) {$charset_collate};";
+    dbDelta($sql8);
+    
+    // Cabinet Type Workflows
+    $table_type_workflows = $wpdb->prefix . 'production_type_workflows';
+    $sql9 = "CREATE TABLE IF NOT EXISTS {$table_type_workflows} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        cabinet_type_id BIGINT UNSIGNED NOT NULL,
+        department_id BIGINT UNSIGNED NOT NULL,
+        sequence_order INT NOT NULL,
+        duration_minutes INT DEFAULT 0,
+        INDEX idx_cabinet_type (cabinet_type_id),
+        INDEX idx_sequence (cabinet_type_id, sequence_order)
+    ) {$charset_collate};";
+    dbDelta($sql9);
+    
+    // Cabinet Type Categories Mapping
+    $table_type_categories = $wpdb->prefix . 'production_type_categories';
+    $sql10 = "CREATE TABLE IF NOT EXISTS {$table_type_categories} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        cabinet_type_id BIGINT UNSIGNED NOT NULL,
+        category_id BIGINT UNSIGNED NOT NULL,
+        UNIQUE KEY unique_mapping (cabinet_type_id, category_id),
+        INDEX idx_category (category_id)
+    ) {$charset_collate};";
+    dbDelta($sql10);
+    
     // Initialize default settings
     if (!get_option('production_panel_settings')) {
         add_option('production_panel_settings', [
@@ -270,15 +308,63 @@ function production_get_order_details($order_id) {
     $order = wc_get_order($order_id);
     if (!$order) return null;
     
+    global $wpdb;
+    $table_types = $wpdb->prefix . 'production_cabinet_types';
+    $table_categories = $wpdb->prefix . 'production_type_categories';
+    $table_workflows = $wpdb->prefix . 'production_type_workflows';
+    $table_departments = $wpdb->prefix . 'production_departments';
+    
     $items = [];
     foreach ($order->get_items() as $item) {
         $product = $item->get_product();
+        $product_id = $item->get_product_id();
+        
+        // Get product categories
+        $categories = [];
+        if ($product) {
+            $terms = wp_get_post_terms($product_id, 'product_cat', ['fields' => 'ids']);
+            $categories = $terms;
+        }
+        
+        // Find cabinet type for this product
+        $cabinet_type = null;
+        if (!empty($categories)) {
+            $category_ids = implode(',', array_map('absint', $categories));
+            $cabinet_type_data = $wpdb->get_row($wpdb->prepare("
+                SELECT t.* 
+                FROM {$table_types} t
+                INNER JOIN {$table_categories} tc ON t.id = tc.cabinet_type_id
+                WHERE tc.category_id IN ({$category_ids}) AND t.is_active = 1
+                LIMIT 1
+            "));
+            
+            if ($cabinet_type_data) {
+                // Get workflows with department names
+                $workflows = $wpdb->get_results($wpdb->prepare("
+                    SELECT w.*, d.name as dept_name
+                    FROM {$table_workflows} w
+                    LEFT JOIN {$table_departments} d ON w.department_id = d.id
+                    WHERE w.cabinet_type_id = %d
+                    ORDER BY w.sequence_order ASC
+                ", $cabinet_type_data->id));
+                
+                $cabinet_type = [
+                    'id' => $cabinet_type_data->id,
+                    'name' => $cabinet_type_data->name,
+                    'color' => $cabinet_type_data->color,
+                    'workflows' => $workflows
+                ];
+            }
+        }
+        
         $items[] = [
-            'product_id' => $item->get_product_id(),
+            'product_id' => $product_id,
             'name' => $item->get_name(),
             'quantity' => $item->get_quantity(),
             'sku' => $product ? $product->get_sku() : '',
-            'image' => $product && $product->get_image_id() ? wp_get_attachment_url($product->get_image_id()) : ''
+            'image' => $product && $product->get_image_id() ? wp_get_attachment_url($product->get_image_id()) : '',
+            'categories' => $categories,
+            'cabinet_type' => $cabinet_type
         ];
     }
     
@@ -431,6 +517,63 @@ function production_cache_set($key, $value, $duration = null) {
 
 function production_cache_delete($key) {
     return Production_Cache::delete($key);
+}
+
+// Workload simulation function
+function production_calculate_department_workload($start_date = null, $end_date = null) {
+    global $wpdb;
+    
+    if (!$start_date) $start_date = current_time('Y-m-d 00:00:00');
+    if (!$end_date) $end_date = date('Y-m-d 23:59:59', strtotime($start_date . ' +7 days'));
+    
+    $table_schedule = $wpdb->prefix . 'production_schedule';
+    $table_departments = $wpdb->prefix . 'production_departments';
+    
+    // Get all departments
+    $departments = $wpdb->get_results("SELECT * FROM {$table_departments} WHERE is_active = 1");
+    
+    $workload = [];
+    
+    foreach ($departments as $dept) {
+        // Get scheduled work for this department
+        $scheduled = $wpdb->get_results($wpdb->prepare("
+            SELECT 
+                COUNT(*) as task_count,
+                SUM(TIMESTAMPDIFF(MINUTE, scheduled_start, scheduled_end)) as total_minutes,
+                SUM(quantity) as total_items
+            FROM {$table_schedule}
+            WHERE department_id = %d
+            AND scheduled_start BETWEEN %s AND %s
+            AND status != 'cancelled'
+        ", $dept->id, $start_date, $end_date));
+        
+        $scheduled_data = $scheduled[0];
+        
+        // Calculate capacity (assuming 8 hour days, workers * hours * 60)
+        $days = ceil((strtotime($end_date) - strtotime($start_date)) / 86400);
+        $daily_hours = 8;
+        $capacity_minutes = $dept->workers * $daily_hours * 60 * $days;
+        
+        $utilization = $capacity_minutes > 0 ? 
+            round(($scheduled_data->total_minutes / $capacity_minutes) * 100, 2) : 0;
+        
+        $workload[] = [
+            'department' => $dept->name,
+            'department_id' => $dept->id,
+            'color' => $dept->color,
+            'workers' => $dept->workers,
+            'capacity_minutes' => $capacity_minutes,
+            'scheduled_minutes' => $scheduled_data->total_minutes ?? 0,
+            'task_count' => $scheduled_data->task_count ?? 0,
+            'total_items' => $scheduled_data->total_items ?? 0,
+            'utilization_percent' => $utilization,
+            'available_minutes' => $capacity_minutes - ($scheduled_data->total_minutes ?? 0),
+            'status' => $utilization >= 100 ? 'overloaded' : 
+                       ($utilization >= 80 ? 'busy' : 'available')
+        ];
+    }
+    
+    return $workload;
 }
 
 // Clear expired cache hourly
@@ -969,6 +1112,199 @@ add_action('wp_ajax_production_get_routes', function() {
     $routes = Production_Routes::get_product_routes($product_id);
     
     wp_send_json_success($routes);
+});
+
+// Save cabinet type
+add_action('wp_ajax_production_save_cabinet_type', function() {
+    check_ajax_referer('production_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    
+    $id = isset($_POST['id']) ? absint($_POST['id']) : 0;
+    $name = sanitize_text_field($_POST['name']);
+    $description = sanitize_textarea_field($_POST['description'] ?? '');
+    $color = sanitize_text_field($_POST['color'] ?? '#667eea');
+    $time_multiplier = floatval($_POST['time_multiplier'] ?? 1.00);
+    $base_duration = absint($_POST['base_duration'] ?? 0);
+    $workflows = isset($_POST['workflows']) ? json_decode(stripslashes($_POST['workflows']), true) : [];
+    $categories = isset($_POST['categories']) ? array_map('absint', (array)$_POST['categories']) : [];
+    
+    // Validate
+    if (empty($name)) {
+        wp_send_json_error('Cabinet type name is required');
+    }
+    
+    $table_types = $wpdb->prefix . 'production_cabinet_types';
+    $table_workflows = $wpdb->prefix . 'production_type_workflows';
+    $table_categories = $wpdb->prefix . 'production_type_categories';
+    
+    $wpdb->query('START TRANSACTION');
+    
+    try {
+        // Save cabinet type
+        $data = [
+            'name' => $name,
+            'description' => $description,
+            'color' => $color,
+            'time_multiplier' => $time_multiplier,
+            'base_duration' => $base_duration,
+            'is_active' => 1
+        ];
+        
+        if ($id > 0) {
+            $wpdb->update($table_types, $data, ['id' => $id]);
+            $cabinet_type_id = $id;
+        } else {
+            $wpdb->insert($table_types, $data);
+            $cabinet_type_id = $wpdb->insert_id;
+        }
+        
+        if (!$cabinet_type_id) {
+            throw new Exception('Failed to save cabinet type');
+        }
+        
+        // Delete existing workflows and categories
+        $wpdb->delete($table_workflows, ['cabinet_type_id' => $cabinet_type_id]);
+        $wpdb->delete($table_categories, ['cabinet_type_id' => $cabinet_type_id]);
+        
+        // Insert workflows
+        if (!empty($workflows)) {
+            foreach ($workflows as $index => $workflow) {
+                $wpdb->insert($table_workflows, [
+                    'cabinet_type_id' => $cabinet_type_id,
+                    'department_id' => absint($workflow['department_id']),
+                    'sequence_order' => $index,
+                    'duration_minutes' => absint($workflow['duration_minutes'] ?? 0)
+                ]);
+            }
+        }
+        
+        // Insert categories
+        if (!empty($categories)) {
+            foreach ($categories as $category_id) {
+                $wpdb->insert($table_categories, [
+                    'cabinet_type_id' => $cabinet_type_id,
+                    'category_id' => $category_id
+                ]);
+            }
+        }
+        
+        $wpdb->query('COMMIT');
+        wp_send_json_success([
+            'message' => 'Cabinet type saved successfully',
+            'id' => $cabinet_type_id
+        ]);
+        
+    } catch (Exception $e) {
+        $wpdb->query('ROLLBACK');
+        wp_send_json_error($e->getMessage());
+    }
+});
+
+// Delete cabinet type
+add_action('wp_ajax_production_delete_cabinet_type', function() {
+    check_ajax_referer('production_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    $id = absint($_POST['id']);
+    
+    $table_types = $wpdb->prefix . 'production_cabinet_types';
+    $table_workflows = $wpdb->prefix . 'production_type_workflows';
+    $table_categories = $wpdb->prefix . 'production_type_categories';
+    
+    // Delete related data
+    $wpdb->delete($table_workflows, ['cabinet_type_id' => $id]);
+    $wpdb->delete($table_categories, ['cabinet_type_id' => $id]);
+    $wpdb->delete($table_types, ['id' => $id]);
+    
+    wp_send_json_success('Cabinet type deleted successfully');
+});
+
+// Get cabinet type by category
+add_action('wp_ajax_production_get_cabinet_type_by_category', function() {
+    check_ajax_referer('production_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    $category_id = absint($_POST['category_id']);
+    
+    $table_types = $wpdb->prefix . 'production_cabinet_types';
+    $table_categories = $wpdb->prefix . 'production_type_categories';
+    $table_workflows = $wpdb->prefix . 'production_type_workflows';
+    
+    // Find cabinet type
+    $cabinet_type = $wpdb->get_row($wpdb->prepare("
+        SELECT t.* 
+        FROM {$table_types} t
+        INNER JOIN {$table_categories} tc ON t.id = tc.cabinet_type_id
+        WHERE tc.category_id = %d AND t.is_active = 1
+        LIMIT 1
+    ", $category_id));
+    
+    if (!$cabinet_type) {
+        wp_send_json_error('No cabinet type found for this category');
+    }
+    
+    // Get workflows
+    $workflows = $wpdb->get_results($wpdb->prepare("
+        SELECT * FROM {$table_workflows}
+        WHERE cabinet_type_id = %d
+        ORDER BY sequence_order ASC
+    ", $cabinet_type->id));
+    
+    wp_send_json_success([
+        'cabinet_type' => $cabinet_type,
+        'workflows' => $workflows
+    ]);
+});
+
+// Get single cabinet type for editing
+add_action('wp_ajax_production_get_cabinet_type', function() {
+    check_ajax_referer('production_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    $id = absint($_POST['id']);
+    
+    $table_types = $wpdb->prefix . 'production_cabinet_types';
+    $table_workflows = $wpdb->prefix . 'production_type_workflows';
+    $table_categories = $wpdb->prefix . 'production_type_categories';
+    
+    $type = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_types} WHERE id = %d", $id));
+    
+    if (!$type) {
+        wp_send_json_error('Cabinet type not found');
+    }
+    
+    $workflows = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM {$table_workflows} WHERE cabinet_type_id = %d ORDER BY sequence_order ASC",
+        $id
+    ));
+    
+    $categories = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM {$table_categories} WHERE cabinet_type_id = %d",
+        $id
+    ));
+    
+    wp_send_json_success([
+        'type' => $type,
+        'workflows' => $workflows,
+        'categories' => $categories
+    ]);
 });
 
 // Delete schedule item
@@ -1929,15 +2265,21 @@ function production_schedule_page() {
             
             orderData.items.forEach(function(item) {
                 html += '<label style="display:flex;align-items:center;padding:10px;background:white;border-radius:6px;cursor:pointer;border:2px solid #e5e7eb;" class="product-option">';
-                html += '<input type="radio" name="product_id" value="' + item.product_id + '" required style="margin-right:10px;">';
+                html += '<input type="radio" name="product_id" value="' + item.product_id + '" data-categories="' + (item.categories || '').join(',') + '" required style="margin-right:10px;">';
                 html += '<div style="flex:1;">';
                 html += '<strong>' + item.name + '</strong>';
                 html += '<div style="color:#6b7280;font-size:13px;">SKU: ' + (item.sku || 'N/A') + ' | Qty: ' + item.quantity + '</div>';
+                if (item.cabinet_type) {
+                    html += '<div style="margin-top:5px;"><span class="type-badge" style="background:' + item.cabinet_type.color + ';color:white;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + item.cabinet_type.name + '</span></div>';
+                }
                 html += '</div>';
                 html += '</label>';
             });
             
             html += '</div></div>';
+            
+            html += '<div id="autoWorkflowPreview" style="display:none;margin-top:15px;"></div>';
+            
             $('#order_products_container').html(html).show();
             
             // Auto-fill quantity from first product
@@ -1945,14 +2287,77 @@ function production_schedule_page() {
                 $('input[name="quantity"]').val(orderData.items[0].quantity);
             }
             
-            // Update quantity when product selection changes
+            // Update quantity and detect cabinet type when product selection changes
             $(document).on('change', 'input[name="product_id"]', function() {
                 const selectedProductId = $(this).val();
                 const selectedItem = orderData.items.find(item => item.product_id == selectedProductId);
+                
                 if (selectedItem) {
                     $('input[name="quantity"]').val(selectedItem.quantity);
+                    
+                    // Auto-detect cabinet type and pre-fill workflow
+                    if (selectedItem.categories && selectedItem.categories.length > 0) {
+                        detectCabinetType(selectedItem.categories[0]);
+                    }
                 }
             });
+        }
+        
+        function detectCabinetType(categoryId) {
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'production_get_cabinet_type_by_category',
+                    nonce: '<?= wp_create_nonce('production_ajax') ?>',
+                    category_id: categoryId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        displayWorkflowPreview(response.data);
+                    } else {
+                        $('#autoWorkflowPreview').hide();
+                    }
+                }
+            });
+        }
+        
+        function displayWorkflowPreview(data) {
+            const cabinetType = data.cabinet_type;
+            const workflows = data.workflows;
+            
+            if (!workflows || workflows.length === 0) {
+                $('#autoWorkflowPreview').hide();
+                return;
+            }
+            
+            let html = '<div class="card" style="background:#e0e7ff;padding:15px;">';
+            html += '<h4 style="margin:0 0 10px 0;color:#4338ca;"><i class="fa-solid fa-magic"></i> Auto-Detected Workflow: ' + cabinetType.name + '</h4>';
+            html += '<div style="color:#4338ca;font-size:13px;margin-bottom:10px;">Based on product category, the following workflow will be used:</div>';
+            html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+            
+            workflows.forEach(function(w, index) {
+                if (index > 0) {
+                    html += '<span style="color:#6366f1;font-size:18px;">→</span>';
+                }
+                html += '<div style="background:white;padding:8px 15px;border-radius:6px;border:2px solid #818cf8;">';
+                html += '<strong>' + w.dept_name + '</strong>';
+                html += '<div style="font-size:11px;color:#6b7280;">' + w.duration_minutes + ' min</div>';
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            
+            const totalDuration = workflows.reduce((sum, w) => sum + parseInt(w.duration_minutes), 0);
+            html += '<div style="margin-top:10px;font-size:13px;color:#4338ca;"><strong>Total Duration:</strong> ' + totalDuration + ' minutes</div>';
+            html += '</div>';
+            
+            $('#autoWorkflowPreview').html(html).fadeIn();
+            
+            // Auto-select first department
+            if (workflows.length > 0) {
+                $('select[name="department_id"]').val(workflows[0].department_id);
+            }
         }
     });
     </script>
@@ -2155,7 +2560,23 @@ function production_departments_page() {
  * 17. PRODUCT ROUTES PAGE
  * ===================================================== */
 function production_routes_page() {
-    b2b_adm_header('Product Routes');
+    b2b_adm_header('Cabinet Types & Routes');
+    
+    global $wpdb;
+    $dept_table = $wpdb->prefix . 'production_departments';
+    $types_table = $wpdb->prefix . 'production_cabinet_types';
+    $workflows_table = $wpdb->prefix . 'production_type_workflows';
+    $categories_table = $wpdb->prefix . 'production_type_categories';
+    
+    $departments = $wpdb->get_results("SELECT * FROM {$dept_table} WHERE is_active = 1 ORDER BY name ASC");
+    $cabinet_types = $wpdb->get_results("SELECT * FROM {$types_table} WHERE is_active = 1 ORDER BY name ASC");
+    
+    // Get WooCommerce categories
+    $categories = get_terms([
+        'taxonomy' => 'product_cat',
+        'hide_empty' => false,
+        'orderby' => 'name'
+    ]);
     
     ?>
     <style>
@@ -2164,8 +2585,8 @@ function production_routes_page() {
         .card h3 i { margin-right: 8px; color: #667eea; }
         .form-group { margin-bottom: 15px; }
         .form-label { display: block; font-weight: 600; color: #374151; margin-bottom: 5px; font-size: 14px; }
-        .form-control { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-        .form-select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: white; }
+        .form-control, .form-select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+        .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
         .btn { padding: 10px 20px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px; }
         .btn-primary { background: #667eea; color: white; }
         .btn-primary:hover { background: #5a67d8; }
@@ -2173,429 +2594,353 @@ function production_routes_page() {
         .btn-success:hover { background: #38a169; }
         .btn-danger { background: #f56565; color: white; }
         .btn-danger:hover { background: #e53e3e; }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
         .btn-sm { padding: 6px 12px; font-size: 12px; }
-        .route-step {
-            background: #f9fafb;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            border-left: 3px solid #667eea;
-            position: relative;
-        }
-        .route-step-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        .route-step-number {
-            background: #667eea;
-            color: white;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 14px;
-        }
-        .route-step-content {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr 1fr auto;
-            gap: 10px;
-            align-items: end;
-        }
-        .product-search {
-            position: relative;
-            margin-bottom: 20px;
-        }
-        .product-search-results {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: white;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            max-height: 300px;
-            overflow-y: auto;
-            z-index: 100;
-            display: none;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .product-search-results.active {
-            display: block;
-        }
-        .product-result {
-            padding: 10px 15px;
-            cursor: pointer;
-            border-bottom: 1px solid #f3f4f6;
-        }
-        .product-result:hover {
-            background: #f9fafb;
-        }
-        .page-nav {
-            background: white;
-            padding: 15px 20px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            margin-bottom: 25px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .nav-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 20px;
-            background: #f3f4f6;
-            color: #374151;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 500;
-            font-size: 14px;
-            transition: all 0.2s;
-            border: 2px solid transparent;
-        }
-        .nav-btn:hover {
-            background: #667eea;
-            color: white;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
-        }
-        .nav-btn.active {
-            background: #667eea;
-            color: white;
-            border-color: #4c51bf;
-        }
-        .nav-btn i {
-            font-size: 16px;
-        }
-        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .type-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; color: white; }
+        .workflow-preview { color: #6b7280; font-size: 13px; }
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .data-table thead { background: #f9fafb; }
+        .data-table th { padding: 12px; text-align: left; font-weight: 600; color: #6b7280; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; }
+        .data-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+        .data-table tr:hover { background: #f9fafb; }
+        .workflow-step { background: #f9fafb; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid #667eea; display: flex; align-items: center; gap: 10px; }
+        .workflow-step-number { background: #667eea; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+        .workflow-step-content { flex: 1; display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: center; }
+        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; display: none; }
         .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
-        .alert.info { background: #dbeafe; color: #1e40af; border-left: 4px solid #3b82f6; }
+        .alert.error { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
         .alert i { margin-right: 8px; }
-        .total-time {
-            background: #f0fdf4;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            border: 2px solid #10b981;
-        }
-        .total-time-value {
-            font-size: 32px;
-            font-weight: 700;
-            color: #065f46;
-        }
-        .total-time-label {
-            font-size: 14px;
-            color: #6b7280;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .range-value { display: inline-block; min-width: 40px; text-align: center; font-weight: 600; color: #667eea; }
+        .category-select { height: 150px; }
+        @media (max-width: 768px) { 
+            .form-grid { grid-template-columns: 1fr; }
+            .workflow-step-content { grid-template-columns: 1fr; }
         }
     </style>
     
-    <?php 
-    production_page_nav('routes');
+    <?php production_page_nav('routes'); ?>
     
-    global $wpdb;
-    $dept_table = $wpdb->prefix . 'production_departments';
-    $departments = $wpdb->get_results("SELECT * FROM {$dept_table} WHERE is_active = 1 ORDER BY name ASC");
-    
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_routes'])) {
-        check_admin_referer('production_save_routes');
-        
-        $product_id = absint($_POST['product_id']);
-        $routes = [];
-        
-        if (isset($_POST['routes'])) {
-            foreach ($_POST['routes'] as $route_data) {
-                $routes[] = [
-                    'department_id' => absint($route_data['department_id']),
-                    'estimated_time' => absint($route_data['estimated_time']),
-                    'setup_time' => absint($route_data['setup_time'] ?? 0),
-                    'notes' => sanitize_textarea_field($route_data['notes'] ?? '')
-                ];
-            }
-        }
-        
-        Production_Routes::save_product_routes($product_id, $routes);
-        echo '<div class="alert success"><i class="fa-solid fa-check-circle"></i> Product routes saved successfully!</div>';
-    }
-    
-    // Get selected product if provided
-    $selected_product_id = isset($_GET['product_id']) ? absint($_GET['product_id']) : 0;
-    $selected_product = null;
-    $existing_routes = [];
-    
-    if ($selected_product_id) {
-        $selected_product = wc_get_product($selected_product_id);
-        $existing_routes = Production_Routes::get_product_routes($selected_product_id);
-    }
-    ?>
+    <div id="alertBox" class="alert"></div>
     
     <div class="card">
-        <h3><i class="fa-solid fa-route"></i> Product Route Configuration</h3>
-        <p style="color:#6b7280;margin-bottom:20px;">
-            Define the production workflow for products. Specify which departments a product must pass through and the time required for each step.
-        </p>
-        
-        <!-- Product Search -->
-        <div class="product-search">
-            <label class="form-label">Select Product</label>
-            <input type="text" id="productSearch" class="form-control" placeholder="Search for a product..." 
-                value="<?= $selected_product ? esc_attr($selected_product->get_name()) : '' ?>">
-            <div id="productSearchResults" class="product-search-results"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h3 style="margin:0;"><i class="fa-solid fa-layer-group"></i> Cabinet Types</h3>
+            <button type="button" id="addNewTypeBtn" class="btn btn-primary">
+                <i class="fa-solid fa-plus"></i> Add Cabinet Type
+            </button>
         </div>
         
-        <div id="routeConfigSection" style="<?= $selected_product_id ? '' : 'display:none' ?>">
-            <form method="post" id="routeForm">
-                <?php wp_nonce_field('production_save_routes'); ?>
-                <input type="hidden" name="product_id" id="selectedProductId" value="<?= esc_attr($selected_product_id) ?>">
-                <input type="hidden" name="save_routes" value="1">
-                
-                <div id="routeSteps">
-                    <?php if (!empty($existing_routes)): ?>
-                        <?php foreach ($existing_routes as $index => $route): ?>
-                        <div class="route-step">
-                            <div class="route-step-header">
-                                <span class="route-step-number"><?= $index + 1 ?></span>
-                                <strong>Step <?= $index + 1 ?></strong>
-                            </div>
-                            <div class="route-step-content">
-                                <div class="form-group">
-                                    <label class="form-label">Department</label>
-                                    <select name="routes[<?= $index ?>][department_id]" class="form-select" required>
-                                        <option value="">Select Department</option>
-                                        <?php foreach ($departments as $dept): ?>
-                                        <option value="<?= esc_attr($dept->id) ?>" <?= selected($route->department_id, $dept->id, false) ?>>
-                                            <?= esc_html($dept->name) ?>
-                                        </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Time per Unit (min)</label>
-                                    <input type="number" name="routes[<?= $index ?>][estimated_time]" class="form-control" value="<?= esc_attr($route->estimated_time) ?>" min="1" required>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Setup Time (min)</label>
-                                    <input type="number" name="routes[<?= $index ?>][setup_time]" class="form-control" value="<?= esc_attr($route->setup_time) ?>" min="0">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Notes</label>
-                                    <input type="text" name="routes[<?= $index ?>][notes]" class="form-control" value="<?= esc_attr($route->notes ?? '') ?>" placeholder="Optional notes">
-                                </div>
-                                <div style="padding-top:28px;">
-                                    <button type="button" class="btn btn-danger btn-sm remove-step">
-                                        <i class="fa-solid fa-trash"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-                
-                <div style="margin:20px 0;">
-                    <button type="button" id="addStepBtn" class="btn btn-success">
-                        <i class="fa-solid fa-plus"></i> Add Production Step
-                    </button>
-                </div>
-                
-                <?php if (!empty($existing_routes)): ?>
-                <div class="total-time">
-                    <div class="total-time-value">
-                        <?php
-                        $total_time = 0;
-                        foreach ($existing_routes as $route) {
-                            $total_time += $route->estimated_time + $route->setup_time;
-                        }
-                        echo $total_time;
-                        ?> min
-                    </div>
-                    <div class="total-time-label">Total Production Time (per unit)</div>
-                </div>
-                <?php endif; ?>
-                
-                <div style="margin-top:20px;">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fa-solid fa-save"></i> Save Routes
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
-    <?php if (!$selected_product_id): ?>
-    <div class="card">
-        <h3><i class="fa-solid fa-info-circle"></i> Recent Products with Routes</h3>
-        <?php
-        global $wpdb;
-        $routes_table = $wpdb->prefix . 'production_routes';
-        $products_with_routes = $wpdb->get_results("
-            SELECT DISTINCT product_id, COUNT(*) as route_count
-            FROM {$routes_table}
-            GROUP BY product_id
-            ORDER BY product_id DESC
-            LIMIT 10
-        ");
-        
-        if ($products_with_routes):
-        ?>
-        <table style="width:100%;border-collapse:collapse;margin-top:15px;">
-            <thead style="background:#f9fafb;">
+        <?php if (empty($cabinet_types)): ?>
+            <p style="color:#6b7280;text-align:center;padding:40px;">No cabinet types configured yet. Click "Add Cabinet Type" to create one.</p>
+        <?php else: ?>
+        <table class="data-table">
+            <thead>
                 <tr>
-                    <th style="padding:10px;text-align:left;border-bottom:2px solid #e5e7eb;">Product</th>
-                    <th style="padding:10px;text-align:left;border-bottom:2px solid #e5e7eb;">Routes Count</th>
-                    <th style="padding:10px;text-align:left;border-bottom:2px solid #e5e7eb;">Action</th>
+                    <th>Name</th>
+                    <th>Workflow</th>
+                    <th>Duration</th>
+                    <th>Categories</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($products_with_routes as $item): 
-                    $product = wc_get_product($item->product_id);
-                    if (!$product) continue;
+                <?php foreach ($cabinet_types as $type): 
+                    $workflows = $wpdb->get_results($wpdb->prepare(
+                        "SELECT w.*, d.name as dept_name 
+                        FROM {$workflows_table} w 
+                        LEFT JOIN {$dept_table} d ON w.department_id = d.id 
+                        WHERE w.cabinet_type_id = %d 
+                        ORDER BY w.sequence_order ASC", 
+                        $type->id
+                    ));
+                    
+                    $workflow_names = array_map(function($w) { return $w->dept_name; }, $workflows);
+                    $total_duration = array_sum(array_map(function($w) { return $w->duration_minutes; }, $workflows));
+                    
+                    $assigned_categories = $wpdb->get_results($wpdb->prepare(
+                        "SELECT category_id FROM {$categories_table} WHERE cabinet_type_id = %d",
+                        $type->id
+                    ));
+                    $category_count = count($assigned_categories);
                 ?>
                 <tr>
-                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;"><?= esc_html($product->get_name()) ?></td>
-                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;"><?= esc_html($item->route_count) ?> steps</td>
-                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;">
-                        <a href="?product_id=<?= esc_attr($item->product_id) ?>" class="btn btn-sm btn-primary">
-                            <i class="fa-solid fa-edit"></i> Edit Routes
-                        </a>
+                    <td>
+                        <span class="type-badge" style="background:<?= esc_attr($type->color) ?>">
+                            <?= esc_html($type->name) ?>
+                        </span>
+                    </td>
+                    <td>
+                        <div class="workflow-preview">
+                            <?= !empty($workflow_names) ? implode(' → ', array_map('esc_html', $workflow_names)) : 'No workflow defined' ?>
+                        </div>
+                    </td>
+                    <td><?= esc_html($total_duration) ?> min</td>
+                    <td><?= $category_count ?> categor<?= $category_count === 1 ? 'y' : 'ies' ?></td>
+                    <td>
+                        <button class="btn btn-sm btn-primary edit-type-btn" data-id="<?= esc_attr($type->id) ?>">
+                            <i class="fa-solid fa-edit"></i> Edit
+                        </button>
+                        <button class="btn btn-sm btn-danger delete-type-btn" data-id="<?= esc_attr($type->id) ?>">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
-        <?php else: ?>
-        <p style="color:#6b7280;text-align:center;padding:40px;">No products with routes yet. Search for a product above to get started.</p>
         <?php endif; ?>
     </div>
-    <?php endif; ?>
+    
+    <!-- Cabinet Type Form -->
+    <div class="card" id="cabinetTypeForm" style="display:none;">
+        <h3><i class="fa-solid fa-edit"></i> <span id="formTitle">Add Cabinet Type</span></h3>
+        
+        <form id="typeForm">
+            <input type="hidden" id="typeId" name="id" value="0">
+            
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Type Name *</label>
+                    <input type="text" id="typeName" name="name" class="form-control" placeholder="e.g., Base Cabinet" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <input type="color" id="typeColor" name="color" class="form-control" value="#667eea">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea id="typeDescription" name="description" class="form-control" rows="2" placeholder="Optional description"></textarea>
+            </div>
+            
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Time Multiplier: <span class="range-value" id="multiplierValue">1.00</span></label>
+                    <input type="range" id="timeMultiplier" name="time_multiplier" class="form-control" min="0.5" max="3" step="0.1" value="1.0" style="padding:0;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Base Duration (min)</label>
+                    <input type="number" id="baseDuration" name="base_duration" class="form-control" value="0" min="0">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Product Categories</label>
+                <select id="typeCategories" name="categories[]" class="form-control category-select" multiple>
+                    <?php foreach ($categories as $category): ?>
+                    <option value="<?= esc_attr($category->term_id) ?>"><?= esc_html($category->name) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <small style="color:#6b7280;">Hold Ctrl/Cmd to select multiple categories</small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Department Workflow</label>
+                <div id="workflowSteps"></div>
+                <button type="button" id="addWorkflowStepBtn" class="btn btn-success btn-sm" style="margin-top:10px;">
+                    <i class="fa-solid fa-plus"></i> Add Step
+                </button>
+            </div>
+            
+            <div style="display:flex;gap:10px;margin-top:20px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-save"></i> Save Cabinet Type
+                </button>
+                <button type="button" id="cancelFormBtn" class="btn btn-secondary">
+                    <i class="fa-solid fa-times"></i> Cancel
+                </button>
+            </div>
+        </form>
+    </div>
     
     <script>
     jQuery(document).ready(function($) {
-        let stepCounter = <?= count($existing_routes) ?>;
+        const departments = <?= json_encode($departments) ?>;
+        let workflowCounter = 0;
         
-        // Product search
-        let searchTimeout;
-        $('#productSearch').on('input', function() {
-            clearTimeout(searchTimeout);
-            const query = $(this).val();
-            
-            if (query.length < 2) {
-                $('#productSearchResults').removeClass('active').empty();
-                return;
-            }
-            
-            searchTimeout = setTimeout(() => {
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'search_products',
-                        nonce: '<?= wp_create_nonce('production_ajax') ?>',
-                        query: query
-                    },
-                    success: function(response) {
-                        if (response.success && response.data.length > 0) {
-                            let html = '';
-                            response.data.forEach(product => {
-                                html += `<div class="product-result" data-id="${product.id}">
-                                    <strong>${product.name}</strong><br>
-                                    <small style="color:#6b7280;">ID: ${product.id}</small>
-                                </div>`;
-                            });
-                            $('#productSearchResults').html(html).addClass('active');
-                        } else {
-                            $('#productSearchResults').html('<div style="padding:15px;color:#6b7280;">No products found</div>').addClass('active');
-                        }
-                    }
-                });
-            }, 300);
+        // Show alert
+        function showAlert(message, type = 'success') {
+            $('#alertBox').removeClass('success error').addClass(type).html(`<i class="fa-solid fa-${type === 'success' ? 'check' : 'exclamation'}-circle"></i> ${message}`).fadeIn();
+            setTimeout(() => $('#alertBox').fadeOut(), 5000);
+        }
+        
+        // Time multiplier slider
+        $('#timeMultiplier').on('input', function() {
+            $('#multiplierValue').text(parseFloat($(this).val()).toFixed(2));
         });
         
-        // Select product from search results
-        $(document).on('click', '.product-result', function() {
-            const productId = $(this).data('id');
-            const productName = $(this).find('strong').text();
-            
-            $('#productSearch').val(productName);
-            $('#selectedProductId').val(productId);
-            $('#productSearchResults').removeClass('active');
-            
-            // Reload page with product_id
-            window.location.href = '?product_id=' + productId;
+        // Add new type
+        $('#addNewTypeBtn').on('click', function() {
+            resetForm();
+            $('#formTitle').text('Add Cabinet Type');
+            $('#cabinetTypeForm').slideDown();
+            $('html, body').animate({ scrollTop: $('#cabinetTypeForm').offset().top - 100 }, 500);
         });
         
-        // Close search results when clicking outside
-        $(document).on('click', function(e) {
-            if (!$(e.target).closest('.product-search').length) {
-                $('#productSearchResults').removeClass('active');
-            }
+        // Cancel form
+        $('#cancelFormBtn').on('click', function() {
+            $('#cabinetTypeForm').slideUp();
+            resetForm();
         });
         
-        // Add new step
-        $('#addStepBtn').on('click', function() {
+        // Reset form
+        function resetForm() {
+            $('#typeForm')[0].reset();
+            $('#typeId').val('0');
+            $('#workflowSteps').empty();
+            $('#multiplierValue').text('1.00');
+            workflowCounter = 0;
+        }
+        
+        // Add workflow step
+        $('#addWorkflowStepBtn').on('click', function() {
+            addWorkflowStep();
+        });
+        
+        function addWorkflowStep(deptId = '', duration = '') {
+            workflowCounter++;
             const stepHtml = `
-            <div class="route-step">
-                <div class="route-step-header">
-                    <span class="route-step-number">${stepCounter + 1}</span>
-                    <strong>Step ${stepCounter + 1}</strong>
-                </div>
-                <div class="route-step-content">
-                    <div class="form-group">
-                        <label class="form-label">Department</label>
-                        <select name="routes[${stepCounter}][department_id]" class="form-select" required>
-                            <option value="">Select Department</option>
-                            <?php foreach ($departments as $dept): ?>
-                            <option value="<?= esc_attr($dept->id) ?>"><?= esc_html($dept->name) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Time per Unit (min)</label>
-                        <input type="number" name="routes[${stepCounter}][estimated_time]" class="form-control" min="1" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Setup Time (min)</label>
-                        <input type="number" name="routes[${stepCounter}][setup_time]" class="form-control" value="0" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Notes</label>
-                        <input type="text" name="routes[${stepCounter}][notes]" class="form-control" placeholder="Optional notes">
-                    </div>
-                    <div style="padding-top:28px;">
-                        <button type="button" class="btn btn-danger btn-sm remove-step">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </div>
+            <div class="workflow-step" data-step="${workflowCounter}">
+                <span class="workflow-step-number">${workflowCounter}</span>
+                <div class="workflow-step-content">
+                    <select name="workflow_dept_${workflowCounter}" class="form-select" required>
+                        <option value="">Select Department</option>
+                        ${departments.map(d => `<option value="${d.id}" ${d.id == deptId ? 'selected' : ''}>${d.name}</option>`).join('')}
+                    </select>
+                    <input type="number" name="workflow_duration_${workflowCounter}" class="form-control" placeholder="Duration (min)" value="${duration}" min="0" required>
+                    <button type="button" class="btn btn-danger btn-sm remove-workflow-step"><i class="fa-solid fa-trash"></i></button>
                 </div>
             </div>`;
-            
-            $('#routeSteps').append(stepHtml);
-            stepCounter++;
-            $('#routeConfigSection').show();
-            updateStepNumbers();
+            $('#workflowSteps').append(stepHtml);
+            updateWorkflowNumbers();
+        }
+        
+        // Remove workflow step
+        $(document).on('click', '.remove-workflow-step', function() {
+            $(this).closest('.workflow-step').remove();
+            updateWorkflowNumbers();
         });
         
-        // Remove step
-        $(document).on('click', '.remove-step', function() {
-            $(this).closest('.route-step').remove();
-            updateStepNumbers();
-        });
-        
-        // Update step numbers
-        function updateStepNumbers() {
-            $('.route-step').each(function(index) {
-                $(this).find('.route-step-number').text(index + 1);
-                $(this).find('.route-step-header strong').text('Step ' + (index + 1));
+        // Update workflow step numbers
+        function updateWorkflowNumbers() {
+            $('.workflow-step').each(function(index) {
+                $(this).find('.workflow-step-number').text(index + 1);
             });
         }
+        
+        // Save form
+        $('#typeForm').on('submit', function(e) {
+            e.preventDefault();
+            
+            const workflows = [];
+            $('.workflow-step').each(function() {
+                const step = $(this).data('step');
+                const deptId = $(`[name="workflow_dept_${step}"]`).val();
+                const duration = $(`[name="workflow_duration_${step}"]`).val();
+                if (deptId && duration) {
+                    workflows.push({ department_id: deptId, duration_minutes: duration });
+                }
+            });
+            
+            const formData = {
+                action: 'production_save_cabinet_type',
+                nonce: '<?= wp_create_nonce('production_ajax') ?>',
+                id: $('#typeId').val(),
+                name: $('#typeName').val(),
+                description: $('#typeDescription').val(),
+                color: $('#typeColor').val(),
+                time_multiplier: $('#timeMultiplier').val(),
+                base_duration: $('#baseDuration').val(),
+                workflows: JSON.stringify(workflows),
+                categories: $('#typeCategories').val() || []
+            };
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: formData,
+                success: function(response) {
+                    if (response.success) {
+                        showAlert(response.data.message, 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showAlert(response.data || 'Failed to save', 'error');
+                    }
+                },
+                error: function() {
+                    showAlert('Network error occurred', 'error');
+                }
+            });
+        });
+        
+        // Edit type
+        $(document).on('click', '.edit-type-btn', function() {
+            const typeId = $(this).data('id');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'production_get_cabinet_type',
+                    nonce: '<?= wp_create_nonce('production_ajax') ?>',
+                    id: typeId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        const type = response.data.type;
+                        const workflows = response.data.workflows;
+                        const categories = response.data.categories;
+                        
+                        $('#formTitle').text('Edit Cabinet Type');
+                        $('#typeId').val(type.id);
+                        $('#typeName').val(type.name);
+                        $('#typeDescription').val(type.description || '');
+                        $('#typeColor').val(type.color);
+                        $('#timeMultiplier').val(type.time_multiplier);
+                        $('#multiplierValue').text(parseFloat(type.time_multiplier).toFixed(2));
+                        $('#baseDuration').val(type.base_duration);
+                        
+                        $('#typeCategories').val(categories.map(c => c.category_id));
+                        
+                        $('#workflowSteps').empty();
+                        workflowCounter = 0;
+                        workflows.forEach(w => {
+                            addWorkflowStep(w.department_id, w.duration_minutes);
+                        });
+                        
+                        $('#cabinetTypeForm').slideDown();
+                        $('html, body').animate({ scrollTop: $('#cabinetTypeForm').offset().top - 100 }, 500);
+                    }
+                }
+            });
+        });
+        
+        // Delete type
+        $(document).on('click', '.delete-type-btn', function() {
+            if (!confirm('Are you sure you want to delete this cabinet type?')) return;
+            
+            const typeId = $(this).data('id');
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'production_delete_cabinet_type',
+                    nonce: '<?= wp_create_nonce('production_ajax') ?>',
+                    id: typeId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        showAlert(response.data, 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showAlert(response.data || 'Failed to delete', 'error');
+                    }
+                }
+            });
+        });
     });
     </script>
     

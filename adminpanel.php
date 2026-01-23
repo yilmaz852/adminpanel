@@ -86,17 +86,18 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/production/?$', 'index.php?b2b_adm_page=production', 'top');
     add_rewrite_rule('^b2b-panel/production/schedule/?$', 'index.php?b2b_adm_page=production_schedule', 'top');
     add_rewrite_rule('^b2b-panel/production/departments/?$', 'index.php?b2b_adm_page=production_departments', 'top');
+    add_rewrite_rule('^b2b-panel/production/routes/?$', 'index.php?b2b_adm_page=production_routes', 'top');
     add_rewrite_rule('^b2b-panel/production/calendar/?$', 'index.php?b2b_adm_page=production_calendar', 'top');
     add_rewrite_rule('^b2b-panel/production/analytics/?$', 'index.php?b2b_adm_page=production_analytics', 'top');
     add_rewrite_rule('^b2b-panel/production/settings/?$', 'index.php?b2b_adm_page=production_settings', 'top');
 
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures order edit page rewrites are properly registered
-    if (!get_option('b2b_rewrite_v25_production')) {
+    // Fixed version that ensures production module rewrites are properly registered
+    if (!get_option('b2b_rewrite_v26_production_routes')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v25_production', true);
+        update_option('b2b_rewrite_v26_production_routes', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v24_order_edit');
+        delete_option('b2b_rewrite_v25_production');
     }
 });
 
@@ -2367,7 +2368,7 @@ function b2b_adm_header($title) {
                 <!-- Production Panel (Admin Only) -->
                 <?php if(current_user_can('manage_options')): ?>
                 <div class="nav-item">
-                    <a href="<?= home_url('/b2b-panel/production') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['production','production_schedule','production_departments','production_calendar','production_analytics','production_settings'])?'active':'' ?>" data-title="Production">
+                    <a href="<?= home_url('/b2b-panel/production') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['production','production_schedule','production_departments','production_routes','production_calendar','production_analytics','production_settings'])?'active':'' ?>" data-title="Production">
                         <i class="fa-solid fa-industry"></i> <span class="nav-label">Production</span>
                     </a>
                 </div>

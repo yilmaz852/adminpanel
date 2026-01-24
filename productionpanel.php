@@ -4318,20 +4318,27 @@ function production_order_statuses_page() {
                 $icon = sanitize_text_field($_POST['icon']);
                 $display_order = absint($_POST['display_order']);
                 
-                $result = $wpdb->insert($table, [
-                    'status_key' => $status_key,
-                    'label' => $label,
-                    'description' => $description,
-                    'color' => $color,
-                    'icon' => $icon,
-                    'display_order' => $display_order,
-                    'is_active' => 1
-                ]);
+                // Check if status key already exists
+                $existing = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE status_key = %s", $status_key));
                 
-                if ($result) {
-                    echo '<div class="alert success"><i class="fa-solid fa-check-circle"></i> Order status added successfully!</div>';
+                if ($existing > 0) {
+                    echo '<div class="alert error"><i class="fa-solid fa-exclamation-triangle"></i> Failed to add status. A status with key "' . esc_html($status_key) . '" already exists.</div>';
                 } else {
-                    echo '<div class="alert error"><i class="fa-solid fa-exclamation-triangle"></i> Failed to add status. The status key may already exist.</div>';
+                    $result = $wpdb->insert($table, [
+                        'status_key' => $status_key,
+                        'label' => $label,
+                        'description' => $description,
+                        'color' => $color,
+                        'icon' => $icon,
+                        'display_order' => $display_order,
+                        'is_active' => 1
+                    ]);
+                    
+                    if ($result) {
+                        echo '<div class="alert success"><i class="fa-solid fa-check-circle"></i> Order status added successfully!</div>';
+                    } else {
+                        echo '<div class="alert error"><i class="fa-solid fa-exclamation-triangle"></i> Failed to add status. Database error: ' . esc_html($wpdb->last_error) . '</div>';
+                    }
                 }
             }
             
@@ -4368,8 +4375,44 @@ function production_order_statuses_page() {
         }
     }
     
-    // Get all statuses
+    // Get all statuses from our custom table
     $statuses = $wpdb->get_results("SELECT * FROM {$table} ORDER BY display_order ASC, label ASC");
+    
+    // Also get existing WooCommerce order statuses and merge them
+    if (function_exists('wc_get_order_statuses')) {
+        $wc_statuses = wc_get_order_statuses();
+        
+        // Add WooCommerce statuses that aren't in our database yet
+        foreach ($wc_statuses as $status_key => $status_label) {
+            // Remove 'wc-' prefix if present
+            $clean_key = str_replace('wc-', '', $status_key);
+            
+            // Check if this status already exists in our database
+            $exists = false;
+            foreach ($statuses as $custom_status) {
+                if ($custom_status->status_key === $clean_key) {
+                    $exists = true;
+                    break;
+                }
+            }
+            
+            // If it doesn't exist, add it to the display (but mark as WooCommerce-only)
+            if (!$exists) {
+                $wc_status_obj = (object)[
+                    'id' => 0, // 0 indicates this is from WooCommerce, not our DB
+                    'status_key' => $clean_key,
+                    'label' => $status_label,
+                    'description' => 'WooCommerce default status',
+                    'color' => '#6b7280',
+                    'icon' => 'fa-shopping-cart',
+                    'display_order' => 999,
+                    'is_active' => 1,
+                    'is_wc_default' => true
+                ];
+                $statuses[] = $wc_status_obj;
+            }
+        }
+    }
     
     ?>
     
@@ -4405,12 +4448,15 @@ function production_order_statuses_page() {
                 </tr>
                 <?php else: ?>
                 <?php foreach ($statuses as $status): ?>
-                <tr>
+                <tr<?= isset($status->is_wc_default) && $status->is_wc_default ? ' style="background-color: #f9fafb;"' : '' ?>>
                     <td><?= esc_html($status->display_order) ?></td>
                     <td>
                         <div class="status-badge" style="background: <?= esc_attr($status->color) ?>;">
                             <i class="fa-solid <?= esc_attr($status->icon) ?>"></i>
                             <?= esc_html($status->label) ?>
+                            <?php if (isset($status->is_wc_default) && $status->is_wc_default): ?>
+                                <small style="opacity: 0.8;">(WooCommerce)</small>
+                            <?php endif; ?>
                         </div>
                     </td>
                     <td><code>wc-<?= esc_html($status->status_key) ?></code></td>
@@ -4423,6 +4469,9 @@ function production_order_statuses_page() {
                         <?php endif; ?>
                     </td>
                     <td>
+                        <?php if (isset($status->is_wc_default) && $status->is_wc_default): ?>
+                            <span style="color: #6b7280; font-size: 13px;">WooCommerce Default</span>
+                        <?php else: ?>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="showEditModal(<?= esc_attr(json_encode($status)) ?>)">
                             <i class="fa-solid fa-edit"></i> Edit
                         </button>
@@ -4434,6 +4483,7 @@ function production_order_statuses_page() {
                                 <i class="fa-solid fa-trash"></i> Delete
                             </button>
                         </form>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>

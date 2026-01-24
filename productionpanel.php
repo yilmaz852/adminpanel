@@ -3404,6 +3404,9 @@ function production_calendar_page() {
          https://www.jsdelivr.com/package/npm/fullcalendar or generate using openssl dgst -sha384 -->
     
     <script>
+    // Define ajaxurl for frontend
+    var ajaxurl = '<?= admin_url('admin-ajax.php') ?>';
+    
     jQuery(document).ready(function($) {
         const calendarEl = document.getElementById('productionCalendar');
         let calendar;
@@ -3646,12 +3649,29 @@ function production_calendar_page() {
 function production_analytics_page() {
     b2b_adm_header('Production Analytics');
     
+    global $wpdb;
+    $table_schedule = $wpdb->prefix . 'production_schedule';
+    $table_departments = $wpdb->prefix . 'production_departments';
+    $table_status_history = $wpdb->prefix . 'production_status_history';
+    $table_order_statuses = $wpdb->prefix . 'production_order_statuses';
+    
+    // Get date range from filters (default: last 30 days)
+    $start_date = isset($_GET['start']) ? sanitize_text_field($_GET['start']) : date('Y-m-d', strtotime('-30 days'));
+    $end_date = isset($_GET['end']) ? sanitize_text_field($_GET['end']) : date('Y-m-d');
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'all';
+    
     ?>
     <style>
+        .filter-section { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 25px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center; }
+        .filter-section label { font-weight: 500; color: #374151; display: flex; align-items: center; gap: 8px; }
+        .filter-section input[type="date"], .filter-section select { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+        .filter-section .btn { padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
+        .filter-section .btn:hover { background: #5568d3; }
         .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
         .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; color: #ffffff !important; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .stat-card.blue { background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); }
         .stat-card.green { background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); }
+        .stat-card.orange { background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%); }
         .stat-label { font-size: 14px; color: #ffffff !important; opacity: 0.95; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
         .stat-value { font-size: 36px; font-weight: 700; color: #ffffff !important; }
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
@@ -3662,7 +3682,10 @@ function production_analytics_page() {
         .data-table th { padding: 12px; text-align: left; font-weight: 600; color: #6b7280; font-size: 13px; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; }
         .data-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
         .data-table tr:hover { background: #f9fafb; }
-        .color-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge.scheduled { background: #dbeafe; color: #1e40af; }
+        .badge.in-progress { background: #fed7aa; color: #c05621; }
+        .badge.completed { background: #d1fae5; color: #065f46; }
         .page-nav {
             background: white;
             padding: 15px 20px;
@@ -3703,83 +3726,285 @@ function production_analytics_page() {
         }
     </style>
     
-    <?php 
-    production_page_nav('analytics'); 
+    <?php production_page_nav('analytics'); ?>
     
-    global $wpdb;
-    $table_schedule = $wpdb->prefix . 'production_schedule';
-    $table_departments = $wpdb->prefix . 'production_departments';
+    <!-- Date Range Filter -->
+    <div class="filter-section">
+        <label>
+            <i class="fa-solid fa-calendar"></i> Start Date:
+            <input type="date" id="startDate" value="<?= esc_attr($start_date) ?>">
+        </label>
+        <label>
+            <i class="fa-solid fa-calendar"></i> End Date:
+            <input type="date" id="endDate" value="<?= esc_attr($end_date) ?>">
+        </label>
+        <label>
+            <i class="fa-solid fa-filter"></i> Status:
+            <select id="statusFilter">
+                <option value="all" <?= $status_filter === 'all' ? 'selected' : '' ?>>All Statuses</option>
+                <option value="scheduled" <?= $status_filter === 'scheduled' ? 'selected' : '' ?>>Scheduled</option>
+                <option value="in-progress" <?= $status_filter === 'in-progress' ? 'selected' : '' ?>>In Progress</option>
+                <option value="completed" <?= $status_filter === 'completed' ? 'selected' : '' ?>>Completed</option>
+            </select>
+        </label>
+        <button class="btn" onclick="applyFilters()">
+            <i class="fa-solid fa-search"></i> Apply Filters
+        </button>
+    </div>
     
-    // Calculate analytics
-    $total_completed = $wpdb->get_var("SELECT COUNT(*) FROM {$table_schedule} WHERE status = 'completed'");
-    $avg_time = $wpdb->get_var("
-        SELECT AVG(TIMESTAMPDIFF(MINUTE, actual_start, actual_end)) 
-        FROM {$table_schedule} 
-        WHERE status = 'completed' AND actual_start IS NOT NULL AND actual_end IS NOT NULL
+    <?php
+    // Status Duration Statistics
+    $status_stats = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            sh1.status,
+            COUNT(*) as transition_count,
+            AVG(TIMESTAMPDIFF(HOUR, sh1.changed_at, sh2.changed_at)) as avg_hours,
+            MIN(TIMESTAMPDIFF(HOUR, sh1.changed_at, sh2.changed_at)) as min_hours,
+            MAX(TIMESTAMPDIFF(HOUR, sh1.changed_at, sh2.changed_at)) as max_hours
+        FROM {$table_status_history} sh1
+        LEFT JOIN {$table_status_history} sh2 ON sh1.order_id = sh2.order_id 
+            AND sh2.id = (SELECT MIN(id) FROM {$table_status_history} WHERE order_id = sh1.order_id AND id > sh1.id)
+        WHERE sh1.changed_at BETWEEN %s AND %s
+        GROUP BY sh1.status
+        ORDER BY transition_count DESC
+    ", $start_date . ' 00:00:00', $end_date . ' 23:59:59'));
+    
+    // Current Workload by Status
+    $workload_stats = $wpdb->get_results("
+        SELECT 
+            s.status,
+            COUNT(*) as order_count,
+            AVG(TIMESTAMPDIFF(HOUR, s.scheduled_start, s.scheduled_end)) as avg_duration,
+            SUM(TIMESTAMPDIFF(HOUR, s.scheduled_start, s.scheduled_end)) as total_workload
+        FROM {$table_schedule} s
+        WHERE s.status != 'completed'
+        GROUP BY s.status
+        ORDER BY order_count DESC
     ");
     
-    $dept_performance = $wpdb->get_results("
-        SELECT d.name, d.color, 
-            COUNT(s.id) as total_orders,
-            SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
-            AVG(TIMESTAMPDIFF(MINUTE, s.actual_start, s.actual_end)) as avg_time
+    // Department Capacity Analysis
+    $dept_capacity = $wpdb->get_results("
+        SELECT 
+            d.id,
+            d.name,
+            d.workers,
+            d.capacity,
+            d.color,
+            COUNT(s.id) as scheduled_orders,
+            SUM(TIMESTAMPDIFF(HOUR, s.scheduled_start, s.scheduled_end)) as total_hours
         FROM {$table_departments} d
-        LEFT JOIN {$table_schedule} s ON d.id = s.department_id
+        LEFT JOIN {$table_schedule} s ON d.id = s.department_id AND s.status IN ('scheduled', 'in-progress')
         WHERE d.is_active = 1
         GROUP BY d.id
-        ORDER BY completed_orders DESC
+        ORDER BY d.display_order, d.name
     ");
     
+    // Planned Orders with Cabinet Type
+    $planned_orders = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            s.id,
+            s.order_id,
+            s.status,
+            s.scheduled_start,
+            s.scheduled_end,
+            s.quantity,
+            d.name as department_name,
+            d.color as department_color,
+            TIMESTAMPDIFF(HOUR, NOW(), s.scheduled_end) as remaining_hours
+        FROM {$table_schedule} s
+        LEFT JOIN {$table_departments} d ON s.department_id = d.id
+        WHERE s.scheduled_start BETWEEN %s AND %s
+        ORDER BY s.scheduled_start ASC
+        LIMIT 20
+    ", $start_date . ' 00:00:00', $end_date . ' 23:59:59'));
+    
+    // Calculate summary stats
+    $total_scheduled = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table_schedule} WHERE scheduled_start BETWEEN %s AND %s", $start_date . ' 00:00:00', $end_date . ' 23:59:59'));
+    $total_completed = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table_schedule} WHERE status = 'completed' AND actual_end BETWEEN %s AND %s", $start_date . ' 00:00:00', $end_date . ' 23:59:59'));
+    $total_inprogress = $wpdb->get_var("SELECT COUNT(*) FROM {$table_schedule} WHERE status = 'in-progress'");
     ?>
     
+    <!-- Summary Stats -->
     <div class="stat-grid">
         <div class="stat-card green">
-            <div class="stat-label">Total Completed Orders</div>
-            <div class="stat-value"><?= esc_html($total_completed ?: 0) ?></div>
+            <div class="stat-label">Total Scheduled</div>
+            <div class="stat-value"><?= esc_html($total_scheduled ?: 0) ?></div>
         </div>
         <div class="stat-card blue">
-            <div class="stat-label">Average Production Time</div>
-            <div class="stat-value"><?= $avg_time ? round($avg_time) . ' min' : 'N/A' ?></div>
+            <div class="stat-label">In Progress</div>
+            <div class="stat-value"><?= esc_html($total_inprogress ?: 0) ?></div>
+        </div>
+        <div class="stat-card orange">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value"><?= esc_html($total_completed ?: 0) ?></div>
         </div>
     </div>
     
+    <!-- Status Duration Statistics -->
     <div class="card">
-        <h3><i class="fa-solid fa-chart-bar"></i> Department Performance</h3>
-        <?php if ($dept_performance): ?>
+        <h3><i class="fa-solid fa-clock"></i> Status Duration Statistics</h3>
+        <p style="color:#6b7280;margin-bottom:20px;font-size:14px;">Average time spent in each production status</p>
+        <?php if ($status_stats): ?>
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Department</th>
-                    <th>Total Orders</th>
-                    <th>Completed Orders</th>
-                    <th>Completion Rate</th>
-                    <th>Avg Production Time</th>
+                    <th>Status</th>
+                    <th>Average</th>
+                    <th>Minimum</th>
+                    <th>Maximum</th>
+                    <th>Transition Count</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($dept_performance as $perf): ?>
+                <?php foreach ($status_stats as $stat): ?>
                 <tr>
-                    <td>
-                        <span style="display:inline-block;width:10px;height:10px;background:<?= esc_attr($perf->color) ?>;border-radius:50%;margin-right:5px;"></span>
-                        <strong><?= esc_html($perf->name) ?></strong>
-                    </td>
-                    <td><?= esc_html($perf->total_orders ?: 0) ?></td>
-                    <td><?= esc_html($perf->completed_orders ?: 0) ?></td>
-                    <td>
-                        <?php 
-                        $rate = $perf->total_orders > 0 ? round(($perf->completed_orders / $perf->total_orders) * 100) : 0;
-                        echo esc_html($rate) . '%';
-                        ?>
-                    </td>
-                    <td><?= $perf->avg_time ? round($perf->avg_time) . ' min' : 'N/A' ?></td>
+                    <td><strong><?= esc_html(ucwords(str_replace('-', ' ', $stat->status))) ?></strong></td>
+                    <td><?= $stat->avg_hours ? round($stat->avg_hours, 1) . ' hours' : 'N/A' ?></td>
+                    <td><?= $stat->min_hours ? round($stat->min_hours, 1) . ' hours' : 'N/A' ?></td>
+                    <td><?= $stat->max_hours ? round($stat->max_hours, 1) . ' hours' : 'N/A' ?></td>
+                    <td><?= esc_html($stat->transition_count) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
         <?php else: ?>
-        <p style="color:var(--text-muted);text-align:center;padding:40px">No data available yet.</p>
+        <p style="color:#6b7280;text-align:center;padding:40px">No status history data available for the selected period.</p>
         <?php endif; ?>
     </div>
+    
+    <!-- Current Workload -->
+    <div class="card">
+        <h3><i class="fa-solid fa-tasks"></i> Current Workload by Status</h3>
+        <p style="color:#6b7280;margin-bottom:20px;font-size:14px;">Active orders and estimated workload</p>
+        <?php if ($workload_stats): ?>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Order Count</th>
+                    <th>Average Duration</th>
+                    <th>Estimated Workload</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($workload_stats as $wl): ?>
+                <tr>
+                    <td>
+                        <span class="badge <?= esc_attr($wl->status) ?>"><?= esc_html(ucwords(str_replace('-', ' ', $wl->status))) ?></span>
+                    </td>
+                    <td><?= esc_html($wl->order_count) ?></td>
+                    <td><?= $wl->avg_duration ? round($wl->avg_duration, 1) . ' hours' : 'N/A' ?></td>
+                    <td><?= $wl->total_workload ? round($wl->total_workload, 1) . ' hours' : 'N/A' ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?>
+        <p style="color:#6b7280;text-align:center;padding:40px">No active workload data.</p>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Department Capacity -->
+    <div class="card">
+        <h3><i class="fa-solid fa-industry"></i> Department Capacity</h3>
+        <p style="color:#6b7280;margin-bottom:15px;font-size:14px;">
+            Department details and workload. For more details, visit the <a href="/b2b-panel/production/departments" style="color:#667eea">Departments page</a>.
+        </p>
+        <?php if ($dept_capacity): ?>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Department</th>
+                    <th>Workers</th>
+                    <th>Processing Time</th>
+                    <th>Per Worker Time</th>
+                    <th>Scheduled Orders</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($dept_capacity as $dept): 
+                    $processing_time = $dept->total_hours ? $dept->total_hours : 0;
+                    $per_worker = $dept->workers > 0 && $processing_time > 0 ? $processing_time / $dept->workers : 0;
+                ?>
+                <tr>
+                    <td>
+                        <span style="display:inline-block;width:10px;height:10px;background:<?= esc_attr($dept->color) ?>;border-radius:50%;margin-right:8px;"></span>
+                        <strong><?= esc_html($dept->name) ?></strong>
+                    </td>
+                    <td><?= esc_html($dept->workers) ?> people</td>
+                    <td><?= $processing_time > 0 ? round($processing_time, 1) . ' hours' : '-' ?></td>
+                    <td><?= $per_worker > 0 ? round($per_worker, 1) . ' hours' : '-' ?></td>
+                    <td><?= esc_html($dept->scheduled_orders ?: 0) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?>
+        <p style="color:#6b7280;text-align:center;padding:40px">No department data available.</p>
+        <?php endif; ?>
+    </div>
+    
+    <!-- Planned Orders -->
+    <div class="card">
+        <h3><i class="fa-solid fa-calendar-check"></i> Planned Orders</h3>
+        <p style="color:#6b7280;margin-bottom:20px;font-size:14px;">Upcoming scheduled production orders</p>
+        <?php if ($planned_orders): ?>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Status</th>
+                    <th>Department</th>
+                    <th>Scheduled Start</th>
+                    <th>Scheduled End</th>
+                    <th>Remaining Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($planned_orders as $order): ?>
+                <tr>
+                    <td><strong>#<?= esc_html($order->order_id) ?></strong></td>
+                    <td><span class="badge <?= esc_attr($order->status) ?>"><?= esc_html(ucwords(str_replace('-', ' ', $order->status))) ?></span></td>
+                    <td>
+                        <span style="display:inline-block;width:8px;height:8px;background:<?= esc_attr($order->department_color) ?>;border-radius:50%;margin-right:5px;"></span>
+                        <?= esc_html($order->department_name) ?>
+                    </td>
+                    <td><?= esc_html(date('M d, Y H:i', strtotime($order->scheduled_start))) ?></td>
+                    <td><?= esc_html(date('M d, Y H:i', strtotime($order->scheduled_end))) ?></td>
+                    <td>
+                        <?php 
+                        if ($order->remaining_hours > 24) {
+                            echo round($order->remaining_hours / 24) . ' days';
+                        } else if ($order->remaining_hours > 0) {
+                            echo round($order->remaining_hours) . ' hours';
+                        } else {
+                            echo '<span style="color:#dc2626;">Overdue</span>';
+                        }
+                        ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?>
+        <p style="color:#6b7280;text-align:center;padding:40px">No planned orders for the selected period.</p>
+        <?php endif; ?>
+    </div>
+    
+    <script>
+    function applyFilters() {
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+        const status = document.getElementById('statusFilter').value;
+        
+        const url = new URL(window.location.href);
+        url.searchParams.set('start', start);
+        url.searchParams.set('end', end);
+        url.searchParams.set('status', status);
+        
+        window.location.href = url.toString();
+    }
+    </script>
     
     <?php
     b2b_adm_footer();

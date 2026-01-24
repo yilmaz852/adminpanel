@@ -4375,8 +4375,18 @@ function production_order_statuses_page() {
         }
     }
     
+    // Ensure table exists before querying
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$table}'") === $table;
+    if (!$table_exists) {
+        production_panel_create_tables();
+        $table_exists = true;
+    }
+    
     // Get all statuses from our custom table
     $statuses = $wpdb->get_results("SELECT * FROM {$table} ORDER BY display_order ASC, label ASC");
+    
+    // Define core WooCommerce statuses that should be read-only
+    $wc_core_statuses = ['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed'];
     
     // Also get existing WooCommerce order statuses and merge them
     if (function_exists('wc_get_order_statuses')) {
@@ -4396,18 +4406,19 @@ function production_order_statuses_page() {
                 }
             }
             
-            // If it doesn't exist, add it to the display (but mark as WooCommerce-only)
+            // If it doesn't exist, add it to the display (but only mark core WooCommerce statuses as read-only)
             if (!$exists) {
+                $is_core_wc = in_array($clean_key, $wc_core_statuses);
                 $wc_status_obj = (object)[
                     'id' => 0, // 0 indicates this is from WooCommerce, not our DB
                     'status_key' => $clean_key,
                     'label' => $status_label,
-                    'description' => 'WooCommerce default status',
+                    'description' => $is_core_wc ? 'WooCommerce default status' : 'Custom WooCommerce status',
                     'color' => '#6b7280',
                     'icon' => 'fa-shopping-cart',
                     'display_order' => 999,
                     'is_active' => 1,
-                    'is_wc_default' => true
+                    'is_wc_default' => $is_core_wc // Only mark core WC statuses as default
                 ];
                 $statuses[] = $wc_status_obj;
             }

@@ -201,6 +201,17 @@ function production_panel_create_tables() {
  * ===================================================== */
 add_action('init', 'production_register_order_statuses');
 function production_register_order_statuses() {
+    // Awaiting Production
+    register_post_status('wc-await-prod', [
+        'label'                     => 'Awaiting Production',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop('Awaiting Production <span class="count">(%s)</span>', 'Awaiting Production <span class="count">(%s)</span>')
+    ]);
+    
+    // In Production (General)
     register_post_status('wc-in-production', [
         'label'                     => 'In Production',
         'public'                    => true,
@@ -210,6 +221,47 @@ function production_register_order_statuses() {
         'label_count'               => _n_noop('In Production <span class="count">(%s)</span>', 'In Production <span class="count">(%s)</span>')
     ]);
     
+    // Operation/Planning Stage
+    register_post_status('wc-operation', [
+        'label'                     => 'Operation',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop('Operation <span class="count">(%s)</span>', 'Operation <span class="count">(%s)</span>')
+    ]);
+    
+    // Manufacturing/Production Stage
+    register_post_status('wc-manufacturing', [
+        'label'                     => 'Manufacturing',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop('Manufacturing <span class="count">(%s)</span>', 'Manufacturing <span class="count">(%s)</span>')
+    ]);
+    
+    // Paint Shop
+    register_post_status('wc-paint-shop', [
+        'label'                     => 'Paint Shop',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop('Paint Shop <span class="count">(%s)</span>', 'Paint Shop <span class="count">(%s)</span>')
+    ]);
+    
+    // Assembly
+    register_post_status('wc-assembly', [
+        'label'                     => 'Assembly',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop('Assembly <span class="count">(%s)</span>', 'Assembly <span class="count">(%s)</span>')
+    ]);
+    
+    // Cutting
     register_post_status('wc-cutting', [
         'label'                     => 'Cutting',
         'public'                    => true,
@@ -219,6 +271,7 @@ function production_register_order_statuses() {
         'label_count'               => _n_noop('Cutting <span class="count">(%s)</span>', 'Cutting <span class="count">(%s)</span>')
     ]);
     
+    // Sewing
     register_post_status('wc-sewing', [
         'label'                     => 'Sewing',
         'public'                    => true,
@@ -228,6 +281,7 @@ function production_register_order_statuses() {
         'label_count'               => _n_noop('Sewing <span class="count">(%s)</span>', 'Sewing <span class="count">(%s)</span>')
     ]);
     
+    // Quality Control
     register_post_status('wc-quality-check', [
         'label'                     => 'Quality Control',
         'public'                    => true,
@@ -237,6 +291,7 @@ function production_register_order_statuses() {
         'label_count'               => _n_noop('Quality Control <span class="count">(%s)</span>', 'Quality Control <span class="count">(%s)</span>')
     ]);
     
+    // Packaging
     register_post_status('wc-packaging', [
         'label'                     => 'Packaging',
         'public'                    => true,
@@ -246,6 +301,7 @@ function production_register_order_statuses() {
         'label_count'               => _n_noop('Packaging <span class="count">(%s)</span>', 'Packaging <span class="count">(%s)</span>')
     ]);
     
+    // Ready to Ship
     register_post_status('wc-ready-to-ship', [
         'label'                     => 'Ready to Ship',
         'public'                    => true,
@@ -254,6 +310,33 @@ function production_register_order_statuses() {
         'show_in_admin_status_list' => true,
         'label_count'               => _n_noop('Ready to Ship <span class="count">(%s)</span>', 'Ready to Ship <span class="count">(%s)</span>')
     ]);
+}
+
+// Add custom statuses to WooCommerce order status dropdown
+add_filter('wc_order_statuses', 'production_add_custom_statuses_to_dropdown');
+function production_add_custom_statuses_to_dropdown($order_statuses) {
+    $new_statuses = [];
+    
+    foreach ($order_statuses as $key => $status) {
+        $new_statuses[$key] = $status;
+        
+        // Add production statuses after 'processing'
+        if ($key === 'wc-processing') {
+            $new_statuses['wc-await-prod'] = 'Awaiting Production';
+            $new_statuses['wc-in-production'] = 'In Production';
+            $new_statuses['wc-operation'] = 'Operation';
+            $new_statuses['wc-manufacturing'] = 'Manufacturing';
+            $new_statuses['wc-paint-shop'] = 'Paint Shop';
+            $new_statuses['wc-assembly'] = 'Assembly';
+            $new_statuses['wc-cutting'] = 'Cutting';
+            $new_statuses['wc-sewing'] = 'Sewing';
+            $new_statuses['wc-quality-check'] = 'Quality Control';
+            $new_statuses['wc-packaging'] = 'Packaging';
+            $new_statuses['wc-ready-to-ship'] = 'Ready to Ship';
+        }
+    }
+    
+    return $new_statuses;
 }
 
 /* =====================================================
@@ -2638,6 +2721,143 @@ function production_departments_page() {
         <p style="color:var(--text-muted);text-align:center;padding:40px">No departments found. Add one above.</p>
         <?php endif; ?>
     </div>
+    
+    <?php if ($departments): ?>
+    <!-- Workload Simulation Section -->
+    <div class="card">
+        <h3><i class="fa-solid fa-chart-line"></i> İş Yükü Simülasyonu</h3>
+        <p style="color:#6b7280;margin-bottom:20px;">Personel değişikliklerinin iş yüküne etkisini simüle edin. İşçi sayılarını değiştirip "Simüle Et" butonuna tıklayın.</p>
+        
+        <table class="data-table" id="workload-simulation-table">
+            <thead>
+                <tr>
+                    <th>Departman</th>
+                    <th>Mevcut İşçi</th>
+                    <th>Yeni İşçi</th>
+                    <th>Sipariş</th>
+                    <th>Mevcut İş Yükü</th>
+                    <th>Simüle İş Yükü</th>
+                    <th>Fark</th>
+                </tr>
+            </thead>
+            <tbody id="simulation-tbody">
+                <?php 
+                $workload = production_calculate_department_workload();
+                foreach ($workload as $wl): 
+                    $dept = array_filter($departments, fn($d) => $d->id == $wl['department_id']);
+                    $dept = reset($dept);
+                    if (!$dept) continue;
+                    
+                    $current_hours = floor($wl['scheduled_minutes'] / 60);
+                    $current_mins = $wl['scheduled_minutes'] % 60;
+                ?>
+                <tr data-dept-id="<?= esc_attr($wl['department_id']) ?>">
+                    <td><strong><?= esc_html($wl['department']) ?></strong></td>
+                    <td class="current-workers"><?= esc_html($dept->workers) ?></td>
+                    <td>
+                        <input type="number" 
+                               class="form-control new-workers-input" 
+                               value="<?= esc_attr($dept->workers) ?>" 
+                               min="1" 
+                               max="100"
+                               data-original="<?= esc_attr($dept->workers) ?>"
+                               style="width:80px;padding:5px;text-align:center;">
+                    </td>
+                    <td class="order-count"><?= esc_html($wl['task_count']) ?></td>
+                    <td class="current-workload"><?= $current_hours ?> saat <?= $current_mins ?> dk</td>
+                    <td class="simulated-workload" style="font-weight:600;">-</td>
+                    <td class="workload-diff">-</td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        
+        <div style="margin-top:20px;display:flex;gap:10px;">
+            <button type="button" id="simulate-btn" class="btn btn-primary">
+                <i class="fa-solid fa-play"></i> Simüle Et
+            </button>
+            <button type="button" id="reset-simulation-btn" class="btn btn-secondary" style="background:#6b7280;">
+                <i class="fa-solid fa-rotate-left"></i> Sıfırla
+            </button>
+        </div>
+    </div>
+    
+    <script>
+    jQuery(document).ready(function($) {
+        // Simulate button click
+        $('#simulate-btn').on('click', function() {
+            const $tbody = $('#simulation-tbody');
+            const $rows = $tbody.find('tr');
+            
+            $rows.each(function() {
+                const $row = $(this);
+                const currentWorkers = parseInt($row.find('.current-workers').text(), 10);
+                const newWorkers = parseInt($row.find('.new-workers-input').val(), 10);
+                const currentWorkloadText = $row.find('.current-workload').text();
+                
+                // Parse current workload (e.g., "59 saat 0 dk")
+                const workloadMatch = currentWorkloadText.match(/(\d+)\s*saat\s*(\d+)\s*dk/);
+                if (!workloadMatch) return;
+                
+                const currentHours = parseInt(workloadMatch[1], 10);
+                const currentMins = parseInt(workloadMatch[2], 10);
+                const currentTotalMins = (currentHours * 60) + currentMins;
+                
+                // Calculate simulated workload (proportional to worker ratio)
+                const simulatedTotalMins = currentWorkers > 0 ? 
+                    Math.round(currentTotalMins * (currentWorkers / newWorkers)) : currentTotalMins;
+                
+                const simHours = Math.floor(simulatedTotalMins / 60);
+                const simMins = simulatedTotalMins % 60;
+                
+                // Calculate difference
+                const diffMins = currentTotalMins - simulatedTotalMins;
+                const diffHours = Math.floor(Math.abs(diffMins) / 60);
+                const diffRemainingMins = Math.abs(diffMins) % 60;
+                
+                // Update display
+                $row.find('.simulated-workload').text(simHours + ' saat ' + simMins + ' dk');
+                
+                let diffText = '';
+                let diffColor = '#6b7280';
+                
+                if (diffMins > 0) {
+                    diffText = '-' + diffHours + ' saat ' + diffRemainingMins + ' dk';
+                    diffColor = '#10b981'; // Green (improvement)
+                } else if (diffMins < 0) {
+                    diffText = '+' + diffHours + ' saat ' + diffRemainingMins + ' dk';
+                    diffColor = '#ef4444'; // Red (worse)
+                } else {
+                    diffText = 'Değişiklik yok';
+                }
+                
+                $row.find('.workload-diff').text(diffText).css('color', diffColor).css('font-weight', '600');
+            });
+        });
+        
+        // Reset button click
+        $('#reset-simulation-btn').on('click', function() {
+            const $tbody = $('#simulation-tbody');
+            const $rows = $tbody.find('tr');
+            
+            $rows.each(function() {
+                const $row = $(this);
+                const $input = $row.find('.new-workers-input');
+                const original = parseInt($input.attr('data-original'), 10);
+                
+                $input.val(original);
+                $row.find('.simulated-workload').text('-');
+                $row.find('.workload-diff').text('-').css('color', '#6b7280');
+            });
+        });
+        
+        // Auto-simulate on input change
+        $('.new-workers-input').on('change', function() {
+            $('#simulate-btn').trigger('click');
+        });
+    });
+    </script>
+    <?php endif; ?>
     
     <?php
     b2b_adm_footer();

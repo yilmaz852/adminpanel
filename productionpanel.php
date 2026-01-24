@@ -185,6 +185,24 @@ function production_panel_create_tables() {
     ) {$charset_collate};";
     dbDelta($sql10);
     
+    // Order Status Definitions Table
+    $table_order_statuses = $wpdb->prefix . 'production_order_statuses';
+    $sql11 = "CREATE TABLE IF NOT EXISTS {$table_order_statuses} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        status_key VARCHAR(50) NOT NULL UNIQUE,
+        label VARCHAR(100) NOT NULL,
+        description TEXT,
+        color VARCHAR(7) DEFAULT '#3498db',
+        icon VARCHAR(50) DEFAULT 'fa-box',
+        is_active TINYINT(1) DEFAULT 1,
+        display_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_active (is_active),
+        INDEX idx_order (display_order)
+    ) {$charset_collate};";
+    dbDelta($sql11);
+    
     // Initialize default settings
     if (!get_option('production_panel_settings')) {
         add_option('production_panel_settings', [
@@ -194,6 +212,28 @@ function production_panel_create_tables() {
             'notifications_enabled' => 0
         ]);
     }
+    
+    // Initialize default order statuses if none exist
+    $existing_statuses = $wpdb->get_var("SELECT COUNT(*) FROM {$table_order_statuses}");
+    if ($existing_statuses == 0) {
+        $default_statuses = [
+            ['status_key' => 'await-prod', 'label' => 'Awaiting Production', 'color' => '#f59e0b', 'icon' => 'fa-clock', 'display_order' => 1],
+            ['status_key' => 'in-production', 'label' => 'In Production', 'color' => '#3b82f6', 'icon' => 'fa-cogs', 'display_order' => 2],
+            ['status_key' => 'operation', 'label' => 'Operation', 'color' => '#8b5cf6', 'icon' => 'fa-clipboard-list', 'display_order' => 3],
+            ['status_key' => 'manufacturing', 'label' => 'Manufacturing', 'color' => '#06b6d4', 'icon' => 'fa-industry', 'display_order' => 4],
+            ['status_key' => 'paint-shop', 'label' => 'Paint Shop', 'color' => '#ec4899', 'icon' => 'fa-paint-brush', 'display_order' => 5],
+            ['status_key' => 'assembly', 'label' => 'Assembly', 'color' => '#10b981', 'icon' => 'fa-screwdriver-wrench', 'display_order' => 6],
+            ['status_key' => 'cutting', 'label' => 'Cutting', 'color' => '#ef4444', 'icon' => 'fa-scissors', 'display_order' => 7],
+            ['status_key' => 'sewing', 'label' => 'Sewing', 'color' => '#f97316', 'icon' => 'fa-shirt', 'display_order' => 8],
+            ['status_key' => 'quality-check', 'label' => 'Quality Control', 'color' => '#14b8a6', 'icon' => 'fa-check-circle', 'display_order' => 9],
+            ['status_key' => 'packaging', 'label' => 'Packaging', 'color' => '#a855f7', 'icon' => 'fa-box-open', 'display_order' => 10],
+            ['status_key' => 'ready-to-ship', 'label' => 'Ready to Ship', 'color' => '#22c55e', 'icon' => 'fa-truck', 'display_order' => 11],
+        ];
+        
+        foreach ($default_statuses as $status) {
+            $wpdb->insert($table_order_statuses, $status);
+        }
+    }
 }
 
 /* =====================================================
@@ -201,120 +241,37 @@ function production_panel_create_tables() {
  * ===================================================== */
 add_action('init', 'production_register_order_statuses');
 function production_register_order_statuses() {
-    // Awaiting Production
-    register_post_status('wc-await-prod', [
-        'label'                     => 'Awaiting Production',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Awaiting Production <span class="count">(%s)</span>', 'Awaiting Production <span class="count">(%s)</span>')
-    ]);
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_order_statuses';
     
-    // In Production (General)
-    register_post_status('wc-in-production', [
-        'label'                     => 'In Production',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('In Production <span class="count">(%s)</span>', 'In Production <span class="count">(%s)</span>')
-    ]);
+    // Get active statuses from database
+    $statuses = $wpdb->get_results("SELECT * FROM {$table} WHERE is_active = 1 ORDER BY display_order ASC");
     
-    // Operation/Planning Stage
-    register_post_status('wc-operation', [
-        'label'                     => 'Operation',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Operation <span class="count">(%s)</span>', 'Operation <span class="count">(%s)</span>')
-    ]);
-    
-    // Manufacturing/Production Stage
-    register_post_status('wc-manufacturing', [
-        'label'                     => 'Manufacturing',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Manufacturing <span class="count">(%s)</span>', 'Manufacturing <span class="count">(%s)</span>')
-    ]);
-    
-    // Paint Shop
-    register_post_status('wc-paint-shop', [
-        'label'                     => 'Paint Shop',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Paint Shop <span class="count">(%s)</span>', 'Paint Shop <span class="count">(%s)</span>')
-    ]);
-    
-    // Assembly
-    register_post_status('wc-assembly', [
-        'label'                     => 'Assembly',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Assembly <span class="count">(%s)</span>', 'Assembly <span class="count">(%s)</span>')
-    ]);
-    
-    // Cutting
-    register_post_status('wc-cutting', [
-        'label'                     => 'Cutting',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Cutting <span class="count">(%s)</span>', 'Cutting <span class="count">(%s)</span>')
-    ]);
-    
-    // Sewing
-    register_post_status('wc-sewing', [
-        'label'                     => 'Sewing',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Sewing <span class="count">(%s)</span>', 'Sewing <span class="count">(%s)</span>')
-    ]);
-    
-    // Quality Control
-    register_post_status('wc-quality-check', [
-        'label'                     => 'Quality Control',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Quality Control <span class="count">(%s)</span>', 'Quality Control <span class="count">(%s)</span>')
-    ]);
-    
-    // Packaging
-    register_post_status('wc-packaging', [
-        'label'                     => 'Packaging',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Packaging <span class="count">(%s)</span>', 'Packaging <span class="count">(%s)</span>')
-    ]);
-    
-    // Ready to Ship
-    register_post_status('wc-ready-to-ship', [
-        'label'                     => 'Ready to Ship',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Ready to Ship <span class="count">(%s)</span>', 'Ready to Ship <span class="count">(%s)</span>')
-    ]);
+    // Register each status with WordPress
+    foreach ($statuses as $status) {
+        $status_code = 'wc-' . $status->status_key;
+        $label = $status->label;
+        
+        register_post_status($status_code, [
+            'label'                     => $label,
+            'public'                    => true,
+            'exclude_from_search'       => false,
+            'show_in_admin_all_list'    => true,
+            'show_in_admin_status_list' => true,
+            'label_count'               => _n_noop($label . ' <span class="count">(%s)</span>', $label . ' <span class="count">(%s)</span>')
+        ]);
+    }
 }
 
 // Add custom statuses to WooCommerce order status dropdown
 add_filter('wc_order_statuses', 'production_add_custom_statuses_to_dropdown');
 function production_add_custom_statuses_to_dropdown($order_statuses) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_order_statuses';
+    
+    // Get active statuses from database
+    $statuses = $wpdb->get_results("SELECT * FROM {$table} WHERE is_active = 1 ORDER BY display_order ASC");
+    
     $new_statuses = [];
     
     foreach ($order_statuses as $key => $status) {
@@ -322,17 +279,10 @@ function production_add_custom_statuses_to_dropdown($order_statuses) {
         
         // Add production statuses after 'processing'
         if ($key === 'wc-processing') {
-            $new_statuses['wc-await-prod'] = 'Awaiting Production';
-            $new_statuses['wc-in-production'] = 'In Production';
-            $new_statuses['wc-operation'] = 'Operation';
-            $new_statuses['wc-manufacturing'] = 'Manufacturing';
-            $new_statuses['wc-paint-shop'] = 'Paint Shop';
-            $new_statuses['wc-assembly'] = 'Assembly';
-            $new_statuses['wc-cutting'] = 'Cutting';
-            $new_statuses['wc-sewing'] = 'Sewing';
-            $new_statuses['wc-quality-check'] = 'Quality Control';
-            $new_statuses['wc-packaging'] = 'Packaging';
-            $new_statuses['wc-ready-to-ship'] = 'Ready to Ship';
+            foreach ($statuses as $custom_status) {
+                $status_code = 'wc-' . $custom_status->status_key;
+                $new_statuses[$status_code] = $custom_status->label;
+            }
         }
     }
     
@@ -1617,7 +1567,16 @@ add_action('template_redirect', function() {
 });
 
 /* =====================================================
- * 15. NAVIGATION HELPER
+ * 15. ORDER STATUS SETTINGS PAGE
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_order_statuses') return;
+    b2b_adm_guard();
+    production_order_statuses_page();
+});
+
+/* =====================================================
+ * 16. NAVIGATION HELPER
  * ===================================================== */
 function production_page_nav($active_page = 'dashboard') {
     $pages = [
@@ -4016,6 +3975,381 @@ function production_settings_page() {
             <button type="submit" class="button primary">Save Settings</button>
         </form>
     </div>
+    
+    <div class="card">
+        <h3>Additional Settings</h3>
+        <a href="<?= home_url('/b2b-panel/production/order-statuses') ?>" class="nav-btn">
+            <i class="fa-solid fa-list-check"></i> Manage Order Statuses
+        </a>
+    </div>
+    
+    <?php
+    b2b_adm_footer();
+    exit;
+}
+
+/* =====================================================
+ * 14. ORDER STATUS SETTINGS PAGE
+ * ===================================================== */
+function production_order_statuses_page() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_order_statuses';
+    
+    b2b_adm_header('Order Status Settings');
+    
+    ?>
+    <style>
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .card h3 { margin: 0 0 20px 0; font-size: 18px; color: #1f2937; font-weight: 600; }
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-weight: 600; color: #374151; margin-bottom: 8px; font-size: 14px; }
+        .form-control { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+        .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .form-control-sm { max-width: 200px; }
+        .btn { padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a67d8; }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .alert { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .alert.success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+        .alert.error { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
+        .alert i { margin-right: 8px; }
+        .status-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .status-table th { background: #f9fafb; padding: 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+        .status-table td { padding: 12px; border-bottom: 1px solid #e5e7eb; }
+        .status-table tr:hover { background: #f9fafb; }
+        .status-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: white; }
+        .status-icon { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .nav-btn i {
+            font-size: 16px;
+        }
+        .color-picker { width: 60px; height: 40px; padding: 2px; cursor: pointer; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal-content { background: white; max-width: 600px; margin: 50px auto; padding: 30px; border-radius: 12px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h3 { margin: 0; }
+        .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280; }
+        .modal-close:hover { color: #374151; }
+    </style>
+    
+    <div class="page-nav">
+        <a href="<?= home_url('/b2b-panel/production/settings') ?>" class="nav-btn">
+            <i class="fa-solid fa-arrow-left"></i> Back to Settings
+        </a>
+    </div>
+    
+    <?php
+    
+    // Handle form submissions
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_wpnonce'])) {
+        if (isset($_POST['action'])) {
+            $action = sanitize_text_field($_POST['action']);
+            
+            // Add new status
+            if ($action === 'add' && check_admin_referer('production_add_status')) {
+                $status_key = sanitize_title($_POST['status_key']);
+                $label = sanitize_text_field($_POST['label']);
+                $description = sanitize_textarea_field($_POST['description']);
+                $color = sanitize_hex_color($_POST['color']);
+                $icon = sanitize_text_field($_POST['icon']);
+                $display_order = absint($_POST['display_order']);
+                
+                $result = $wpdb->insert($table, [
+                    'status_key' => $status_key,
+                    'label' => $label,
+                    'description' => $description,
+                    'color' => $color,
+                    'icon' => $icon,
+                    'display_order' => $display_order,
+                    'is_active' => 1
+                ]);
+                
+                if ($result) {
+                    echo '<div class="alert success"><i class="fa-solid fa-check-circle"></i> Order status added successfully!</div>';
+                } else {
+                    echo '<div class="alert error"><i class="fa-solid fa-exclamation-triangle"></i> Failed to add status. The status key may already exist.</div>';
+                }
+            }
+            
+            // Edit status
+            elseif ($action === 'edit' && check_admin_referer('production_edit_status')) {
+                $id = absint($_POST['status_id']);
+                $label = sanitize_text_field($_POST['label']);
+                $description = sanitize_textarea_field($_POST['description']);
+                $color = sanitize_hex_color($_POST['color']);
+                $icon = sanitize_text_field($_POST['icon']);
+                $display_order = absint($_POST['display_order']);
+                $is_active = isset($_POST['is_active']) ? 1 : 0;
+                
+                $result = $wpdb->update($table, [
+                    'label' => $label,
+                    'description' => $description,
+                    'color' => $color,
+                    'icon' => $icon,
+                    'display_order' => $display_order,
+                    'is_active' => $is_active
+                ], ['id' => $id]);
+                
+                if ($result !== false) {
+                    echo '<div class="alert success"><i class="fa-solid fa-check-circle"></i> Order status updated successfully!</div>';
+                }
+            }
+            
+            // Delete status
+            elseif ($action === 'delete' && check_admin_referer('production_delete_status')) {
+                $id = absint($_POST['status_id']);
+                $wpdb->delete($table, ['id' => $id]);
+                echo '<div class="alert success"><i class="fa-solid fa-check-circle"></i> Order status deleted successfully!</div>';
+            }
+        }
+    }
+    
+    // Get all statuses
+    $statuses = $wpdb->get_results("SELECT * FROM {$table} ORDER BY display_order ASC, label ASC");
+    
+    ?>
+    
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Order Status Management</h3>
+            <button type="button" class="btn btn-primary" onclick="showAddModal()">
+                <i class="fa-solid fa-plus"></i> Add New Status
+            </button>
+        </div>
+        
+        <p style="color: #6b7280; margin-bottom: 20px;">
+            Manage custom order statuses for your production workflow. These statuses will be automatically integrated with WooCommerce.
+        </p>
+        
+        <table class="status-table">
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Status</th>
+                    <th>Key</th>
+                    <th>Description</th>
+                    <th>Active</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($statuses)): ?>
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 40px; color: #6b7280;">
+                        No order statuses found. Click "Add New Status" to create one.
+                    </td>
+                </tr>
+                <?php else: ?>
+                <?php foreach ($statuses as $status): ?>
+                <tr>
+                    <td><?= esc_html($status->display_order) ?></td>
+                    <td>
+                        <div class="status-badge" style="background: <?= esc_attr($status->color) ?>;">
+                            <i class="fa-solid <?= esc_attr($status->icon) ?>"></i>
+                            <?= esc_html($status->label) ?>
+                        </div>
+                    </td>
+                    <td><code>wc-<?= esc_html($status->status_key) ?></code></td>
+                    <td><?= esc_html($status->description ?: '-') ?></td>
+                    <td>
+                        <?php if ($status->is_active): ?>
+                            <span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-check-circle"></i> Active</span>
+                        <?php else: ?>
+                            <span style="color: #6b7280;"><i class="fa-solid fa-times-circle"></i> Inactive</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="showEditModal(<?= esc_attr(json_encode($status)) ?>)">
+                            <i class="fa-solid fa-edit"></i> Edit
+                        </button>
+                        <form method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this status?');">
+                            <?php wp_nonce_field('production_delete_status'); ?>
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="status_id" value="<?= esc_attr($status->id) ?>">
+                            <button type="submit" class="btn btn-danger btn-sm">
+                                <i class="fa-solid fa-trash"></i> Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Add Status Modal -->
+    <div id="addModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Order Status</h3>
+                <button type="button" class="modal-close" onclick="closeModal('addModal')">&times;</button>
+            </div>
+            <form method="post">
+                <?php wp_nonce_field('production_add_status'); ?>
+                <input type="hidden" name="action" value="add">
+                
+                <div class="form-group">
+                    <label class="form-label">Status Key (lowercase, no spaces)</label>
+                    <input type="text" name="status_key" class="form-control" required pattern="[a-z0-9-]+" placeholder="e.g., quality-control">
+                    <small style="color: #6b7280;">This will create a WooCommerce status like "wc-quality-control"</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Status Label</label>
+                    <input type="text" name="label" class="form-control" required placeholder="e.g., Quality Control">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-control" rows="3" placeholder="Optional description"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <input type="color" name="color" class="color-picker" value="#3498db">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Icon (Font Awesome class)</label>
+                    <input type="text" name="icon" class="form-control form-control-sm" value="fa-box" placeholder="fa-box">
+                    <small style="color: #6b7280;">Examples: fa-box, fa-truck, fa-check-circle</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Display Order</label>
+                    <input type="number" name="display_order" class="form-control form-control-sm" value="<?= count($statuses) + 1 ?>" min="1">
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Add Status</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addModal')">Cancel</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Edit Status Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Order Status</h3>
+                <button type="button" class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <form method="post" id="editForm">
+                <?php wp_nonce_field('production_edit_status'); ?>
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="status_id" id="edit_status_id">
+                
+                <div class="form-group">
+                    <label class="form-label">Status Key</label>
+                    <input type="text" id="edit_status_key" class="form-control" disabled>
+                    <small style="color: #6b7280;">Status key cannot be changed</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Status Label</label>
+                    <input type="text" name="label" id="edit_label" class="form-control" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" id="edit_description" class="form-control" rows="3"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <input type="color" name="color" id="edit_color" class="color-picker">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Icon (Font Awesome class)</label>
+                    <input type="text" name="icon" id="edit_icon" class="form-control form-control-sm">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Display Order</label>
+                    <input type="number" name="display_order" id="edit_display_order" class="form-control form-control-sm" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" name="is_active" id="edit_is_active" value="1">
+                        Status is active
+                    </label>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Update Status</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">Cancel</button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+    function showAddModal() {
+        document.getElementById('addModal').style.display = 'block';
+    }
+    
+    function showEditModal(status) {
+        document.getElementById('edit_status_id').value = status.id;
+        document.getElementById('edit_status_key').value = status.status_key;
+        document.getElementById('edit_label').value = status.label;
+        document.getElementById('edit_description').value = status.description || '';
+        document.getElementById('edit_color').value = status.color;
+        document.getElementById('edit_icon').value = status.icon;
+        document.getElementById('edit_display_order').value = status.display_order;
+        document.getElementById('edit_is_active').checked = status.is_active == 1;
+        document.getElementById('editModal').style.display = 'block';
+    }
+    
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+    
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    }
+    </script>
     
     <?php
     b2b_adm_footer();

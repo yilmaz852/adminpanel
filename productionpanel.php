@@ -4771,3 +4771,874 @@ function production_bom_page() {
     ];
     
     ?>
+    <style>
+        .page-nav {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #4c51bf;
+        }
+        .bom-container {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .bom-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            border-radius: 12px;
+            color: white;
+        }
+        .stat-card.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-card.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-card.info {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 10px 0;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .bom-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .bom-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            font-weight: 500;
+            color: #6b7280;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .bom-tab:hover {
+            color: #667eea;
+        }
+        .bom-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .filter-bar input,
+        .filter-bar select {
+            padding: 10px 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .filter-bar button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-bar button:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+        .materials-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .materials-table th {
+            background: #f9fafb;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .materials-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .materials-table tr:hover {
+            background: #f9fafb;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-wood { background: #fef3c7; color: #92400e; }
+        .badge-hardware { background: #dbeafe; color: #1e40af; }
+        .badge-finish { background: #f3e8ff; color: #6b21a8; }
+        .badge-fabric { background: #fce7f3; color: #9f1239; }
+        .badge-general { background: #e5e7eb; color: #374151; }
+        .badge-warning { background: #fee2e2; color: #991b1b; }
+        .badge-success { background: #d1fae5; color: #065f46; }
+        .action-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-right: 5px;
+            transition: all 0.2s;
+        }
+        .action-btn-edit {
+            background: #3b82f6;
+            color: white;
+        }
+        .action-btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+        .action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-header h2 {
+            margin: 0;
+            color: #1f2937;
+        }
+        .close-modal {
+            font-size: 28px;
+            color: #9ca3af;
+            cursor: pointer;
+            border: none;
+            background: none;
+        }
+        .close-modal:hover {
+            color: #ef4444;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #374151;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+        .empty-state i {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+    </style>
+
+    <?php production_page_nav('bom'); ?>
+
+    <div class="bom-container">
+        <div class="bom-stats">
+            <div class="stat-card">
+                <div class="stat-label">Total Materials</div>
+                <div class="stat-value"><?= number_format($stats['total_materials']) ?></div>
+                <div class="stat-label">Active items in database</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">Low Stock Items</div>
+                <div class="stat-value"><?= number_format($stats['low_stock']) ?></div>
+                <div class="stat-label">Need reordering</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">Inventory Value</div>
+                <div class="stat-value">$<?= number_format($stats['total_value'], 2) ?></div>
+                <div class="stat-label">Total stock value</div>
+            </div>
+            <div class="stat-card info">
+                <div class="stat-label">Products with BOM</div>
+                <div class="stat-value"><?= number_format($stats['products_with_bom']) ?></div>
+                <div class="stat-label">Configured products</div>
+            </div>
+        </div>
+
+        <div class="bom-tabs">
+            <button class="bom-tab active" onclick="switchTab('materials')">
+                <i class="fa-solid fa-box-open"></i> Materials Library
+            </button>
+            <button class="bom-tab" onclick="switchTab('products')">
+                <i class="fa-solid fa-clipboard-list"></i> Product BOMs
+            </button>
+            <button class="bom-tab" onclick="switchTab('reports')">
+                <i class="fa-solid fa-chart-bar"></i> Cost Reports
+            </button>
+        </div>
+
+        <!-- Materials Tab -->
+        <div id="materials-tab" class="tab-content active">
+            <div class="filter-bar">
+                <input type="text" id="search-material" placeholder="Search materials..." style="flex: 1; min-width: 200px;">
+                <select id="filter-category">
+                    <option value="">All Categories</option>
+                    <?php foreach ($categories as $cat): ?>
+                        <option value="<?= esc_attr($cat) ?>"><?= esc_html(ucfirst($cat)) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button onclick="showAddMaterialModal()">
+                    <i class="fa-solid fa-plus"></i> Add Material
+                </button>
+                <button onclick="exportMaterials()" style="background: #10b981;">
+                    <i class="fa-solid fa-file-excel"></i> Export
+                </button>
+            </div>
+
+            <?php if (empty($materials)): ?>
+            <div class="empty-state">
+                <i class="fa-solid fa-box-open"></i>
+                <h3>No Materials Yet</h3>
+                <p>Start by adding materials to your database</p>
+                <button class="btn btn-primary" onclick="showAddMaterialModal()">Add First Material</button>
+            </div>
+            <?php else: ?>
+            <table class="materials-table">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Material Name</th>
+                        <th>Category</th>
+                        <th>Unit</th>
+                        <th>Unit Cost</th>
+                        <th>Stock</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($materials as $material): 
+                        $stock_status = '';
+                        if ($material->current_stock < $material->min_stock_level) {
+                            $stock_status = '<span class="badge badge-warning">Low Stock</span>';
+                        } else {
+                            $stock_status = '<span class="badge badge-success">OK</span>';
+                        }
+                        
+                        $category_badge = 'badge-general';
+                        if ($material->category == 'wood') $category_badge = 'badge-wood';
+                        elseif ($material->category == 'hardware') $category_badge = 'badge-hardware';
+                        elseif ($material->category == 'finish') $category_badge = 'badge-finish';
+                        elseif ($material->category == 'fabric') $category_badge = 'badge-fabric';
+                    ?>
+                    <tr>
+                        <td><strong><?= esc_html($material->material_code) ?></strong></td>
+                        <td><?= esc_html($material->material_name) ?></td>
+                        <td><span class="badge <?= $category_badge ?>"><?= esc_html(ucfirst($material->category)) ?></span></td>
+                        <td><?= esc_html($material->unit) ?></td>
+                        <td>$<?= number_format($material->unit_cost, 2) ?></td>
+                        <td><?= number_format($material->current_stock, 2) ?> <?= esc_html($material->unit) ?></td>
+                        <td><?= $stock_status ?></td>
+                        <td>
+                            <button class="action-btn action-btn-edit" onclick='editMaterial(<?= json_encode($material) ?>)'>
+                                <i class="fa-solid fa-edit"></i> Edit
+                            </button>
+                            <button class="action-btn action-btn-delete" onclick="deleteMaterial(<?= $material->id ?>)">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
+
+        <!-- Product BOMs Tab -->
+        <div id="products-tab" class="tab-content">
+            <div class="filter-bar">
+                <input type="text" id="search-product" placeholder="Search products..." style="flex: 1; min-width: 200px;">
+                <button onclick="showProductBomModal()">
+                    <i class="fa-solid fa-plus"></i> Create BOM
+                </button>
+            </div>
+            
+            <div class="empty-state">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <h3>Product BOM Management</h3>
+                <p>Select a product to view or edit its Bill of Materials</p>
+                <button class="btn btn-primary" onclick="showProductBomModal()">Create Product BOM</button>
+            </div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div id="reports-tab" class="tab-content">
+            <div class="empty-state">
+                <i class="fa-solid fa-chart-bar"></i>
+                <h3>Cost Analysis Reports</h3>
+                <p>Material cost tracking and analysis coming soon</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Material Modal -->
+    <div id="addMaterialModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Material</h2>
+                <button class="close-modal" onclick="closeModal('addMaterialModal')">&times;</button>
+            </div>
+            <form id="addMaterialForm" onsubmit="saveMaterial(event)">
+                <input type="hidden" name="action" value="bom_save_material">
+                <input type="hidden" name="nonce" value="<?= wp_create_nonce('bom_ajax') ?>">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Material Code *</label>
+                        <input type="text" name="material_code" required placeholder="e.g., MDF-18MM">
+                    </div>
+                    <div class="form-group">
+                        <label>Category *</label>
+                        <select name="category" required>
+                            <option value="wood">Wood/Panel</option>
+                            <option value="hardware">Hardware</option>
+                            <option value="finish">Finish/Paint</option>
+                            <option value="fabric">Fabric</option>
+                            <option value="general">General</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Material Name *</label>
+                    <input type="text" name="material_name" required placeholder="e.g., MDF Panel 18mm">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Unit *</label>
+                        <select name="unit" required>
+                            <option value="pcs">Pieces (pcs)</option>
+                            <option value="m2">Square Meter (m²)</option>
+                            <option value="m">Meter (m)</option>
+                            <option value="kg">Kilogram (kg)</option>
+                            <option value="L">Liter (L)</option>
+                            <option value="box">Box</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Unit Cost ($) *</label>
+                        <input type="number" name="unit_cost" step="0.01" required placeholder="0.00">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Min Stock Level</label>
+                        <input type="number" name="min_stock_level" step="0.01" value="0" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Stock</label>
+                        <input type="number" name="current_stock" step="0.01" value="0" placeholder="0">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Supplier</label>
+                    <input type="text" name="supplier" placeholder="Supplier name">
+                </div>
+                
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" placeholder="Additional notes about this material"></textarea>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Save Material</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addMaterialModal')">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Material Modal -->
+    <div id="editMaterialModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Material</h2>
+                <button class="close-modal" onclick="closeModal('editMaterialModal')">&times;</button>
+            </div>
+            <form id="editMaterialForm" onsubmit="updateMaterial(event)">
+                <input type="hidden" name="action" value="bom_update_material">
+                <input type="hidden" name="nonce" value="<?= wp_create_nonce('bom_ajax') ?>">
+                <input type="hidden" name="material_id" id="edit_material_id">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Material Code *</label>
+                        <input type="text" name="material_code" id="edit_material_code" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Category *</label>
+                        <select name="category" id="edit_category" required>
+                            <option value="wood">Wood/Panel</option>
+                            <option value="hardware">Hardware</option>
+                            <option value="finish">Finish/Paint</option>
+                            <option value="fabric">Fabric</option>
+                            <option value="general">General</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Material Name *</label>
+                    <input type="text" name="material_name" id="edit_material_name" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Unit *</label>
+                        <select name="unit" id="edit_unit" required>
+                            <option value="pcs">Pieces (pcs)</option>
+                            <option value="m2">Square Meter (m²)</option>
+                            <option value="m">Meter (m)</option>
+                            <option value="kg">Kilogram (kg)</option>
+                            <option value="L">Liter (L)</option>
+                            <option value="box">Box</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Unit Cost ($) *</label>
+                        <input type="number" name="unit_cost" id="edit_unit_cost" step="0.01" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Min Stock Level</label>
+                        <input type="number" name="min_stock_level" id="edit_min_stock" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Stock</label>
+                        <input type="number" name="current_stock" id="edit_current_stock" step="0.01">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Supplier</label>
+                    <input type="text" name="supplier" id="edit_supplier">
+                </div>
+                
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" id="edit_description"></textarea>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Update Material</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editMaterialModal')">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelectorAll('.bom-tab').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        document.getElementById(tabName + '-tab').classList.add('active');
+        event.target.classList.add('active');
+    }
+    
+    function showAddMaterialModal() {
+        document.getElementById('addMaterialForm').reset();
+        document.getElementById('addMaterialModal').style.display = 'block';
+    }
+    
+    function editMaterial(material) {
+        document.getElementById('edit_material_id').value = material.id;
+        document.getElementById('edit_material_code').value = material.material_code;
+        document.getElementById('edit_material_name').value = material.material_name;
+        document.getElementById('edit_category').value = material.category;
+        document.getElementById('edit_unit').value = material.unit;
+        document.getElementById('edit_unit_cost').value = material.unit_cost;
+        document.getElementById('edit_min_stock').value = material.min_stock_level;
+        document.getElementById('edit_current_stock').value = material.current_stock;
+        document.getElementById('edit_supplier').value = material.supplier || '';
+        document.getElementById('edit_description').value = material.description || '';
+        document.getElementById('editMaterialModal').style.display = 'block';
+    }
+    
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+    
+    function saveMaterial(event) {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        
+        jQuery.ajax({
+            url: '<?= admin_url('admin-ajax.php') ?>',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.success) {
+                    alert('Material saved successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data);
+                }
+            },
+            error: function() {
+                alert('An error occurred. Please try again.');
+            }
+        });
+    }
+    
+    function updateMaterial(event) {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+        
+        jQuery.ajax({
+            url: '<?= admin_url('admin-ajax.php') ?>',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.success) {
+                    alert('Material updated successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data);
+                }
+            },
+            error: function() {
+                alert('An error occurred. Please try again.');
+            }
+        });
+    }
+    
+    function deleteMaterial(materialId) {
+        if (!confirm('Are you sure you want to delete this material?')) return;
+        
+        jQuery.ajax({
+            url: '<?= admin_url('admin-ajax.php') ?>',
+            type: 'POST',
+            data: {
+                action: 'bom_delete_material',
+                nonce: '<?= wp_create_nonce('bom_ajax') ?>',
+                material_id: materialId
+            },
+            success: function(response) {
+                if (response.success) {
+                    alert('Material deleted successfully!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.data);
+                }
+            }
+        });
+    }
+    
+    function exportMaterials() {
+        window.location.href = '<?= admin_url('admin-ajax.php') ?>?action=bom_export_materials&nonce=<?= wp_create_nonce('bom_ajax') ?>';
+    }
+    
+    function showProductBomModal() {
+        alert('Product BOM editor will be available soon!');
+    }
+    
+    window.onclick = function(event) {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    }
+    
+    document.getElementById('search-material')?.addEventListener('input', filterMaterials);
+    document.getElementById('filter-category')?.addEventListener('change', filterMaterials);
+    
+    function filterMaterials() {
+        const searchTerm = document.getElementById('search-material').value.toLowerCase();
+        const category = document.getElementById('filter-category').value.toLowerCase();
+        const rows = document.querySelectorAll('.materials-table tbody tr');
+        
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const matchesSearch = text.includes(searchTerm);
+            const matchesCategory = !category || text.includes(category);
+            
+            if (matchesSearch && matchesCategory) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+    </script>
+
+    <?php
+    b2b_adm_footer();
+    exit;
+}
+
+/* =====================================================
+ * BOM AJAX HANDLERS
+ * ===================================================== */
+
+// Save new material
+add_action('wp_ajax_bom_save_material', function() {
+    check_ajax_referer('bom_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_bom_materials';
+    
+    $data = [
+        'material_code' => sanitize_text_field($_POST['material_code']),
+        'material_name' => sanitize_text_field($_POST['material_name']),
+        'category' => sanitize_text_field($_POST['category']),
+        'unit' => sanitize_text_field($_POST['unit']),
+        'unit_cost' => floatval($_POST['unit_cost']),
+        'supplier' => sanitize_text_field($_POST['supplier'] ?? ''),
+        'min_stock_level' => floatval($_POST['min_stock_level'] ?? 0),
+        'current_stock' => floatval($_POST['current_stock'] ?? 0),
+        'description' => sanitize_textarea_field($_POST['description'] ?? ''),
+        'is_active' => 1
+    ];
+    
+    $result = $wpdb->insert($table, $data);
+    
+    if ($result) {
+        wp_send_json_success('Material saved successfully');
+    } else {
+        wp_send_json_error($wpdb->last_error);
+    }
+});
+
+// Update material
+add_action('wp_ajax_bom_update_material', function() {
+    check_ajax_referer('bom_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_bom_materials';
+    
+    $material_id = intval($_POST['material_id']);
+    $old_cost = $wpdb->get_var($wpdb->prepare("SELECT unit_cost FROM {$table} WHERE id = %d", $material_id));
+    
+    $data = [
+        'material_code' => sanitize_text_field($_POST['material_code']),
+        'material_name' => sanitize_text_field($_POST['material_name']),
+        'category' => sanitize_text_field($_POST['category']),
+        'unit' => sanitize_text_field($_POST['unit']),
+        'unit_cost' => floatval($_POST['unit_cost']),
+        'supplier' => sanitize_text_field($_POST['supplier'] ?? ''),
+        'min_stock_level' => floatval($_POST['min_stock_level'] ?? 0),
+        'current_stock' => floatval($_POST['current_stock'] ?? 0),
+        'description' => sanitize_textarea_field($_POST['description'] ?? '')
+    ];
+    
+    $result = $wpdb->update($table, $data, ['id' => $material_id]);
+    
+    if ($old_cost != $data['unit_cost']) {
+        $history_table = $wpdb->prefix . 'production_bom_cost_history';
+        $wpdb->insert($history_table, [
+            'material_id' => $material_id,
+            'old_cost' => $old_cost,
+            'new_cost' => $data['unit_cost'],
+            'changed_by' => get_current_user_id(),
+            'reason' => 'Manual update'
+        ]);
+    }
+    
+    if ($result !== false) {
+        wp_send_json_success('Material updated successfully');
+    } else {
+        wp_send_json_error($wpdb->last_error);
+    }
+});
+
+// Delete material
+add_action('wp_ajax_bom_delete_material', function() {
+    check_ajax_referer('bom_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized');
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_bom_materials';
+    
+    $material_id = intval($_POST['material_id']);
+    
+    $result = $wpdb->update($table, ['is_active' => 0], ['id' => $material_id]);
+    
+    if ($result !== false) {
+        wp_send_json_success('Material deleted successfully');
+    } else {
+        wp_send_json_error($wpdb->last_error);
+    }
+});
+
+// Export materials to CSV
+add_action('wp_ajax_bom_export_materials', function() {
+    check_ajax_referer('bom_ajax', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    global $wpdb;
+    $table = $wpdb->prefix . 'production_bom_materials';
+    
+    $materials = $wpdb->get_results("SELECT * FROM {$table} WHERE is_active = 1 ORDER BY category, material_name");
+    
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="materials_export_' . date('Y-m-d') . '.csv"');
+    
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Code', 'Name', 'Category', 'Unit', 'Unit Cost', 'Current Stock', 'Min Stock', 'Supplier']);
+    
+    foreach ($materials as $material) {
+        fputcsv($output, [
+            $material->material_code,
+            $material->material_name,
+            $material->category,
+            $material->unit,
+            $material->unit_cost,
+            $material->current_stock,
+            $material->min_stock_level,
+            $material->supplier
+        ]);
+    }
+    
+    fclose($output);
+    exit;
+});

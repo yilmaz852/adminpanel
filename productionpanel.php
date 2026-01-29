@@ -203,6 +203,82 @@ function production_panel_create_tables() {
     ) {$charset_collate};";
     dbDelta($sql11);
     
+    // BOM Materials - Master list of all materials/components
+    $table_bom_materials = $wpdb->prefix . 'production_bom_materials';
+    $sql12 = "CREATE TABLE IF NOT EXISTS {$table_bom_materials} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        material_code VARCHAR(50) UNIQUE NOT NULL,
+        material_name VARCHAR(200) NOT NULL,
+        category VARCHAR(100) DEFAULT 'general' COMMENT 'wood, hardware, finish, fabric, etc',
+        unit VARCHAR(20) DEFAULT 'pcs' COMMENT 'pcs, m2, kg, L, m',
+        unit_cost DECIMAL(10,2) DEFAULT 0.00,
+        supplier VARCHAR(200),
+        min_stock_level DECIMAL(10,2) DEFAULT 0,
+        current_stock DECIMAL(10,2) DEFAULT 0,
+        description TEXT,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_code (material_code),
+        INDEX idx_category (category),
+        INDEX idx_active (is_active)
+    ) {$charset_collate};";
+    dbDelta($sql12);
+    
+    // BOM Items - Bill of Materials for products (what materials are needed)
+    $table_bom_items = $wpdb->prefix . 'production_bom_items';
+    $sql13 = "CREATE TABLE IF NOT EXISTS {$table_bom_items} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        product_id BIGINT UNSIGNED NOT NULL,
+        material_id BIGINT UNSIGNED NOT NULL,
+        quantity DECIMAL(10,3) NOT NULL DEFAULT 1.000,
+        unit VARCHAR(20) NOT NULL,
+        waste_factor DECIMAL(5,2) DEFAULT 0.00 COMMENT 'percentage waste (e.g., 10.00 = 10%)',
+        notes TEXT,
+        sequence_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_product (product_id),
+        INDEX idx_material (material_id),
+        UNIQUE KEY unique_product_material (product_id, material_id)
+    ) {$charset_collate};";
+    dbDelta($sql13);
+    
+    // BOM Cost History - Track material cost changes over time
+    $table_bom_cost_history = $wpdb->prefix . 'production_bom_cost_history';
+    $sql14 = "CREATE TABLE IF NOT EXISTS {$table_bom_cost_history} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        material_id BIGINT UNSIGNED NOT NULL,
+        old_cost DECIMAL(10,2) NOT NULL,
+        new_cost DECIMAL(10,2) NOT NULL,
+        change_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        changed_by BIGINT UNSIGNED,
+        reason VARCHAR(200),
+        INDEX idx_material (material_id),
+        INDEX idx_date (change_date)
+    ) {$charset_collate};";
+    dbDelta($sql14);
+    
+    // BOM Production Usage - Track actual material usage in production
+    $table_bom_usage = $wpdb->prefix . 'production_bom_usage';
+    $sql15 = "CREATE TABLE IF NOT EXISTS {$table_bom_usage} (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        order_id BIGINT UNSIGNED NOT NULL,
+        product_id BIGINT UNSIGNED NOT NULL,
+        material_id BIGINT UNSIGNED NOT NULL,
+        planned_quantity DECIMAL(10,3) NOT NULL,
+        actual_quantity DECIMAL(10,3) NOT NULL,
+        unit VARCHAR(20) NOT NULL,
+        cost_at_time DECIMAL(10,2) NOT NULL,
+        used_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        recorded_by BIGINT UNSIGNED,
+        INDEX idx_order (order_id),
+        INDEX idx_product (product_id),
+        INDEX idx_material (material_id),
+        INDEX idx_date (used_date)
+    ) {$charset_collate};";
+    dbDelta($sql15);
+    
     // Initialize default settings
     if (!get_option('production_panel_settings')) {
         add_option('production_panel_settings', [
@@ -1549,6 +1625,15 @@ add_action('template_redirect', function() {
 });
 
 /* =====================================================
+ * 12B. BOM (BILL OF MATERIALS) PAGE
+ * ===================================================== */
+add_action('template_redirect', function() {
+    if (get_query_var('b2b_adm_page') !== 'production_bom') return;
+    b2b_adm_guard();
+    production_bom_page();
+});
+
+/* =====================================================
  * 13. ANALYTICS PAGE (Production Analytics)
  * ===================================================== */
 add_action('template_redirect', function() {
@@ -1584,6 +1669,7 @@ function production_page_nav($active_page = 'dashboard') {
         'schedule' => ['icon' => 'fa-calendar-days', 'label' => 'Schedule', 'url' => home_url('/b2b-panel/production/schedule')],
         'departments' => ['icon' => 'fa-building', 'label' => 'Departments', 'url' => home_url('/b2b-panel/production/departments')],
         'routes' => ['icon' => 'fa-route', 'label' => 'Product Routes', 'url' => home_url('/b2b-panel/production/routes')],
+        'bom' => ['icon' => 'fa-list-check', 'label' => 'BOM', 'url' => home_url('/b2b-panel/production/bom')],
         'calendar' => ['icon' => 'fa-calendar', 'label' => 'Calendar', 'url' => home_url('/b2b-panel/production/calendar')],
         'analytics' => ['icon' => 'fa-chart-bar', 'label' => 'Analytics', 'url' => home_url('/b2b-panel/production/analytics')],
         'settings' => ['icon' => 'fa-gear', 'label' => 'Settings', 'url' => home_url('/b2b-panel/production/settings')]
@@ -4641,3 +4727,47 @@ function production_order_statuses_page() {
     b2b_adm_footer();
     exit;
 }
+
+/* =====================================================
+ * BOM (BILL OF MATERIALS) MODULE
+ * ===================================================== */
+
+/**
+ * BOM Management Page
+ */
+function production_bom_page() {
+    b2b_adm_header('Bill of Materials (BOM)');
+    
+    global $wpdb;
+    $materials_table = $wpdb->prefix . 'production_bom_materials';
+    $bom_items_table = $wpdb->prefix . 'production_bom_items';
+    
+    // Check if tables exist
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$materials_table}'");
+    if (!$table_exists) {
+        production_panel_create_tables();
+    }
+    
+    // Get all materials
+    $materials = $wpdb->get_results("
+        SELECT * FROM {$materials_table} 
+        WHERE is_active = 1 
+        ORDER BY category, material_name ASC
+    ");
+    
+    // Get material categories
+    $categories = $wpdb->get_col("
+        SELECT DISTINCT category FROM {$materials_table} 
+        WHERE is_active = 1 AND category IS NOT NULL 
+        ORDER BY category ASC
+    ");
+    
+    // Get statistics
+    $stats = [
+        'total_materials' => $wpdb->get_var("SELECT COUNT(*) FROM {$materials_table} WHERE is_active = 1"),
+        'low_stock' => $wpdb->get_var("SELECT COUNT(*) FROM {$materials_table} WHERE is_active = 1 AND current_stock < min_stock_level"),
+        'total_value' => $wpdb->get_var("SELECT SUM(current_stock * unit_cost) FROM {$materials_table} WHERE is_active = 1"),
+        'products_with_bom' => $wpdb->get_var("SELECT COUNT(DISTINCT product_id) FROM {$bom_items_table}")
+    ];
+    
+    ?>

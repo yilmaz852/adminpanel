@@ -82,13 +82,24 @@ add_action('init', function () {
     add_rewrite_rule('^b2b-panel/stock-planning/?$', 'index.php?b2b_adm_page=stock_planning', 'top');
     add_rewrite_rule('^b2b-panel/stock-planning/supplier-orders/?$', 'index.php?b2b_adm_page=supplier_orders', 'top');
 
+    // Production Planning Module (V13 - New)
+    add_rewrite_rule('^b2b-panel/production/?$', 'index.php?b2b_adm_page=production', 'top');
+    add_rewrite_rule('^b2b-panel/production/schedule/?$', 'index.php?b2b_adm_page=production_schedule', 'top');
+    add_rewrite_rule('^b2b-panel/production/departments/?$', 'index.php?b2b_adm_page=production_departments', 'top');
+    add_rewrite_rule('^b2b-panel/production/routes/?$', 'index.php?b2b_adm_page=production_routes', 'top');
+    add_rewrite_rule('^b2b-panel/production/bom/?$', 'index.php?b2b_adm_page=production_bom', 'top');
+    add_rewrite_rule('^b2b-panel/production/calendar/?$', 'index.php?b2b_adm_page=production_calendar', 'top');
+    add_rewrite_rule('^b2b-panel/production/analytics/?$', 'index.php?b2b_adm_page=production_analytics', 'top');
+    add_rewrite_rule('^b2b-panel/production/settings/?$', 'index.php?b2b_adm_page=production_settings', 'top');
+    add_rewrite_rule('^b2b-panel/production/order-statuses/?$', 'index.php?b2b_adm_page=production_order_statuses', 'top');
+
     // 3. Otomatik Flush (Bunu sadece 1 kere çalıştırıp veritabanını günceller)
-    // Fixed version that ensures order edit page rewrites are properly registered
-    if (!get_option('b2b_rewrite_v24_order_edit')) {
+    // Fixed version that ensures production module rewrites are properly registered
+    if (!get_option('b2b_rewrite_v28_bom_module')) {
         flush_rewrite_rules();
-        update_option('b2b_rewrite_v24_order_edit', true);
+        update_option('b2b_rewrite_v28_bom_module', true);
         // Clean up old option
-        delete_option('b2b_rewrite_v23_packing_slip');
+        delete_option('b2b_rewrite_v27_order_statuses');
     }
 });
 
@@ -2352,6 +2363,15 @@ function b2b_adm_header($title) {
                 <div class="nav-item">
                     <a href="<?= home_url('/accounting-panel') ?>" class="nav-link" data-title="Accounting">
                         <i class="fa-solid fa-chart-line"></i> <span class="nav-label">Accounting</span>
+                    </a>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Production Panel (Admin Only) -->
+                <?php if(current_user_can('manage_options')): ?>
+                <div class="nav-item">
+                    <a href="<?= home_url('/b2b-panel/production') ?>" class="nav-link <?= in_array(get_query_var('b2b_adm_page'), ['production','production_schedule','production_departments','production_routes','production_bom','production_calendar','production_analytics','production_settings','production_order_statuses'])?'active':'' ?>" data-title="Production">
+                        <i class="fa-solid fa-industry"></i> <span class="nav-label">Production</span>
                     </a>
                 </div>
                 <?php endif; ?>
@@ -18122,3 +18142,4 @@ function sa_render_packing_slip($order_id) {
     </html>
     <?php
 }
+
